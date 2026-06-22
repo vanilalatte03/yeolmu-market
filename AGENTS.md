@@ -51,6 +51,11 @@ infra   - 외부 연동 (필요 시)
   - 예: `fix: 채팅방 권한 검증 오류 수정`
 - WIP, 임시 커밋, 서로 다른 목적이 섞인 대형 커밋은 남기지 않는다.
 
+## PR / 이슈
+
+- 이슈 구현을 시작할 때 해당 이슈의 Project Status를 `In progress`로 변경한다.
+- PR 본문에 연결 이슈를 `Closes #N` 형식으로 명시한다.
+
 ## 스킬 / 훅 (코덱스)
 
 - 스킬은 `.agents/skills/<이름>/SKILL.md`에 둔다(repo 공유). 코덱스가 `description`으로 자동/수동 발동한다.
