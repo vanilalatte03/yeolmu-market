@@ -20,6 +20,12 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+/**
+ * Controller 밖으로 전파된 예외를 {@link ApiResponse} 실패 응답으로 변환한다.
+ *
+ * <p>비즈니스 예외, Bean Validation 실패, Spring MVC 기본 예외를 여기서 한 번에 매핑해 도메인 Controller가 응답 형식을 직접 조립하지 않도록
+ * 한다.
+ */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 

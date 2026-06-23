@@ -2,6 +2,11 @@ package com.guingujig.yeolmumarket.global.exception;
 
 import org.springframework.http.HttpStatus;
 
+/**
+ * API 실패 응답에 사용할 에러 코드 카탈로그다.
+ *
+ * <p>각 코드는 HTTP 상태와 기본 메시지를 함께 가져, 예외 처리와 문서의 에러 계약이 같은 값을 참조하게 한다.
+ */
 public enum ErrorCode {
   VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "요청 본문, 쿼리 파라미터, 경로 변수 검증에 실패했습니다."),
   INVALID_ENUM_VALUE(HttpStatus.BAD_REQUEST, "허용하지 않는 Enum 값입니다."),

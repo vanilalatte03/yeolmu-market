@@ -103,6 +103,35 @@ public class OrderController {
 - **테스트 메서드명은 한글로 작성**한다. 예: `주문을_생성하면_재고가_차감된다()`
 - 새 Service/Controller에는 핵심 경로 테스트를 작성한다.
 
+## Javadoc
+
+사람이 읽고 리뷰하기 쉽도록, "왜"가 필요한 곳에만 단다. 모든 메서드에 기계적으로 붙이지 않는다.
+
+### 단다
+
+- public Service 메서드: 유스케이스 의도, 주요 부수효과(상태 변경/외부 호출), 던지는 예외
+- 도메인 규칙이 들어간 Entity 변경 메서드 (예: 재고 차감 조건)
+- 이름만으로 의도가 드러나지 않는 복잡한 분기·계산 로직
+- 외부 연동(infra) Client의 호출 계약(파라미터 의미, 실패 시 동작)
+
+### 달지 않는다
+
+- getter/setter, 단순 위임 메서드, 자명한 Controller 매핑
+- 코드를 그대로 읽어 옮긴 주석 (`// userId로 유저 조회` 같은 것)
+
+```java
+// ❌ 이름이 다 말하는데 중복
+/** 주문을 생성한다. */
+public Order createOrder(...) { ... }
+
+// ✅ 코드만으론 안 보이는 의도·부수효과·예외를 적는다
+/**
+ * 주문을 생성하고 재고를 차감한다.
+ * 재고가 부족하면 {@link OutOfStockException}을 던지며, 이때 주문은 저장되지 않는다.
+ */
+public Order createOrder(Long userId, CreateOrderRequest request) { ... }
+```
+
 ## 과한 설계 제한
 
 필요성이 명확하지 않으면 단순한 Spring Boot + JPA + DB 구조 안에서 해결한다.
