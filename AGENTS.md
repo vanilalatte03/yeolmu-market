@@ -60,7 +60,6 @@ infra   - 외부 연동 (필요 시)
 
 - 스킬은 `.agents/skills/<이름>/SKILL.md`에 둔다(repo 공유). 코덱스가 `description`으로 자동/수동 발동한다.
 - 현재 공유 스킬은 `review`, `pr-writer`이며 세부 트리거와 출력 형식은 각 `SKILL.md`를 따른다.
-- 커스텀 프롬프트(`~/.codex/prompts/`)는 deprecated. 재사용 지침은 전부 스킬로 만든다.
 - 포맷 강제는 git pre-commit(`.githooks/pre-commit`, Spotless 검사). 클론 후 1회 `git config core.hooksPath .githooks` 실행.
 
 ## 완료 정의
