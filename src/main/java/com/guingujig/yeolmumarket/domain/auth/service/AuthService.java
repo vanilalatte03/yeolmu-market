@@ -50,7 +50,11 @@ public class AuthService {
       throw new BusinessException(ErrorCode.INVALID_LOGIN_CREDENTIALS);
     }
 
-    String token = jwtTokenProvider.issueAccessToken(user);
-    return new LoginResponse(token);
+    String rawToken = jwtTokenProvider.generateToken(user);
+    return new LoginResponse(
+        "Bearer",
+        rawToken,
+        jwtTokenProvider.getAccessTokenValiditySeconds(),
+        LoginResponse.LoginUserInfo.from(user));
   }
 }
