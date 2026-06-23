@@ -14,6 +14,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -54,4 +55,12 @@ public class ChatRoom {
 
   @Column(name = "last_message_at")
   private LocalDateTime lastMessageAt;
+
+  public static ChatRoom create(Product product, User buyer, User seller) {
+    ChatRoom chatRoom = new ChatRoom();
+    chatRoom.product = Objects.requireNonNull(product, "product는 필수입니다.");
+    chatRoom.buyer = Objects.requireNonNull(buyer, "buyer는 필수입니다.");
+    chatRoom.seller = Objects.requireNonNull(seller, "seller는 필수입니다.");
+    return chatRoom;
+  }
 }
