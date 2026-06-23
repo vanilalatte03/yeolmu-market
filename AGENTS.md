@@ -87,3 +87,5 @@ infra   - 외부 연동 (필요 시)
   - 의존성 ❌ `spring-boot-starter-web` / 단일 `spring-boot-starter-test`
     ✅ `spring-boot-starter-webmvc` / 모듈별 `*-test` (`spring-boot-starter-webmvc-test`, `-data-jpa-test`, `-validation-test`)
   - 새 의존성·import는 추측하지 말고 `build.gradle`의 실제 모듈명을 기준으로 한다.
+- 이슈 작업을 시작하면 **코드부터 손대지 말고 가장 먼저** 해당 이슈의 Project Status를 `In progress`로 바꾼다. 이걸 빠뜨리는 사례가 반복됐다. 규칙 원문은 위 `PR / 이슈` 섹션.
+- 민감정보(DB 비밀번호, `JWT_SECRET` 등)는 코드나 `application.yml`에 하드코딩하지 않고 `.env`로 관리한다(`.env`·`.env.*`는 `.gitignore`로 제외, `.env.example`만 추적). 환경변수를 새로 추가하면 같은 커밋에서 `.env.example`에도 키를 추가한다(값은 비워 둔다).
