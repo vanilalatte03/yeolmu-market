@@ -75,7 +75,7 @@ public class OrderController {
 
 - 공통 응답 래퍼(`ApiResponse<T>` 등)로 형식을 통일한다.
 - 실제 HTTP 상태 코드와 에러 코드를 일관되게 사용한다.
-- 공통 응답 body의 `status`는 API wrapper 처리 상태로 `200` 고정 정책을 따른다.
+- 공통 응답 body는 `success`로 API 처리 성공 여부를 표현하고, `status` 값을 `200`으로 고정하지 않는다.
 
 ## Validation
 

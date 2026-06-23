@@ -61,14 +61,15 @@ Authorization: Bearer {accessToken}
 ### 공통 응답
 
 성공과 실패 모두 같은 wrapper를 사용한다.
-응답 body의 `status`는 API 호출이 공통 wrapper 형식으로 처리되었는지를 나타내며 `200`으로 고정한다.
-비즈니스/검증 실패 여부는 실제 HTTP 상태 코드와 `code`, `message`로 판단한다.
+응답 body의 `success`는 API 처리 성공 여부를 나타낸다.
+비즈니스/검증 실패 여부는 실제 HTTP 상태 코드와 `success`, `code`, `message`로 판단한다.
 
 성공 응답:
 
 ```json
 {
-  "status": 200,
+  "success": true,
+  "code": "SUCCESS",
   "message": "요청이 성공했습니다.",
   "data": {}
 }
@@ -78,16 +79,16 @@ Authorization: Bearer {accessToken}
 
 ```json
 {
-  "status": 200,
+  "success": false,
   "code": "VALIDATION_FAILED",
   "message": "요청 본문, 쿼리 파라미터, 경로 변수 검증에 실패했습니다.",
-  "data": [
+  "errors": [
     "email은 필수입니다."
   ]
 }
 ```
 
-`data`가 `null`이면 응답 JSON에서 생략한다.
+`data` 또는 `errors`가 `null`이면 응답 JSON에서 생략한다.
 
 ### 페이지네이션
 
