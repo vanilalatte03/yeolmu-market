@@ -2,6 +2,7 @@ package com.guingujig.yeolmumarket.global.security;
 
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.entity.UserRole;
+import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
@@ -9,7 +10,6 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,7 +26,6 @@ public class JwtTokenProvider {
 
   private static final String HMAC_SHA256 = "HmacSHA256";
   private static final String JWT_ALGORITHM = "HS256";
-  private static final String BEARER_TOKEN_TYPE = "Bearer";
   private static final Base64.Encoder BASE64_URL_ENCODER = Base64.getUrlEncoder().withoutPadding();
   private static final Base64.Decoder BASE64_URL_DECODER = Base64.getUrlDecoder();
   private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
@@ -46,29 +45,27 @@ public class JwtTokenProvider {
   }
 
   public String issueAccessToken(User user) {
-    return generateAccessToken(user);
+    return generateAccessToken(user, accessTokenValiditySeconds);
+  }
+
+  /** 테스트 전용: 이미 만료된 토큰을 발급한다. */
+  String issueExpiredAccessToken(User user) {
+    return generateAccessToken(user, -1);
   }
 
   public long getAccessTokenValiditySeconds() {
     return accessTokenValiditySeconds;
   }
 
-  public Optional<Authentication> getAuthentication(String token) {
-    try {
-      JwtClaims claims = parseClaims(token);
-      AuthenticatedUser principal =
-          new AuthenticatedUser(claims.userId(), claims.email(), claims.role());
-      return Optional.of(
-          UsernamePasswordAuthenticationToken.authenticated(
-              principal,
-              null,
-              List.of(new SimpleGrantedAuthority("ROLE_" + claims.role().name()))));
-    } catch (RuntimeException exception) {
-      return Optional.empty();
-    }
+  public Authentication getAuthentication(String token) {
+    JwtClaims claims = parseClaims(token);
+    AuthenticatedUser principal =
+        new AuthenticatedUser(claims.userId(), claims.email(), claims.role());
+    return UsernamePasswordAuthenticationToken.authenticated(
+        principal, null, List.of(new SimpleGrantedAuthority("ROLE_" + claims.role().name())));
   }
 
-  private String generateAccessToken(User user) {
+  private String generateAccessToken(User user, long validitySeconds) {
     Instant now = Instant.now();
 
     Map<String, Object> header = new LinkedHashMap<>();
@@ -80,7 +77,7 @@ public class JwtTokenProvider {
     payload.put("email", user.getEmail());
     payload.put("role", user.getRole().name());
     payload.put("iat", now.getEpochSecond());
-    payload.put("exp", now.plusSeconds(accessTokenValiditySeconds).getEpochSecond());
+    payload.put("exp", now.plusSeconds(validitySeconds).getEpochSecond());
 
     String encodedHeader = encodeJson(header);
     String encodedPayload = encodeJson(payload);
@@ -89,27 +86,33 @@ public class JwtTokenProvider {
   }
 
   private JwtClaims parseClaims(String token) {
-    String[] parts = token.split("\\.");
-    if (parts.length != 3) {
-      throw new IllegalArgumentException("JWT 형식이 올바르지 않습니다.");
-    }
+    try {
+      String[] parts = token.split("\\.");
+      if (parts.length != 3) {
+        throw new IllegalArgumentException("JWT 형식이 올바르지 않습니다.");
+      }
 
-    Map<String, Object> header = decodeJson(parts[0]);
-    if (!JWT_ALGORITHM.equals(header.get("alg"))) {
-      throw new IllegalArgumentException("JWT 알고리즘이 올바르지 않습니다.");
-    }
-    validateSignature(parts);
+      Map<String, Object> header = decodeJson(parts[0]);
+      if (!JWT_ALGORITHM.equals(header.get("alg"))) {
+        throw new IllegalArgumentException("JWT 알고리즘이 올바르지 않습니다.");
+      }
+      validateSignature(parts);
 
-    Map<String, Object> payload = decodeJson(parts[1]);
-    long expiresAt = readLongClaim(payload, "exp");
-    if (Instant.now().getEpochSecond() >= expiresAt) {
-      throw new IllegalArgumentException("JWT가 만료되었습니다.");
-    }
+      Map<String, Object> payload = decodeJson(parts[1]);
+      long expiresAt = readLongClaim(payload, "exp");
+      if (Instant.now().getEpochSecond() >= expiresAt) {
+        throw new JwtException(ErrorCode.EXPIRED_TOKEN, "JWT가 만료되었습니다.");
+      }
 
-    return new JwtClaims(
-        Long.parseLong(readStringClaim(payload, "sub")),
-        readStringClaim(payload, "email"),
-        UserRole.valueOf(readStringClaim(payload, "role")));
+      return new JwtClaims(
+          Long.parseLong(readStringClaim(payload, "sub")),
+          readStringClaim(payload, "email"),
+          UserRole.valueOf(readStringClaim(payload, "role")));
+    } catch (JwtException e) {
+      throw e;
+    } catch (RuntimeException e) {
+      throw new JwtException(ErrorCode.INVALID_TOKEN, e.getMessage());
+    }
   }
 
   private String encodeJson(Map<String, Object> value) {

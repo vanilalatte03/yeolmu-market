@@ -15,6 +15,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+  static final String JWT_ERROR_ATTRIBUTE = "JWT_ERROR_CODE";
   private static final String BEARER_PREFIX = "Bearer ";
 
   private final JwtTokenProvider jwtTokenProvider;
@@ -25,9 +26,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       throws ServletException, IOException {
     String token = resolveToken(request);
     if (token != null) {
-      jwtTokenProvider
-          .getAuthentication(token)
-          .ifPresent(SecurityContextHolder.getContext()::setAuthentication);
+      try {
+        SecurityContextHolder.getContext()
+            .setAuthentication(jwtTokenProvider.getAuthentication(token));
+      } catch (JwtException e) {
+        request.setAttribute(JWT_ERROR_ATTRIBUTE, e.getErrorCode());
+      }
     }
 
     filterChain.doFilter(request, response);

@@ -63,7 +63,7 @@ class SecurityConfigTest {
   }
 
   @Test
-  void 보호_API는_JWT가_없으면_401로_응답한다() throws Exception {
+  void 보호_API는_JWT가_없으면_401_UNAUTHORIZED로_응답한다() throws Exception {
     mockMvc
         .perform(get("/test/security/me"))
         .andExpect(status().isUnauthorized())
@@ -88,12 +88,26 @@ class SecurityConfigTest {
   }
 
   @Test
-  void 보호_API는_유효하지_않은_JWT면_401로_응답한다() throws Exception {
+  void 보호_API는_서명이_잘못된_JWT면_401_INVALID_TOKEN으로_응답한다() throws Exception {
     mockMvc
         .perform(get("/test/security/me").header(HttpHeaders.AUTHORIZATION, "Bearer invalid.jwt"))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.success").value(false))
-        .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+        .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+  }
+
+  @Test
+  void 보호_API는_만료된_JWT면_401_EXPIRED_TOKEN으로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String expiredToken = "Bearer " + jwtTokenProvider.issueExpiredAccessToken(user);
+
+    mockMvc
+        .perform(get("/test/security/me").header(HttpHeaders.AUTHORIZATION, expiredToken))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("EXPIRED_TOKEN"));
   }
 
   @Test
