@@ -138,8 +138,13 @@ class AuthControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.code").value("SUCCESS"))
-        .andExpect(jsonPath("$.data.accessToken", matchesPattern("Bearer [^.]+\\.[^.]+\\.[^.]+")))
-        .andExpect(jsonPath("$.data.user").doesNotExist());
+        .andExpect(jsonPath("$.data.tokenType").value("Bearer"))
+        .andExpect(jsonPath("$.data.accessToken", matchesPattern("[^.]+\\.[^.]+\\.[^.]+")))
+        .andExpect(jsonPath("$.data.expiresIn").value(3600))
+        .andExpect(jsonPath("$.data.user.userId").value(user.getId()))
+        .andExpect(jsonPath("$.data.user.email").value("customer@example.com"))
+        .andExpect(jsonPath("$.data.user.nickname").value("열무구매자"))
+        .andExpect(jsonPath("$.data.user.role").value("USER"));
   }
 
   @Test
