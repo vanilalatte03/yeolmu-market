@@ -10,7 +10,7 @@ public record SignupResponse(
 
   public static SignupResponse from(User user) {
     OffsetDateTime createdAt =
-        user.getCreatedAt().atZone(ZoneId.of("Asia/Seoul")).toOffsetDateTime();
+        user.getCreatedAt().atZone(ZoneId.systemDefault()).toOffsetDateTime();
     return new SignupResponse(
         user.getId(), user.getEmail(), user.getNickname(), user.getRole(), createdAt);
   }

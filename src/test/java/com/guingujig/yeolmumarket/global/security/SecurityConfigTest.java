@@ -76,7 +76,7 @@ class SecurityConfigTest {
     User user =
         userRepository.save(
             new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
-    String accessToken = jwtTokenProvider.issueAccessToken(user);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(user);
 
     mockMvc
         .perform(get("/test/security/me").header(HttpHeaders.AUTHORIZATION, accessToken))
@@ -101,7 +101,7 @@ class SecurityConfigTest {
     User user =
         userRepository.save(
             new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
-    String accessToken = jwtTokenProvider.issueAccessToken(user);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(user);
 
     mockMvc
         .perform(get("/api/admin/test").header(HttpHeaders.AUTHORIZATION, accessToken))

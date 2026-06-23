@@ -46,10 +46,6 @@ public class JwtTokenProvider {
   }
 
   public String issueAccessToken(User user) {
-    return BEARER_TOKEN_TYPE + " " + generateAccessToken(user);
-  }
-
-  public String generateToken(User user) {
     return generateAccessToken(user);
   }
 
@@ -65,7 +61,7 @@ public class JwtTokenProvider {
       return Optional.of(
           UsernamePasswordAuthenticationToken.authenticated(
               principal,
-              token,
+              null,
               List.of(new SimpleGrantedAuthority("ROLE_" + claims.role().name()))));
     } catch (RuntimeException exception) {
       return Optional.empty();
