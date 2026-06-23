@@ -35,8 +35,8 @@ public class ProductImage {
   @Column(name = "image_url", nullable = false, columnDefinition = "TEXT")
   private String imageUrl;
 
-  @Column(name = "is_thumbnail", nullable = false)
-  private Boolean thumbnail;
+  @Column(name = "is_thumbnail", nullable = false, columnDefinition = "BOOLEAN DEFAULT FALSE")
+  private boolean thumbnail = false;
 
   @CreatedDate
   @Column(name = "created_at", nullable = false, updatable = false)
