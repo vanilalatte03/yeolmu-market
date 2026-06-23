@@ -82,6 +82,7 @@ infra   - 외부 연동 (필요 시)
 
 - (예시) WebSocket 설정은 손으로 잡은 뼈대가 동작하는 걸 확인한 뒤 확장을 맡긴다. 0에서 통째로 시키지 않는다.
 - Windows PowerShell에서 한글/UTF-8 파일을 읽을 때는 콘솔 인코딩을 UTF-8로 맞추고 `Get-Content -Encoding UTF8`로 확인한다.
+- Javadoc은 "왜"가 필요한 곳에만 단다(public Service 메서드·도메인 규칙·복잡한 분기). getter/자명한 코드엔 달지 않는다. 기준은 `docs/CONVENTIONS.md`의 Javadoc 섹션.
 - Spring Boot 4를 쓴다. 코덱스가 SB3 학습데이터 기준으로 옛 starter/import를 생성하기 쉬우니 주의:
   - 의존성 ❌ `spring-boot-starter-web` / 단일 `spring-boot-starter-test`
     ✅ `spring-boot-starter-webmvc` / 모듈별 `*-test` (`spring-boot-starter-webmvc-test`, `-data-jpa-test`, `-validation-test`)
