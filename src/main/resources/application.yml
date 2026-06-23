@@ -3,6 +3,11 @@ spring:
     import: optional:file:.env[.properties]
   application:
     name: yeolmu-market
+  jpa:
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
   datasource:
     url: "${SPRING_DATASOURCE_URL}"
     username: "${SPRING_DATASOURCE_USERNAME}"
@@ -12,3 +17,7 @@ spring:
     redis:
       host: "${SPRING_DATA_REDIS_HOST}"
       port: ${SPRING_DATA_REDIS_PORT}
+
+jwt:
+  secret: "${JWT_SECRET}"
+  access-token-validity-seconds: ${JWT_ACCESS_TOKEN_VALIDITY_SECONDS}
