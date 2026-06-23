@@ -16,6 +16,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -61,4 +62,20 @@ public class Product extends BaseTimeEntity {
 
   @Column(name = "deleted_at")
   private LocalDateTime deletedAt;
+
+  /**
+   * 신규 상품은 등록 즉시 판매 중이며 일반 사용자에게 노출된다.
+   *
+   * <p>카테고리와 이미지는 P1 범위이므로 P0 상품 등록에서는 비워 둔다.
+   */
+  public static Product create(User seller, String title, String description, Integer price) {
+    Product product = new Product();
+    product.seller = Objects.requireNonNull(seller, "seller는 필수입니다.");
+    product.title = title;
+    product.description = description;
+    product.price = price;
+    product.status = ProductStatus.ON_SALE;
+    product.visibility = ProductVisibility.VISIBLE;
+    return product;
+  }
 }
