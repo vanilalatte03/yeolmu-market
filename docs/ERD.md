@@ -4,7 +4,8 @@
 
 카테고리, 찜, 결제, 리뷰는 PRD 기준 P1/P2 범위까지 포함합니다. 상태값은 PRD의 상품/주문 상태와 중고거래 결제 흐름을 기준으로 정의했습니다.
 
-검색 성능 개선과 인기 검색어 집계는 Redis 캐시를 기준으로 관리하므로 이 관계형 ERD에는 포함하지 않습니다. Redis 결정은 `docs/adr/002-redis-search-cache.md`를 따릅니다.
+검색 성능 개선, 인기 검색어 집계, 로그아웃 토큰 블랙리스트는 Redis를 기준으로 관리하므로 이 관계형 ERD에는 포함하지 않습니다.
+Redis 검색 캐시 결정은 `docs/adr/002-redis-search-cache.md`, JWT 로그아웃 블랙리스트 결정은 `docs/adr/004-jwt-logout-blacklist.md`를 따릅니다.
 
 ## 관계도
 

@@ -42,6 +42,10 @@ JWT Bearer 토큰을 사용한다.
 Authorization: Bearer {accessToken}
 ```
 
+로그아웃된 access token은 Redis 블랙리스트에 등록한다.
+블랙리스트 TTL은 JWT 만료까지 남은 시간으로 설정하며, 만료 시간이 지나면 Redis에서 자동 제거된다.
+인증이 필요한 API는 토큰 서명과 만료 여부를 검증한 뒤 블랙리스트 등록 여부도 확인한다.
+
 인증이 필요 없는 API는 다음과 같다.
 
 - `POST /api/auth/signup`
@@ -224,6 +228,7 @@ Authorization: Bearer {accessToken}
 | `UNAUTHORIZED` | 401 | 인증 토큰 누락 또는 인증 실패 |
 | `INVALID_TOKEN` | 401 | 잘못된 JWT |
 | `EXPIRED_TOKEN` | 401 | 만료된 JWT |
+| `REVOKED_TOKEN` | 401 | 로그아웃되어 폐기된 JWT |
 | `FORBIDDEN` | 403 | 권한 또는 소유권 없음 |
 | `RESOURCE_NOT_FOUND` | 404 | 리소스 없음 |
 | `METHOD_NOT_ALLOWED` | 405 | 지원하지 않는 HTTP method |
@@ -364,7 +369,10 @@ Authorization: Bearer {accessToken}
 
 ### 로그아웃
 
-로그아웃을 처리한다. 클라이언트가 보관 중인 access token을 삭제하는 방식으로 완료한다.
+로그아웃을 처리한다.
+서버는 요청에 사용된 access token을 Redis 블랙리스트에 등록하고, JWT 만료까지 남은 시간을 TTL로 설정한다.
+클라이언트는 성공 응답을 받은 뒤 보관 중인 access token을 삭제한다.
+블랙리스트에 등록된 토큰은 만료 전이라도 보호된 API 인증에 사용할 수 없다.
 
 - Method: `DELETE`
 - Path: `/api/auth/logout`
@@ -390,6 +398,7 @@ Authorization: Bearer {accessToken}
 | `UNAUTHORIZED` | 401 | 토큰 누락 |
 | `INVALID_TOKEN` | 401 | 잘못된 토큰 |
 | `EXPIRED_TOKEN` | 401 | 만료된 토큰 |
+| `REVOKED_TOKEN` | 401 | 이미 로그아웃되어 폐기된 토큰 |
 
 ## 유저 API
 
