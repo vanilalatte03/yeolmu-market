@@ -55,7 +55,7 @@ erDiagram
     product_image {
         BIGINT id PK "이미지 ID"
         BIGINT product_id FK "상품 ID"
-        VARCHAR image_url "이미지 URL"
+        TEXT image_url "이미지 URL"
         BOOLEAN is_thumbnail "대표 이미지 여부"
         DATETIME created_at "생성일"
     }
@@ -166,7 +166,7 @@ erDiagram
 | --- | --- | --- | --- | --- |
 | 이미지 ID | id | BIGINT | NOT NULL | PK |
 | 상품 ID | product_id | BIGINT | NOT NULL | FK: product.id |
-| 이미지 URL | image_url | VARCHAR(500) | NOT NULL | |
+| 이미지 URL | image_url | TEXT | NOT NULL | |
 | 대표 이미지 여부 | is_thumbnail | BOOLEAN | NOT NULL | 기본값 false |
 | 생성일 | created_at | DATETIME | NOT NULL | 업로드 시각 |
 
