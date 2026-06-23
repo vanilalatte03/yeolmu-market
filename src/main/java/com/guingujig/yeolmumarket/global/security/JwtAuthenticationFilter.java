@@ -15,7 +15,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-  static final String JWT_ERROR_ATTRIBUTE = "JWT_ERROR_CODE";
+  public static final String JWT_ERROR_ATTRIBUTE = "JWT_ERROR_CODE";
   private static final String BEARER_PREFIX = "Bearer ";
 
   private final JwtTokenProvider jwtTokenProvider;

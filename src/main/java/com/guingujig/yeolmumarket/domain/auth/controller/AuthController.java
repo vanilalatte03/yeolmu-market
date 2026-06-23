@@ -30,7 +30,8 @@ public class AuthController {
   }
 
   @PostMapping("/login")
-  public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
-    return ApiResponse.success(authService.login(request));
+  public ResponseEntity<ApiResponse<LoginResponse>> login(
+      @Valid @RequestBody LoginRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(authService.login(request)));
   }
 }
