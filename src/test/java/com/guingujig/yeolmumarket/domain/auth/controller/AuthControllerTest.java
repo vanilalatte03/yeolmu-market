@@ -66,7 +66,7 @@ class AuthControllerTest {
         .andExpect(jsonPath("$.data.email").value("customer@example.com"))
         .andExpect(jsonPath("$.data.nickname").value("열무구매자"))
         .andExpect(jsonPath("$.data.role").value("USER"))
-        .andExpect(jsonPath("$.data.createdAt").exists());
+        .andExpect(jsonPath("$.data.createdAt", matchesPattern(".*(Z|\\+00:00)$")));
 
     User user = userRepository.findByEmail("customer@example.com").orElseThrow();
     assertThat(user.getRole()).isEqualTo(UserRole.USER);

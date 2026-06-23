@@ -7,6 +7,10 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
   data:
     redis:
       host: localhost
