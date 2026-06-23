@@ -11,3 +11,7 @@ spring:
     redis:
       host: localhost
       port: 6379
+
+jwt:
+  secret: test-jwt-secret-must-be-over-32-bytes
+  access-token-validity-seconds: 3600

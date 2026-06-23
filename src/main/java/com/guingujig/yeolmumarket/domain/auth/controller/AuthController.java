@@ -1,5 +1,7 @@
 package com.guingujig.yeolmumarket.domain.auth.controller;
 
+import com.guingujig.yeolmumarket.domain.auth.dto.LoginRequest;
+import com.guingujig.yeolmumarket.domain.auth.dto.LoginResponse;
 import com.guingujig.yeolmumarket.domain.auth.dto.SignupRequest;
 import com.guingujig.yeolmumarket.domain.auth.dto.SignupResponse;
 import com.guingujig.yeolmumarket.domain.auth.service.AuthService;
@@ -25,5 +27,10 @@ public class AuthController {
       @Valid @RequestBody SignupRequest request) {
     SignupResponse response = authService.signup(request);
     return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
+  }
+
+  @PostMapping("/login")
+  public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
+    return ApiResponse.success(authService.login(request));
   }
 }

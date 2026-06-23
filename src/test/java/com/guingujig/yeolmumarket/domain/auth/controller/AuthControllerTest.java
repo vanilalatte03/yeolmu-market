@@ -2,6 +2,7 @@ package com.guingujig.yeolmumarket.domain.auth.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -109,6 +110,92 @@ class AuthControllerTest {
                       "email": "not-email",
                       "password": "short",
                       "nickname": ""
+                    }
+                    """))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+        .andExpect(jsonPath("$.errors[0]", containsString(": ")));
+  }
+
+  @Test
+  void 로그인에_성공하면_JWT_access_token을_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "email": "customer@example.com",
+                      "password": "Password123!"
+                    }
+                    """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.accessToken", matchesPattern("Bearer [^.]+\\.[^.]+\\.[^.]+")))
+        .andExpect(jsonPath("$.data.user").doesNotExist());
+  }
+
+  @Test
+  void 로그인_비밀번호가_틀리면_401로_응답한다() throws Exception {
+    userRepository.save(
+        new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "email": "customer@example.com",
+                      "password": "WrongPassword123!"
+                    }
+                    """))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_LOGIN_CREDENTIALS"))
+        .andExpect(jsonPath("$.message").value("이메일 또는 비밀번호가 일치하지 않습니다."))
+        .andExpect(jsonPath("$.data").doesNotExist());
+  }
+
+  @Test
+  void 로그인_이메일이_존재하지_않으면_401로_응답한다() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "email": "unknown@example.com",
+                      "password": "Password123!"
+                    }
+                    """))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_LOGIN_CREDENTIALS"))
+        .andExpect(jsonPath("$.message").value("이메일 또는 비밀번호가 일치하지 않습니다."))
+        .andExpect(jsonPath("$.data").doesNotExist());
+  }
+
+  @Test
+  void 로그인_요청값_검증에_실패하면_400으로_응답한다() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "email": "not-email",
+                      "password": ""
                     }
                     """))
         .andExpect(status().isBadRequest())
