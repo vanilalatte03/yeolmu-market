@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -172,6 +174,161 @@ class AuthControllerTest {
   }
 
   @Test
+  void refresh_token_재발급에_성공하면_토큰을_회전한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String oldRefreshToken = jwtTokenProvider.issueRefreshToken(user);
+    when(activeRefreshTokenRepository.findHashByUserId(user.getId()))
+        .thenReturn(java.util.Optional.of(jwtTokenProvider.hashToken(oldRefreshToken)));
+
+    MvcResult result =
+        mockMvc
+            .perform(
+                post("/api/auth/refresh")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                    {
+                      "refreshToken": "%s"
+                    }
+                    """
+                            .formatted(oldRefreshToken)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.code").value("SUCCESS"))
+            .andExpect(jsonPath("$.data.tokenType").value("Bearer"))
+            .andExpect(jsonPath("$.data.accessToken", matchesPattern("[^.]+\\.[^.]+\\.[^.]+")))
+            .andExpect(jsonPath("$.data.refreshToken", matchesPattern("[^.]+\\.[^.]+\\.[^.]+")))
+            .andExpect(jsonPath("$.data.expiresIn").value(3600))
+            .andExpect(jsonPath("$.data.refreshExpiresIn").value(1209600))
+            .andReturn();
+
+    String newRefreshToken = extractRefreshToken(result);
+    ArgumentCaptor<String> tokenHashCaptor = ArgumentCaptor.forClass(String.class);
+    verify(activeRefreshTokenRepository)
+        .save(eq(user.getId()), tokenHashCaptor.capture(), eq(Duration.ofSeconds(1209600)));
+    assertThat(newRefreshToken).isNotEqualTo(oldRefreshToken);
+    assertThat(tokenHashCaptor.getValue()).isEqualTo(jwtTokenProvider.hashToken(newRefreshToken));
+    assertThat(tokenHashCaptor.getValue()).isNotEqualTo(oldRefreshToken);
+  }
+
+  @Test
+  void 이전_refresh_token을_재사용하면_401로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String oldRefreshToken = jwtTokenProvider.issueRefreshToken(user);
+    String activeRefreshToken = jwtTokenProvider.issueRefreshToken(user);
+    when(activeRefreshTokenRepository.findHashByUserId(user.getId()))
+        .thenReturn(java.util.Optional.of(jwtTokenProvider.hashToken(activeRefreshToken)));
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "refreshToken": "%s"
+                    }
+                    """
+                        .formatted(oldRefreshToken)))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REVOKED_TOKEN"));
+  }
+
+  @Test
+  void 새_로그인_후_기존_refresh_token으로_재발급하면_401로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    MvcResult firstLoginResult =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                    {
+                      "email": "customer@example.com",
+                      "password": "Password123!"
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andReturn();
+    String firstLoginRefreshToken = extractRefreshToken(firstLoginResult);
+    reset(activeRefreshTokenRepository);
+    MvcResult secondLoginResult =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                    {
+                      "email": "customer@example.com",
+                      "password": "Password123!"
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andReturn();
+    String secondLoginRefreshToken = extractRefreshToken(secondLoginResult);
+    when(activeRefreshTokenRepository.findHashByUserId(user.getId()))
+        .thenReturn(java.util.Optional.of(jwtTokenProvider.hashToken(secondLoginRefreshToken)));
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "refreshToken": "%s"
+                    }
+                    """
+                        .formatted(firstLoginRefreshToken)))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REVOKED_TOKEN"));
+  }
+
+  @Test
+  void refresh_token이_누락되면_400으로_응답한다() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "refreshToken": ""
+                    }
+                    """))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void 잘못된_refresh_token이면_401로_응답한다() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "refreshToken": "invalid.jwt"
+                    }
+                    """))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+  }
+
+  @Test
   void 로그인_비밀번호가_틀리면_401로_응답한다() throws Exception {
     userRepository.save(
         new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
@@ -231,5 +388,10 @@ class AuthControllerTest {
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
         .andExpect(jsonPath("$.errors[0]", containsString(": ")));
+  }
+
+  private String extractRefreshToken(MvcResult result) throws java.io.UnsupportedEncodingException {
+    String responseBody = result.getResponse().getContentAsString();
+    return responseBody.replaceAll("(?s).*\"refreshToken\":\"([^\"]+)\".*", "$1");
   }
 }

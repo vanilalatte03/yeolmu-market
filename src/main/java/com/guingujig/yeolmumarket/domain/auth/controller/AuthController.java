@@ -2,6 +2,8 @@ package com.guingujig.yeolmumarket.domain.auth.controller;
 
 import com.guingujig.yeolmumarket.domain.auth.dto.LoginRequest;
 import com.guingujig.yeolmumarket.domain.auth.dto.LoginResponse;
+import com.guingujig.yeolmumarket.domain.auth.dto.RefreshTokenRequest;
+import com.guingujig.yeolmumarket.domain.auth.dto.RefreshTokenResponse;
 import com.guingujig.yeolmumarket.domain.auth.dto.SignupRequest;
 import com.guingujig.yeolmumarket.domain.auth.dto.SignupResponse;
 import com.guingujig.yeolmumarket.domain.auth.service.AuthService;
@@ -33,5 +35,11 @@ public class AuthController {
   public ResponseEntity<ApiResponse<LoginResponse>> login(
       @Valid @RequestBody LoginRequest request) {
     return ResponseEntity.ok(ApiResponse.success(authService.login(request)));
+  }
+
+  @PostMapping("/refresh")
+  public ResponseEntity<ApiResponse<RefreshTokenResponse>> refreshToken(
+      @Valid @RequestBody RefreshTokenRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(authService.refreshToken(request)));
   }
 }

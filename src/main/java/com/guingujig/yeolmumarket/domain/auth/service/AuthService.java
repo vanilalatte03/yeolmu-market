@@ -2,6 +2,8 @@ package com.guingujig.yeolmumarket.domain.auth.service;
 
 import com.guingujig.yeolmumarket.domain.auth.dto.LoginRequest;
 import com.guingujig.yeolmumarket.domain.auth.dto.LoginResponse;
+import com.guingujig.yeolmumarket.domain.auth.dto.RefreshTokenRequest;
+import com.guingujig.yeolmumarket.domain.auth.dto.RefreshTokenResponse;
 import com.guingujig.yeolmumarket.domain.auth.dto.SignupRequest;
 import com.guingujig.yeolmumarket.domain.auth.dto.SignupResponse;
 import com.guingujig.yeolmumarket.domain.auth.repository.ActiveRefreshTokenRepository;
@@ -9,7 +11,9 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.security.JwtException;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
+import com.guingujig.yeolmumarket.global.security.JwtTokenProvider.JwtRefreshClaims;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -73,5 +77,50 @@ public class AuthService {
         jwtTokenProvider.getAccessTokenValiditySeconds(),
         jwtTokenProvider.getRefreshTokenValiditySeconds(),
         LoginResponse.LoginUserInfo.from(user));
+  }
+
+  /**
+   * 활성 refresh token을 검증한 뒤 새 access token과 refresh token을 발급한다.
+   *
+   * <p>재발급에 성공하면 기존 refresh token 해시를 새 refresh token 해시로 교체해 이전 refresh token 재사용을 막는다.
+   */
+  @Transactional
+  public RefreshTokenResponse refreshToken(RefreshTokenRequest request) {
+    JwtRefreshClaims claims = parseRefreshClaims(request.refreshToken());
+    String requestTokenHash = jwtTokenProvider.hashToken(request.refreshToken());
+    String activeTokenHash =
+        activeRefreshTokenRepository
+            .findHashByUserId(claims.userId())
+            .orElseThrow(() -> new BusinessException(ErrorCode.REVOKED_TOKEN));
+
+    if (!activeTokenHash.equals(requestTokenHash)) {
+      throw new BusinessException(ErrorCode.REVOKED_TOKEN);
+    }
+
+    User user =
+        userRepository
+            .findById(claims.userId())
+            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    String accessToken = jwtTokenProvider.issueAccessToken(user);
+    String refreshToken = jwtTokenProvider.issueRefreshToken(user);
+    activeRefreshTokenRepository.save(
+        user.getId(),
+        jwtTokenProvider.hashToken(refreshToken),
+        Duration.ofSeconds(jwtTokenProvider.getRefreshTokenValiditySeconds()));
+
+    return new RefreshTokenResponse(
+        "Bearer",
+        accessToken,
+        refreshToken,
+        jwtTokenProvider.getAccessTokenValiditySeconds(),
+        jwtTokenProvider.getRefreshTokenValiditySeconds());
+  }
+
+  private JwtRefreshClaims parseRefreshClaims(String refreshToken) {
+    try {
+      return jwtTokenProvider.parseRefreshToken(refreshToken);
+    } catch (JwtException exception) {
+      throw new BusinessException(exception.getErrorCode());
+    }
   }
 }

@@ -10,6 +10,7 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
@@ -119,6 +120,7 @@ public class JwtTokenProvider {
     payload.put("email", user.getEmail());
     payload.put("role", user.getRole().name());
     payload.put("tokenType", tokenType);
+    payload.put("jti", UUID.randomUUID().toString());
     payload.put("iat", now.getEpochSecond());
     payload.put("exp", now.plusSeconds(validitySeconds).getEpochSecond());
 
