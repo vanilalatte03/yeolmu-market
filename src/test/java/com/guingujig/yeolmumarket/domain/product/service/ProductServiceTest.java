@@ -1,0 +1,153 @@
+package com.guingujig.yeolmumarket.domain.product.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.guingujig.yeolmumarket.domain.product.dto.DeleteProductResponse;
+import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductRequest;
+import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductResponse;
+import com.guingujig.yeolmumarket.domain.product.entity.Product;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.user.entity.User;
+import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.global.exception.BusinessException;
+import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
+
+@SpringBootTest
+class ProductServiceTest {
+
+  private final ProductService productService;
+  private final ProductRepository productRepository;
+  private final UserRepository userRepository;
+  private final PasswordEncoder passwordEncoder;
+
+  @Autowired
+  ProductServiceTest(
+      ProductService productService,
+      ProductRepository productRepository,
+      UserRepository userRepository,
+      PasswordEncoder passwordEncoder) {
+    this.productService = productService;
+    this.productRepository = productRepository;
+    this.userRepository = userRepository;
+    this.passwordEncoder = passwordEncoder;
+  }
+
+  @BeforeEach
+  void setUp() {
+    deleteAll();
+  }
+
+  @AfterEach
+  void tearDown() {
+    deleteAll();
+  }
+
+  @Test
+  void 판매자가_자신의_상품을_수정하면_변경값을_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+
+    UpdateProductResponse response =
+        productService.updateProduct(
+            seller.getId(), product.getId(), new UpdateProductRequest("아이패드 미니 6세대", null, 430000));
+
+    assertThat(response.productId()).isEqualTo(product.getId());
+    assertThat(response.title()).isEqualTo("아이패드 미니 6세대");
+    assertThat(response.description()).isEqualTo("생활기스 조금 있습니다.");
+    assertThat(response.price()).isEqualTo(430000);
+    assertThat(response.status()).isEqualTo(ProductStatus.ON_SALE);
+    assertThat(response.updatedAt()).isNotNull();
+
+    Product updatedProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(updatedProduct.getTitle()).isEqualTo("아이패드 미니 6세대");
+    assertThat(updatedProduct.getPrice()).isEqualTo(430000);
+  }
+
+  @Test
+  void 판매자가_아닌_사용자가_상품을_수정하면_실패한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User other = saveUser("other@example.com", "다른사용자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+
+    assertThatThrownBy(
+            () ->
+                productService.updateProduct(
+                    other.getId(),
+                    product.getId(),
+                    new UpdateProductRequest("아이패드 미니 6세대", null, null)))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_ACCESS_DENIED));
+  }
+
+  @Test
+  void 수정할_값이_없으면_실패한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+
+    assertThatThrownBy(
+            () ->
+                productService.updateProduct(
+                    seller.getId(), product.getId(), new UpdateProductRequest(null, null, null)))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+  }
+
+  @Test
+  void 판매자가_자신의_상품을_삭제하면_삭제_상태로_변경한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+
+    DeleteProductResponse response = productService.deleteProduct(seller.getId(), product.getId());
+
+    assertThat(response.deleted()).isTrue();
+    Product deletedProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(deletedProduct.getStatus()).isEqualTo(ProductStatus.DELETED);
+    assertThat(deletedProduct.getDeletedAt()).isNotNull();
+  }
+
+  @Test
+  void 거래_진행_중인_상품은_삭제할_수_없다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProductWithStatus(seller, "아이패드 미니 6", 450000, ProductStatus.RESERVED);
+
+    assertThatThrownBy(() -> productService.deleteProduct(seller.getId(), product.getId()))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_HAS_ACTIVE_ORDER));
+  }
+
+  private void deleteAll() {
+    productRepository.deleteAll();
+    userRepository.deleteAll();
+  }
+
+  private User saveUser(String email, String nickname) {
+    return userRepository.save(new User(email, passwordEncoder.encode("Password123!"), nickname));
+  }
+
+  private Product saveProduct(User seller, String title, Integer price) {
+    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    return productRepository.saveAndFlush(product);
+  }
+
+  private Product saveProductWithStatus(
+      User seller, String title, Integer price, ProductStatus status) {
+    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    ReflectionTestUtils.setField(product, "status", status);
+    return productRepository.saveAndFlush(product);
+  }
+}
