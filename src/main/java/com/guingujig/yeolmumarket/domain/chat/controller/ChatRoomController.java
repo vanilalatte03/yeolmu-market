@@ -1,5 +1,6 @@
 package com.guingujig.yeolmumarket.domain.chat.controller;
 
+import com.guingujig.yeolmumarket.domain.chat.dto.ChatMessagesResponse;
 import com.guingujig.yeolmumarket.domain.chat.dto.ChatRoomListItemResponse;
 import com.guingujig.yeolmumarket.domain.chat.dto.CreateChatRoomResponse;
 import com.guingujig.yeolmumarket.domain.chat.service.ChatRoomService;
@@ -39,6 +40,18 @@ public class ChatRoomController {
       @RequestParam(defaultValue = "10") int size) {
     PageResponse<ChatRoomListItemResponse> response =
         chatRoomService.getMyChatRooms(authenticatedUser.userId(), page, size);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
+  @GetMapping("/chat-rooms/{roomId}/messages")
+  public ResponseEntity<ApiResponse<ChatMessagesResponse>> getPreviousMessages(
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
+      @PathVariable Long roomId,
+      @RequestParam(required = false) Long beforeMessageId,
+      @RequestParam(defaultValue = "30") int size) {
+    ChatMessagesResponse response =
+        chatRoomService.getPreviousMessages(
+            authenticatedUser.userId(), roomId, beforeMessageId, size);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 }

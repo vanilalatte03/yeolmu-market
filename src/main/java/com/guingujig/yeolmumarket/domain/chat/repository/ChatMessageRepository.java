@@ -1,8 +1,11 @@
 package com.guingujig.yeolmumarket.domain.chat.repository;
 
 import com.guingujig.yeolmumarket.domain.chat.entity.ChatMessage;
+import com.guingujig.yeolmumarket.domain.chat.entity.ChatRoom;
 import java.util.Collection;
 import java.util.List;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -26,4 +29,18 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
       """)
   List<ChatMessage> findLatestMessagesByChatRoomIds(
       @Param("chatRoomIds") Collection<Long> chatRoomIds);
+
+  @EntityGraph(attributePaths = {"chatRoom", "sender"})
+  @Query(
+      """
+      select message
+      from ChatMessage message
+      where message.chatRoom = :chatRoom
+      and (:beforeMessageId is null or message.id < :beforeMessageId)
+      order by message.id desc
+      """)
+  List<ChatMessage> findPreviousMessages(
+      @Param("chatRoom") ChatRoom chatRoom,
+      @Param("beforeMessageId") Long beforeMessageId,
+      Pageable pageable);
 }
