@@ -7,7 +7,6 @@ import com.guingujig.yeolmumarket.domain.chat.dto.CreateChatRoomResponse;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatRoomRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
-import com.guingujig.yeolmumarket.domain.product.entity.ProductVisibility;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
@@ -179,7 +178,7 @@ class ChatRoomServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller);
-    ReflectionTestUtils.setField(product, "visibility", ProductVisibility.HIDDEN);
+    ReflectionTestUtils.setField(product, "hidden", true);
     productRepository.saveAndFlush(product);
 
     assertThatThrownBy(() -> chatRoomService.createChatRoom(buyer.getId(), product.getId()))

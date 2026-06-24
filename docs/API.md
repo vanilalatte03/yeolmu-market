@@ -65,9 +65,7 @@ JWT 폐기와 refresh token 회전 정책은 `docs/adr/007-jwt-refresh-token-rot
 - `GET /api/search/popular-keywords`
 - `GET /api/categories`
 - `GET /api/categories/{categoryId}/products`
-- `GET /api/products/{productId}/wishes/count`
 - `GET /api/users/{userId}/reviews`
-- `GET /api/users/{userId}/rating`
 
 관리자 API는 `ADMIN` 권한이 필요하다.
 
@@ -134,7 +132,7 @@ JWT 폐기와 refresh token 회전 정책은 `docs/adr/007-jwt-refresh-token-rot
 | P0 | 인증 | 로그아웃 | `POST` | `/api/auth/logout` |
 | P0 | 인증 | 리프레시 토큰 | `POST` | `/api/auth/refresh` |
 | P0 | 유저 | 유저 정보 조회 | `GET` | `/api/users/{userId}` |
-| P0 | 유저 | 내정보 수정 | `PATCH` | `/api/users/me` |
+| P0 | 유저 | 내정보 수정 | `PUT` | `/api/users/me` |
 | P0 | 상품 | 상품 등록 | `POST` | `/api/products` |
 | P0 | 상품 | 상품 목록 조회 | `GET` | `/api/products` |
 | P0 | 상품 | 상품 상세 조회 | `GET` | `/api/products/{productId}` |
@@ -148,12 +146,11 @@ JWT 폐기와 refresh token 회전 정책은 `docs/adr/007-jwt-refresh-token-rot
 | P0 | 검색 | 인기 검색어 조회 | `GET` | `/api/search/popular-keywords` |
 | P0 | 주문 | 주문 생성 | `POST` | `/api/products/{productId}/orders` |
 | P0 | 주문 | 주문 상세 조회 | `GET` | `/api/orders/{orderId}` |
-| P0 | 주문 | 내 구매 주문 목록 | `GET` | `/api/users/me/orders` |
-| P0 | 주문 | 내 판매 주문 목록 | `GET` | `/api/users/me/sales` |
+| P0 | 유저 | 내 구매 주문 목록 | `GET` | `/api/users/me/orders` |
+| P0 | 유저 | 내 판매 주문 목록 | `GET` | `/api/users/me/sales` |
 | P0 | 주문 | 주문 취소 | `POST` | `/api/orders/{orderId}/cancel` |
 | P0 | 채팅 | 채팅방 생성 | `POST` | `/api/products/{productId}/chat-rooms` |
 | P0 | 채팅 | 내 채팅방 목록 조회 | `GET` | `/api/chat-rooms` |
-| P0 | 채팅 | 채팅방 상세 조회 | `GET` | `/api/chat-rooms/{roomId}` |
 | P0 | 채팅 | 이전 메시지 조회 | `GET` | `/api/chat-rooms/{roomId}/messages` |
 | P0 | 채팅 | 웹소켓 연결 | `WS Connect` | `/ws` |
 | P0 | 채팅 | 채팅방 메시지 구독 | `SUB` | `/sub/chat-rooms/{roomId}` |
@@ -173,20 +170,16 @@ JWT 폐기와 refresh token 회전 정책은 `docs/adr/007-jwt-refresh-token-rot
 | P1 | 찜 | 찜하기 | `POST` | `/api/products/{productId}/wishes` |
 | P1 | 찜 | 찜 취소 | `DELETE` | `/api/products/{productId}/wishes` |
 | P1 | 찜 | 내가 찜한 상품 목록 | `GET` | `/api/users/me/wishes` |
-| P1 | 찜 | 찜 여부 | `GET` | `/api/products/{productId}/wish-status` |
-| P1 | 찜 | 상품 찜 수 조회 | `GET` | `/api/products/{productId}/wishes/count` |
 | P1 | 주문 | 배송 증빙 등록 | `PATCH` | `/api/orders/{orderId}/shipping` |
 | P2 | 리뷰 | 유저 리뷰 작성 | `POST` | `/api/orders/{orderId}/reviews` |
-| P2 | 리뷰 | 유저 리뷰 수정 | `PATCH` | `/api/reviews/{reviewId}` |
-| P2 | 리뷰 | 유저 리뷰 삭제 | `DELETE` | `/api/reviews/{reviewId}` |
+| P2 | 리뷰 | 유저 리뷰 수정 | `PATCH` | `/api/orders/{orderId}/reviews/{reviewId}` |
+| P2 | 리뷰 | 유저 리뷰 삭제 | `DELETE` | `/api/orders/{orderId}/reviews/{reviewId}` |
 | P2 | 리뷰 | 특정 유저가 받은 리뷰 목록 | `GET` | `/api/users/{userId}/reviews` |
-| P2 | 리뷰 | 특정 유저의 평점 조회 | `GET` | `/api/users/{userId}/rating` |
-| P2 | 리뷰 | 내가 작성한 리뷰 | `GET` | `/api/users/me/reviews/written` |
-| P2 | 리뷰 | 내가 받은 리뷰 | `GET` | `/api/users/me/reviews/received` |
-| P2 | 환불/분쟁 | 환불 요청 거절 | `POST` | `/api/refund-requests/{refundRequestId}/reject` |
-| P2 | 환불/분쟁 | 환불요청 | `POST` | `/api/orders/{orderId}/refund-requests` |
-| P2 | 환불/분쟁 | 환불 요청 승인 | `POST` | `/api/refund-requests/{refundRequestId}/approve` |
-| P2 | 환불/분쟁 | 분쟁 종료 | `POST` | `/api/refund-requests/{refundRequestId}/resolve` |
+| P2 | 리뷰 | 내 리뷰 목록 | `GET` | `/api/users/me/reviews?status={written\|received}` |
+| P2 | 환불/분쟁 | 환불 요청 거절 | `POST` | `/api/refund/{refundId}/reject` |
+| P2 | 환불/분쟁 | 환불요청 | `POST` | `/api/orders/{orderId}/refund` |
+| P2 | 환불/분쟁 | 환불 요청 승인 | `POST` | `/api/refund/{refundId}/approve` |
+| P2 | 환불/분쟁 | 분쟁 종료 | `POST` | `/api/refund/{refundId}/resolve` |
 
 ## Enum
 
@@ -481,7 +474,8 @@ refresh token을 검증하고 새 access token을 발급한다.
 
 ## 유저 API
 
-유저 API는 공개 프로필 조회와 로그인한 사용자의 계정 정보 수정을 담당한다.
+유저 API는 공개 프로필 조회, 로그인한 사용자의 계정 정보 수정, 내 구매/판매 내역 조회를 담당한다.
+P2 리뷰와 평점 기능이 도입되면 유저 평점은 별도 평점 조회 API가 아니라 유저 정보 응답의 `averageRating`, `reviewCount`로 함께 제공한다.
 
 ### 유저 정보 조회
 
@@ -505,6 +499,8 @@ refresh token을 검증하고 새 access token을 발급한다.
   "userId": 1,
   "nickname": "열무구매자",
   "role": "USER",
+  "averageRating": 4.8,
+  "reviewCount": 25,
   "createdAt": "2026-06-22T09:30:00Z"
 }
 ```
@@ -519,7 +515,7 @@ refresh token을 검증하고 새 access token을 발급한다.
 
 로그인한 사용자의 닉네임 또는 비밀번호를 수정한다.
 
-- Method: `PATCH`
+- Method: `PUT`
 - Path: `/api/users/me`
 - 인증: 필요
 - HTTP Status: `200 OK`
@@ -557,6 +553,100 @@ refresh token을 검증하고 새 access token을 발급한다.
 | `VALIDATION_FAILED` | 400 | 수정할 값이 없거나 값 형식 오류 |
 | `UNAUTHORIZED` | 401 | 토큰 누락 |
 | `USER_NOT_FOUND` | 404 | 인증된 회원을 찾을 수 없음 |
+
+### 내 구매 주문 목록
+
+로그인한 사용자가 구매자로 참여한 주문 목록을 조회한다.
+
+- Method: `GET`
+- Path: `/api/users/me/orders`
+- 인증: 필요
+- HTTP Status: `200 OK`
+
+#### Query Parameters
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `page` | int | N | 페이지 번호 |
+| `size` | int | N | 페이지 크기 |
+| `status` | OrderStatus | N | 주문 상태 |
+
+#### Response Data
+
+```json
+{
+  "content": [
+    {
+      "orderId": 100,
+      "productId": 10,
+      "productTitle": "아이패드 미니 6세대",
+      "price": 430000,
+      "sellerNickname": "열무판매자",
+      "status": "CREATED",
+      "createdAt": "2026-06-22T09:45:00Z"
+    }
+  ],
+  "page": 0,
+  "size": 10,
+  "totalElements": 1,
+  "totalPages": 1,
+  "hasNext": false
+}
+```
+
+#### Errors
+
+| 코드 | HTTP | 발생 조건 |
+| --- | --- | --- |
+| `UNAUTHORIZED` | 401 | 토큰 누락 |
+| `INVALID_PAGINATION` | 400 | 페이지 번호 또는 크기 오류 |
+
+### 내 판매 주문 목록
+
+로그인한 사용자가 판매자로 참여한 주문 목록을 조회한다.
+
+- Method: `GET`
+- Path: `/api/users/me/sales`
+- 인증: 필요
+- HTTP Status: `200 OK`
+
+#### Query Parameters
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `page` | int | N | 페이지 번호 |
+| `size` | int | N | 페이지 크기 |
+| `status` | OrderStatus | N | 주문 상태 |
+
+#### Response Data
+
+```json
+{
+  "content": [
+    {
+      "orderId": 100,
+      "productId": 10,
+      "productTitle": "아이패드 미니 6세대",
+      "price": 430000,
+      "buyerNickname": "열무구매자",
+      "status": "CREATED",
+      "createdAt": "2026-06-22T09:45:00Z"
+    }
+  ],
+  "page": 0,
+  "size": 10,
+  "totalElements": 1,
+  "totalPages": 1,
+  "hasNext": false
+}
+```
+
+#### Errors
+
+| 코드 | HTTP | 발생 조건 |
+| --- | --- | --- |
+| `UNAUTHORIZED` | 401 | 토큰 누락 |
+| `INVALID_PAGINATION` | 400 | 페이지 번호 또는 크기 오류 |
 
 ## 상품 API
 
@@ -628,10 +718,11 @@ P1 이미지 기능을 제외한 기본 상품 기능은 P0 범위다.
 일반 사용자에게 노출 가능한 상품 목록을 조회한다.
 숨김·삭제 상품은 공개 목록과 검색에 노출되지 않으며, 숨김 상품은 관리자 전용 `GET /api/admin/products/hidden`에서만 확인한다.
 `thumbnailUrl`은 P1(상품 이미지) 도입 후 채워지며, 그 전에는 `null`이다.
+P1 찜 기능이 도입되면 상품별 찜 수와 로그인 사용자의 찜 여부를 `wishCount`, `wished`로 함께 반환한다.
 
 - Method: `GET`
 - Path: `/api/products`
-- 인증: 불필요
+- 인증: 불필요. 토큰이 있으면 `wished`는 로그인 사용자의 찜 여부, 없으면 `false`
 - HTTP Status: `200 OK`
 
 #### Query Parameters
@@ -655,6 +746,8 @@ P1 이미지 기능을 제외한 기본 상품 기능은 P0 범위다.
       "status": "ON_SALE",
       "thumbnailUrl": "https://cdn.example.com/products/10/thumbnail.jpg",
       "sellerNickname": "열무판매자",
+      "wishCount": 12,
+      "wished": true,
       "createdAt": "2026-06-22T09:30:00Z"
     }
   ],
@@ -673,7 +766,7 @@ P0에서는 `thumbnailUrl`이 `null`이다.
 | 필드 | 도입 단계 |
 | --- | --- |
 | `content[].productId`, `content[].title`, `content[].price`, `content[].status`, `content[].sellerNickname`, `content[].createdAt`, `page`, `size`, `totalElements`, `totalPages`, `hasNext` | P0 |
-| `content[].thumbnailUrl` | P1 |
+| `content[].thumbnailUrl`, `content[].wishCount`, `content[].wished` | P1 |
 
 #### Errors
 
@@ -684,11 +777,12 @@ P0에서는 `thumbnailUrl`이 `null`이다.
 
 ### 상품 상세 조회
 
-상품 상세 정보를 조회한다. P2 조회수 기능이 도입되면 상세 조회 시 조회수가 증가한다.
+상품 상세 정보를 조회한다. P1 찜 기능이 도입되면 상품 찜 수와 로그인 사용자의 찜 여부를 `wishCount`, `wished`로 함께 반환한다. P2 조회수 기능이 도입되면 상세 조회 시 조회수가 증가한다.
+P2 리뷰와 평점 기능이 도입되면 판매자 평점은 별도 평점 조회 API가 아니라 상품 상세 응답의 `seller.averageRating`으로 함께 제공한다.
 
 - Method: `GET`
 - Path: `/api/products/{productId}`
-- 인증: 불필요
+- 인증: 불필요. 토큰이 있으면 `wished`는 로그인 사용자의 찜 여부, 없으면 `false`
 - HTTP Status: `200 OK`
 
 #### Path Variables
@@ -718,6 +812,7 @@ P0에서는 `thumbnailUrl`이 `null`이다.
     }
   ],
   "wishCount": 12,
+  "wished": true,
   "viewCount": 101,
   "seller": {
     "userId": 1,
@@ -736,7 +831,7 @@ P0에서는 `thumbnailUrl`이 `null`이다.
 | 필드 | 도입 단계 |
 | --- | --- |
 | `productId`, `title`, `description`, `price`, `status`, `seller.userId`, `seller.nickname`, `createdAt`, `updatedAt` | P0 |
-| `category`, `images`, `wishCount` | P1 |
+| `category`, `images`, `wishCount`, `wished` | P1 |
 | `viewCount`, `seller.averageRating` | P2 |
 
 #### Errors
@@ -1220,8 +1315,8 @@ P0에서는 `categoryId` 검색 조건을 사용하지 않고, `thumbnailUrl`은
 
 ## 주문 API
 
-주문 API는 상품 거래 확정, 구매 내역 조회, 취소, 배송 증빙 등록을 담당한다.
-P0에서는 주문 생성, 주문 상세/목록 조회, 취소를 사용하고, 배송 증빙과 거래 완료는 P1에서 도입한다.
+주문 API는 상품 거래 확정, 주문 상세 조회, 취소, 배송 증빙 등록을 담당한다.
+P0에서는 주문 생성, 주문 상세 조회, 취소를 사용하고, 배송 증빙과 거래 완료는 P1에서 도입한다.
 동시 주문 제어는 `docs/adr/001-concurrent-order-control.md`를 따른다.
 주문/결제/배송/환불/분쟁 상태 흐름은 `docs/adr/005-mock-safe-payment-transaction-policy.md`를 따른다.
 
@@ -1338,100 +1433,6 @@ P0 응답에는 `payment`가 포함되지 않는다.
 | `UNAUTHORIZED` | 401 | 토큰 누락 |
 | `ORDER_ACCESS_DENIED` | 403 | 주문 참여자가 아닌 사용자의 조회 시도 |
 | `ORDER_NOT_FOUND` | 404 | 주문 없음 |
-
-### 내 구매 주문 목록
-
-로그인한 사용자가 구매자로 참여한 주문 목록을 조회한다.
-
-- Method: `GET`
-- Path: `/api/users/me/orders`
-- 인증: 필요
-- HTTP Status: `200 OK`
-
-#### Query Parameters
-
-| 이름 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `page` | int | N | 페이지 번호 |
-| `size` | int | N | 페이지 크기 |
-| `status` | OrderStatus | N | 주문 상태 |
-
-#### Response Data
-
-```json
-{
-  "content": [
-    {
-      "orderId": 100,
-      "productId": 10,
-      "productTitle": "아이패드 미니 6세대",
-      "price": 430000,
-      "sellerNickname": "열무판매자",
-      "status": "CREATED",
-      "createdAt": "2026-06-22T09:45:00Z"
-    }
-  ],
-  "page": 0,
-  "size": 10,
-  "totalElements": 1,
-  "totalPages": 1,
-  "hasNext": false
-}
-```
-
-#### Errors
-
-| 코드 | HTTP | 발생 조건 |
-| --- | --- | --- |
-| `UNAUTHORIZED` | 401 | 토큰 누락 |
-| `INVALID_PAGINATION` | 400 | 페이지 번호 또는 크기 오류 |
-
-### 내 판매 주문 목록
-
-로그인한 사용자가 판매자로 참여한 주문 목록을 조회한다.
-
-- Method: `GET`
-- Path: `/api/users/me/sales`
-- 인증: 필요
-- HTTP Status: `200 OK`
-
-#### Query Parameters
-
-| 이름 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `page` | int | N | 페이지 번호 |
-| `size` | int | N | 페이지 크기 |
-| `status` | OrderStatus | N | 주문 상태 |
-
-#### Response Data
-
-```json
-{
-  "content": [
-    {
-      "orderId": 100,
-      "productId": 10,
-      "productTitle": "아이패드 미니 6세대",
-      "price": 430000,
-      "buyerNickname": "열무구매자",
-      "status": "CREATED",
-      "createdAt": "2026-06-22T09:45:00Z"
-    }
-  ],
-  "page": 0,
-  "size": 10,
-  "totalElements": 1,
-  "totalPages": 1,
-  "hasNext": false
-}
-```
-
-#### Errors
-
-| 코드 | HTTP | 발생 조건 |
-| --- | --- | --- |
-| `UNAUTHORIZED` | 401 | 토큰 누락 |
-| `INVALID_PAGINATION` | 400 | 페이지 번호 또는 크기 오류 |
 
 ### 주문 취소
 
@@ -1627,51 +1628,6 @@ P0에서는 주문 생성 상태의 주문만 취소할 수 있다.
 | --- | --- | --- |
 | `UNAUTHORIZED` | 401 | 토큰 누락 |
 | `INVALID_PAGINATION` | 400 | 페이지 번호 또는 크기 오류 |
-
-### 채팅방 상세 조회
-
-채팅방 참여자가 채팅방 상세 정보를 조회한다.
-
-- Method: `GET`
-- Path: `/api/chat-rooms/{roomId}`
-- 인증: 필요
-- HTTP Status: `200 OK`
-
-#### Path Variables
-
-| 이름 | 타입 | 설명 |
-| --- | --- | --- |
-| `roomId` | Long | 채팅방 ID |
-
-#### Response Data
-
-```json
-{
-  "roomId": 300,
-  "product": {
-    "productId": 10,
-    "title": "아이패드 미니 6세대",
-    "status": "ON_SALE"
-  },
-  "buyer": {
-    "userId": 2,
-    "nickname": "열무구매자"
-  },
-  "seller": {
-    "userId": 1,
-    "nickname": "열무판매자"
-  },
-  "createdAt": "2026-06-22T09:50:00Z"
-}
-```
-
-#### Errors
-
-| 코드 | HTTP | 발생 조건 |
-| --- | --- | --- |
-| `UNAUTHORIZED` | 401 | 토큰 누락 |
-| `CHAT_ROOM_ACCESS_DENIED` | 403 | 채팅방 참여자가 아닌 사용자의 조회 시도 |
-| `CHAT_ROOM_NOT_FOUND` | 404 | 채팅방 없음 |
 
 ### 이전 메시지 조회
 
@@ -2014,7 +1970,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 결제를 취소한다.
 결제 전(`PENDING`) 취소 시 결제와 주문은 `CANCELED`가 되고 상품은 `ON_SALE`로 돌아간다.
 배송 증빙 등록 전 결제 후(`PAID`) 취소 시 결제와 주문은 `REFUNDED`로 종료하며 상품은 `ON_SALE`로 돌아간다.
-배송 증빙 등록 후에는 결제 취소가 아니라 `POST /api/orders/{orderId}/refund-requests` 환불 요청 흐름을 사용한다.
+배송 증빙 등록 후에는 결제 취소가 아니라 `POST /api/orders/{orderId}/refund` 환불 요청 흐름을 사용한다.
 모의 결제이므로 실제 환불은 하지 않고 상태만 변경한다.
 
 - Method: `POST`
@@ -2328,6 +2284,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 ## 찜 API
 
 찜 API는 P1 범위의 관심 상품 저장 기능을 담당한다.
+상품별 찜 여부와 찜 수 조회는 별도 API를 두지 않고 상품 목록/상세 조회 응답의 `wished`, `wishCount` 속성으로 제공한다.
 
 ### 찜하기
 
@@ -2444,70 +2401,10 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 | `UNAUTHORIZED` | 401 | 토큰 누락 |
 | `INVALID_PAGINATION` | 400 | 페이지 번호 또는 크기 오류 |
 
-### 찜 여부
-
-로그인한 사용자가 특정 상품을 찜했는지 조회한다.
-
-- Method: `GET`
-- Path: `/api/products/{productId}/wish-status`
-- 인증: 필요
-- HTTP Status: `200 OK`
-
-#### Path Variables
-
-| 이름 | 타입 | 설명 |
-| --- | --- | --- |
-| `productId` | Long | 상품 ID |
-
-#### Response Data
-
-```json
-{
-  "productId": 10,
-  "wished": true
-}
-```
-
-#### Errors
-
-| 코드 | HTTP | 발생 조건 |
-| --- | --- | --- |
-| `UNAUTHORIZED` | 401 | 토큰 누락 |
-| `PRODUCT_NOT_FOUND` | 404 | 상품 없음 |
-
-### 상품 찜 수 조회
-
-상품의 찜 수를 조회한다.
-
-- Method: `GET`
-- Path: `/api/products/{productId}/wishes/count`
-- 인증: 불필요
-- HTTP Status: `200 OK`
-
-#### Path Variables
-
-| 이름 | 타입 | 설명 |
-| --- | --- | --- |
-| `productId` | Long | 상품 ID |
-
-#### Response Data
-
-```json
-{
-  "productId": 10,
-  "wishCount": 12
-}
-```
-
-#### Errors
-
-| 코드 | HTTP | 발생 조건 |
-| --- | --- | --- |
-| `PRODUCT_NOT_FOUND` | 404 | 상품 없음 |
-
 ## 리뷰 API
 
-리뷰 API는 P2 범위의 거래 리뷰와 유저 평점을 담당한다.
+리뷰 API는 P2 범위의 거래 리뷰를 담당한다.
+유저 평점은 특정 유저 평점 조회 API를 따로 두지 않고 유저 정보 응답의 `averageRating`, `reviewCount`와 상품 상세 응답의 `seller.averageRating`으로 제공한다.
 거래 완료 후 주문 참여자가 상대방에게 각각 한 번씩 리뷰할 수 있는 정책은 `docs/adr/005-mock-safe-payment-transaction-policy.md`를 따른다.
 
 ### 유저 리뷰 작성
@@ -2569,7 +2466,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 리뷰 작성자가 자신의 리뷰를 수정한다.
 
 - Method: `PATCH`
-- Path: `/api/reviews/{reviewId}`
+- Path: `/api/orders/{orderId}/reviews/{reviewId}`
 - 인증: 필요
 - HTTP Status: `200 OK`
 
@@ -2577,6 +2474,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 
 | 이름 | 타입 | 설명 |
 | --- | --- | --- |
+| `orderId` | Long | 주문 ID |
 | `reviewId` | Long | 리뷰 ID |
 
 #### Request Body
@@ -2618,7 +2516,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 리뷰 작성자가 자신의 리뷰를 삭제한다.
 
 - Method: `DELETE`
-- Path: `/api/reviews/{reviewId}`
+- Path: `/api/orders/{orderId}/reviews/{reviewId}`
 - 인증: 필요
 - HTTP Status: `200 OK`
 
@@ -2626,6 +2524,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 
 | 이름 | 타입 | 설명 |
 | --- | --- | --- |
+| `orderId` | Long | 주문 ID |
 | `reviewId` | Long | 리뷰 ID |
 
 #### Response Data
@@ -2644,12 +2543,12 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 | `REVIEW_ACCESS_DENIED` | 403 | 작성자가 아닌 사용자의 삭제 시도 |
 | `REVIEW_NOT_FOUND` | 404 | 리뷰 없음 |
 
-### 내가 작성한 리뷰
+### 내 리뷰 목록
 
-로그인한 사용자가 작성한 리뷰 목록을 조회한다.
+로그인한 사용자가 작성했거나 받은 리뷰 목록을 조회한다.
 
 - Method: `GET`
-- Path: `/api/users/me/reviews/written`
+- Path: `/api/users/me/reviews`
 - 인증: 필요
 - HTTP Status: `200 OK`
 
@@ -2657,10 +2556,11 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 
 | 이름 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
+| `status` | String | Y | 조회 방향. `written`: 내가 작성한 리뷰, `received`: 내가 받은 리뷰 |
 | `page` | int | N | 페이지 번호 |
 | `size` | int | N | 페이지 크기 |
 
-#### Response Data
+#### Response Data (`status=written`)
 
 ```json
 {
@@ -2682,30 +2582,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 }
 ```
 
-#### Errors
-
-| 코드 | HTTP | 발생 조건 |
-| --- | --- | --- |
-| `UNAUTHORIZED` | 401 | 토큰 누락 |
-| `INVALID_PAGINATION` | 400 | 페이지 번호 또는 크기 오류 |
-
-### 내가 받은 리뷰
-
-로그인한 사용자가 받은 리뷰 목록을 조회한다.
-
-- Method: `GET`
-- Path: `/api/users/me/reviews/received`
-- 인증: 필요
-- HTTP Status: `200 OK`
-
-#### Query Parameters
-
-| 이름 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `page` | int | N | 페이지 번호 |
-| `size` | int | N | 페이지 크기 |
-
-#### Response Data
+#### Response Data (`status=received`)
 
 ```json
 {
@@ -2732,6 +2609,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 | 코드 | HTTP | 발생 조건 |
 | --- | --- | --- |
 | `UNAUTHORIZED` | 401 | 토큰 누락 |
+| `VALIDATION_FAILED` | 400 | `status` 누락 또는 허용하지 않는 status 값 |
 | `INVALID_PAGINATION` | 400 | 페이지 번호 또는 크기 오류 |
 
 ### 특정 유저가 받은 리뷰 목록
@@ -2784,38 +2662,6 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 | `USER_NOT_FOUND` | 404 | 회원 없음 |
 | `INVALID_PAGINATION` | 400 | 페이지 번호 또는 크기 오류 |
 
-### 특정 유저의 평점 조회
-
-특정 유저의 평균 평점과 리뷰 수를 조회한다.
-
-- Method: `GET`
-- Path: `/api/users/{userId}/rating`
-- 인증: 불필요
-- HTTP Status: `200 OK`
-
-#### Path Variables
-
-| 이름 | 타입 | 설명 |
-| --- | --- | --- |
-| `userId` | Long | 평점 조회 대상 유저 ID |
-
-#### Response Data
-
-```json
-{
-  "userId": 1,
-  "nickname": "열무판매자",
-  "averageRating": 4.8,
-  "reviewCount": 25
-}
-```
-
-#### Errors
-
-| 코드 | HTTP | 발생 조건 |
-| --- | --- | --- |
-| `USER_NOT_FOUND` | 404 | 회원 없음 |
-
 ## 환불/분쟁 API
 
 환불/분쟁 API는 P2 범위의 배송 후 환불 요청과 분쟁 종료를 담당한다.
@@ -2827,7 +2673,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 판매자가 환불 요청을 거절하고 주문을 분쟁 상태로 전환한다.
 
 - Method: `POST`
-- Path: `/api/refund-requests/{refundRequestId}/reject`
+- Path: `/api/refund/{refundId}/reject`
 - 인증: 필요
 - HTTP Status: `200 OK`
 
@@ -2835,7 +2681,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 
 | 이름 | 타입 | 설명 |
 | --- | --- | --- |
-| `refundRequestId` | Long | 환불 요청 ID |
+| `refundId` | Long | 환불 요청 ID |
 
 #### Request Body
 
@@ -2875,7 +2721,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 구매자가 배송 중인 주문에 환불 요청을 생성한다.
 
 - Method: `POST`
-- Path: `/api/orders/{orderId}/refund-requests`
+- Path: `/api/orders/{orderId}/refund`
 - 인증: 필요
 - HTTP Status: `201 Created`
 
@@ -2926,7 +2772,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 환불 요청이 승인되면 상품은 별도 반품 확인 없이 자동으로 판매 중 상태가 된다.
 
 - Method: `POST`
-- Path: `/api/refund-requests/{refundRequestId}/approve`
+- Path: `/api/refund/{refundId}/approve`
 - 인증: 필요
 - HTTP Status: `200 OK`
 
@@ -2934,7 +2780,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 
 | 이름 | 타입 | 설명 |
 | --- | --- | --- |
-| `refundRequestId` | Long | 환불 요청 ID |
+| `refundId` | Long | 환불 요청 ID |
 
 #### Request Body
 
@@ -2968,7 +2814,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 구매자 환불 방향으로 종료하면 상품은 별도 반품 확인 없이 자동으로 판매 중 상태가 된다.
 
 - Method: `POST`
-- Path: `/api/refund-requests/{refundRequestId}/resolve`
+- Path: `/api/refund/{refundId}/resolve`
 - 인증: 필요
 - HTTP Status: `200 OK`
 
@@ -2976,7 +2822,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 
 | 이름 | 타입 | 설명 |
 | --- | --- | --- |
-| `refundRequestId` | Long | 환불 요청 ID |
+| `refundId` | Long | 환불 요청 ID |
 
 #### Request Body
 

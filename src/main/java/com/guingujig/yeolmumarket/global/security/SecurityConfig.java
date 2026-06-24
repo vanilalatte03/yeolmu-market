@@ -43,9 +43,7 @@ public class SecurityConfig {
                         "/api/search/popular-keywords",
                         "/api/categories",
                         "/api/categories/*/products",
-                        "/api/products/*/wishes/count",
-                        "/api/users/*/reviews",
-                        "/api/users/*/rating")
+                        "/api/users/*/reviews")
                     .permitAll()
                     .requestMatchers("/api/admin/**")
                     .hasRole("ADMIN")
