@@ -7,6 +7,7 @@ import com.guingujig.yeolmumarket.domain.auth.dto.RefreshTokenResponse;
 import com.guingujig.yeolmumarket.domain.auth.dto.SignupRequest;
 import com.guingujig.yeolmumarket.domain.auth.dto.SignupResponse;
 import com.guingujig.yeolmumarket.domain.auth.repository.ActiveRefreshTokenRepository;
+import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
@@ -28,6 +29,7 @@ public class AuthService {
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
   private final ActiveRefreshTokenRepository activeRefreshTokenRepository;
+  private final RevokedAccessTokenRepository revokedAccessTokenRepository;
 
   /**
    * 이메일 중복을 검증한 뒤 신규 회원을 생성한다.
@@ -114,6 +116,13 @@ public class AuthService {
         refreshToken,
         jwtTokenProvider.getAccessTokenValiditySeconds(),
         jwtTokenProvider.getRefreshTokenValiditySeconds());
+  }
+
+  public void logout(Long userId, String accessToken) {
+    Duration remaining = jwtTokenProvider.getAccessTokenRemainingTtl(accessToken);
+    String tokenHash = jwtTokenProvider.hashToken(accessToken);
+    revokedAccessTokenRepository.add(tokenHash, remaining);
+    activeRefreshTokenRepository.deleteByUserId(userId);
   }
 
   private JwtRefreshClaims parseRefreshClaims(String refreshToken) {
