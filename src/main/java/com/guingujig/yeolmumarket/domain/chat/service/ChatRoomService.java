@@ -5,7 +5,6 @@ import com.guingujig.yeolmumarket.domain.chat.entity.ChatRoom;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatRoomRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
-import com.guingujig.yeolmumarket.domain.product.entity.ProductVisibility;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
@@ -69,6 +68,6 @@ public class ChatRoomService {
   private boolean isCreatableChatProduct(Product product) {
     return product.getDeletedAt() == null
         && product.getStatus() != ProductStatus.DELETED
-        && product.getVisibility() == ProductVisibility.VISIBLE;
+        && !product.isHidden();
   }
 }
