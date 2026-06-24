@@ -8,7 +8,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
-import com.guingujig.yeolmumarket.domain.product.entity.ProductVisibility;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
@@ -84,7 +83,7 @@ class ProductControllerTest {
     assertThat(product.getDescription()).isEqualTo("생활기스 조금 있습니다.");
     assertThat(product.getPrice()).isEqualTo(450000);
     assertThat(product.getStatus()).isEqualTo(ProductStatus.ON_SALE);
-    assertThat(product.getVisibility()).isEqualTo(ProductVisibility.VISIBLE);
+    assertThat(product.isHidden()).isFalse();
     assertThat(product.getCategory()).isNull();
   }
 
