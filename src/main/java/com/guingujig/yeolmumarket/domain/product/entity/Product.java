@@ -52,9 +52,8 @@ public class Product extends BaseTimeEntity {
   @Column(nullable = false, length = 20)
   private ProductStatus status;
 
-  @Enumerated(EnumType.STRING)
-  @Column(nullable = false, length = 20)
-  private ProductVisibility visibility;
+  @Column(nullable = false)
+  private boolean hidden;
 
   @Version
   @Column(nullable = false)
@@ -71,11 +70,25 @@ public class Product extends BaseTimeEntity {
   public static Product create(User seller, String title, String description, Integer price) {
     Product product = new Product();
     product.seller = Objects.requireNonNull(seller, "seller는 필수입니다.");
-    product.title = title;
-    product.description = description;
-    product.price = price;
+    product.title = requireText(title, "상품명은 필수입니다.");
+    product.description = requireText(description, "상품 설명은 필수입니다.");
+    product.price = requirePositive(price);
     product.status = ProductStatus.ON_SALE;
-    product.visibility = ProductVisibility.VISIBLE;
+    product.hidden = false;
     return product;
+  }
+
+  private static String requireText(String value, String message) {
+    if (value == null || value.isBlank()) {
+      throw new IllegalArgumentException(message);
+    }
+    return value;
+  }
+
+  private static Integer requirePositive(Integer price) {
+    if (price == null || price <= 0) {
+      throw new IllegalArgumentException("상품 가격은 0보다 커야 합니다.");
+    }
+    return price;
   }
 }

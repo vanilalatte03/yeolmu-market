@@ -32,9 +32,11 @@ public class ProductImage {
   @JoinColumn(name = "product_id", nullable = false)
   private Product product;
 
-  @Column(name = "image_url", nullable = false, columnDefinition = "TEXT")
-  private String imageUrl;
+  @Column(nullable = false, columnDefinition = "TEXT")
+  private String url;
 
+  // 상품당 대표 이미지는 1개만 허용한다. 단, 단순 UNIQUE(product_id, is_thumbnail)는
+  // 일반 이미지(false)까지 1개로 제한하므로 서비스 또는 DB 제약 설계에서 별도로 보장한다.
   @Column(name = "is_thumbnail", nullable = false, columnDefinition = "BOOLEAN DEFAULT FALSE")
   private boolean thumbnail = false;
 
