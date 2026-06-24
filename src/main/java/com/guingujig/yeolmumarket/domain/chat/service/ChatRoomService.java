@@ -1,7 +1,10 @@
 package com.guingujig.yeolmumarket.domain.chat.service;
 
+import com.guingujig.yeolmumarket.domain.chat.dto.ChatRoomListItemResponse;
 import com.guingujig.yeolmumarket.domain.chat.dto.CreateChatRoomResponse;
+import com.guingujig.yeolmumarket.domain.chat.entity.ChatMessage;
 import com.guingujig.yeolmumarket.domain.chat.entity.ChatRoom;
+import com.guingujig.yeolmumarket.domain.chat.repository.ChatMessageRepository;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatRoomRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
@@ -10,15 +13,25 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.response.PageResponse;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
 public class ChatRoomService {
 
+  private static final int MAX_PAGE_SIZE = 100;
+
   private final ChatRoomRepository chatRoomRepository;
+  private final ChatMessageRepository chatMessageRepository;
   private final ProductRepository productRepository;
   private final UserRepository userRepository;
 
@@ -49,6 +62,26 @@ public class ChatRoomService {
     return CreateChatRoomResponse.from(findOrCreateChatRoom(product, buyer, seller));
   }
 
+  /**
+   * 로그인 사용자가 구매자 또는 판매자로 참여한 채팅방 목록을 최신 대화 기준으로 조회한다.
+   *
+   * <p>메시지가 아직 없는 채팅방도 포함하며, 메시지 요약 필드는 {@code null}로 반환한다.
+   */
+  @Transactional(readOnly = true)
+  public PageResponse<ChatRoomListItemResponse> getMyChatRooms(Long userId, int page, int size) {
+    validatePagination(page, size);
+
+    Page<ChatRoom> chatRooms =
+        chatRoomRepository.findParticipatingChatRooms(userId, PageRequest.of(page, size));
+    Map<Long, ChatMessage> latestMessages = getLatestMessages(chatRooms);
+    Page<ChatRoomListItemResponse> response =
+        chatRooms.map(
+            chatRoom ->
+                ChatRoomListItemResponse.of(
+                    chatRoom, userId, latestMessages.get(chatRoom.getId())));
+    return PageResponse.from(response);
+  }
+
   private ChatRoom findOrCreateChatRoom(Product product, User buyer, User seller) {
     return chatRoomRepository
         .findByProductAndBuyerAndSeller(product, buyer, seller)
@@ -69,5 +102,20 @@ public class ChatRoomService {
     return product.getDeletedAt() == null
         && product.getStatus() != ProductStatus.DELETED
         && !product.isHidden();
+  }
+
+  private void validatePagination(int page, int size) {
+    if (page < 0 || size <= 0 || size > MAX_PAGE_SIZE) {
+      throw new BusinessException(ErrorCode.INVALID_PAGINATION);
+    }
+  }
+
+  private Map<Long, ChatMessage> getLatestMessages(Page<ChatRoom> chatRooms) {
+    var chatRoomIds = chatRooms.stream().map(ChatRoom::getId).toList();
+    if (chatRoomIds.isEmpty()) {
+      return Map.of();
+    }
+    return chatMessageRepository.findLatestMessagesByChatRoomIds(chatRoomIds).stream()
+        .collect(Collectors.toMap(message -> message.getChatRoom().getId(), Function.identity()));
   }
 }
