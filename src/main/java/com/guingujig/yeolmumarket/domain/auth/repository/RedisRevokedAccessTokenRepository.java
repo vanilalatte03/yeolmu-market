@@ -16,6 +16,9 @@ public class RedisRevokedAccessTokenRepository implements RevokedAccessTokenRepo
 
   @Override
   public void add(String tokenHash, Duration ttl) {
+    if (ttl.isZero() || ttl.isNegative()) {
+      return;
+    }
     stringRedisTemplate.opsForValue().set(key(tokenHash), MARKER, ttl);
   }
 

@@ -78,7 +78,10 @@ public class JwtTokenProvider {
       throw new JwtException(ErrorCode.INVALID_TOKEN, "access token이 아닙니다.");
     }
     long remaining = claims.expiresAtEpochSeconds() - Instant.now().getEpochSecond();
-    return Duration.ofSeconds(Math.max(0, remaining));
+    if (remaining <= 0) {
+      throw new JwtException(ErrorCode.EXPIRED_TOKEN, "JWT가 만료되었습니다.");
+    }
+    return Duration.ofSeconds(remaining);
   }
 
   public long getAccessTokenValiditySeconds() {

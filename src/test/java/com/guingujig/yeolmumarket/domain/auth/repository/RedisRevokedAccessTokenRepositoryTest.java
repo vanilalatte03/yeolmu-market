@@ -52,4 +52,18 @@ class RedisRevokedAccessTokenRepositoryTest {
 
     assertThat(repository.exists(HASH)).isFalse();
   }
+
+  @Test
+  void TTL이_0이면_Redis에_저장하지_않는다() {
+    repository.add(HASH, Duration.ZERO);
+
+    verify(stringRedisTemplate, org.mockito.Mockito.never()).opsForValue();
+  }
+
+  @Test
+  void TTL이_음수이면_Redis에_저장하지_않는다() {
+    repository.add(HASH, Duration.ofSeconds(-1));
+
+    verify(stringRedisTemplate, org.mockito.Mockito.never()).opsForValue();
+  }
 }
