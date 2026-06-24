@@ -10,6 +10,7 @@
 | 빌드 | `./gradlew build` | `.\gradlew.bat build` |
 | 실행 | `./gradlew bootRun` | `.\gradlew.bat bootRun` |
 | 실행 전제 | 로컬 MySQL/datasource 및 Redis 설정 필요 | 로컬 MySQL/datasource 및 Redis 설정 필요 |
+| 로컬 인프라 | `cp .env.example .env && docker compose up -d mysql redis` | `Copy-Item .env.example .env; docker compose up -d mysql redis` |
 | 테스트 | `./gradlew test` | `.\gradlew.bat test` |
 | 단일 테스트 | `./gradlew test --tests "패키지.클래스명"` | `.\gradlew.bat test --tests "패키지.클래스명"` |
 | 포맷 검사 | `./gradlew spotlessCheck` | `.\gradlew.bat spotlessCheck` |
@@ -18,6 +19,7 @@
 ## 스택
 
 - Java 21, Spring Boot 4.1.0, Gradle
+- 보안/검증: Spring Security + Bean Validation
 - DB: MySQL + Spring Data JPA (테스트는 H2)
 - 캐시/검색 집계: Redis + Spring Data Redis (`spring-boot-starter-data-redis`)
 - 웹: Spring MVC (`spring-boot-starter-webmvc`)
@@ -80,7 +82,7 @@ infra   - 외부 연동 (필요 시)
 > 규칙을 추상적으로 적지 말고, 틀린 실제 코드와 맞는 코드를 짧은 before/after 예시로 박는다.
 > 관리 담당자 1명을 정하고, 나머지는 "에이전트가 또 이거 틀렸어요"만 공유한다.
 
-- Windows PowerShell에서 한글/UTF-8 파일을 읽을 때는 콘솔 인코딩을 UTF-8로 맞추고 `Get-Content -Encoding UTF8`로 확인한다.
+- PowerShell 명령 앞에 `chcp`/`[Console]::...` 인코딩 설정을 붙이지 않는다. 파일 확인은 `Get-Content -Encoding UTF8`로 한다.
 - Javadoc은 "왜"가 필요한 곳에만 단다(public Service 메서드·도메인 규칙·복잡한 분기). getter/자명한 코드엔 달지 않는다. 기준은 `docs/CONVENTIONS.md`의 Javadoc 섹션.
 - Spring Boot 4를 쓴다. 코덱스가 SB3 학습데이터 기준으로 옛 starter/import를 생성하기 쉬우니 주의:
   - 의존성 ❌ `spring-boot-starter-web` / 단일 `spring-boot-starter-test`

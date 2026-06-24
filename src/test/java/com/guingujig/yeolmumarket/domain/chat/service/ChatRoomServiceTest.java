@@ -171,8 +171,9 @@ class ChatRoomServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller);
+    LocalDateTime deletedAt = LocalDateTime.of(2026, 6, 24, 10, 0);
     ReflectionTestUtils.setField(product, "status", ProductStatus.DELETED);
-    ReflectionTestUtils.setField(product, "deletedAt", LocalDateTime.now());
+    ReflectionTestUtils.setField(product, "deletedAt", deletedAt);
     productRepository.saveAndFlush(product);
 
     assertThatThrownBy(() -> chatRoomService.createChatRoom(buyer.getId(), product.getId()))
