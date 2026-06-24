@@ -15,6 +15,7 @@ public enum ErrorCode {
   UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
   INVALID_TOKEN(HttpStatus.UNAUTHORIZED, "잘못된 JWT입니다."),
   EXPIRED_TOKEN(HttpStatus.UNAUTHORIZED, "만료된 JWT입니다."),
+  REVOKED_TOKEN(HttpStatus.UNAUTHORIZED, "폐기된 JWT입니다."),
   FORBIDDEN(HttpStatus.FORBIDDEN, "접근 권한이 없습니다."),
   RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "요청한 리소스를 찾을 수 없습니다."),
   METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "지원하지 않는 HTTP method입니다."),

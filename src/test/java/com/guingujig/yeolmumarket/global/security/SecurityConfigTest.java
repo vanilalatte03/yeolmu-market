@@ -63,6 +63,22 @@ class SecurityConfigTest {
   }
 
   @Test
+  void 리프레시_API는_인증_없이_호출할_수_있다() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "refreshToken": ""
+                    }
+                    """))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
   void 보호_API는_JWT가_없으면_401_UNAUTHORIZED로_응답한다() throws Exception {
     mockMvc
         .perform(get("/test/security/me"))
@@ -108,6 +124,43 @@ class SecurityConfigTest {
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("EXPIRED_TOKEN"));
+  }
+
+  @Test
+  void 리프레시_API는_만료된_refresh_token이면_401_EXPIRED_TOKEN으로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String expiredRefreshToken = jwtTokenProvider.issueExpiredRefreshToken(user);
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "refreshToken": "%s"
+                    }
+                    """
+                        .formatted(expiredRefreshToken)))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("EXPIRED_TOKEN"));
+  }
+
+  @Test
+  void 보호_API는_refresh_token으로_인증할_수_없다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String refreshToken = "Bearer " + jwtTokenProvider.issueRefreshToken(user);
+
+    mockMvc
+        .perform(get("/test/security/me").header(HttpHeaders.AUTHORIZATION, refreshToken))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
   }
 
   @Test
