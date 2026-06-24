@@ -3,6 +3,7 @@ package com.guingujig.yeolmumarket.domain.chat.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.guingujig.yeolmumarket.domain.chat.dto.ChatMessagesResponse;
 import com.guingujig.yeolmumarket.domain.chat.dto.ChatRoomListItemResponse;
 import com.guingujig.yeolmumarket.domain.chat.dto.CreateChatRoomResponse;
 import com.guingujig.yeolmumarket.domain.chat.entity.ChatMessage;
@@ -278,6 +279,114 @@ class ChatRoomServiceTest {
     ChatRoomListItemResponse item = response.content().getFirst();
     assertThat(item.lastMessage()).isEqualTo("네 가능합니다.");
     assertThat(item.lastMessageAt()).isNotNull();
+  }
+
+  @Test
+  void 참여자는_이전_메시지를_최신순으로_조회한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Long roomId = chatRoomService.createChatRoom(buyer.getId(), product.getId()).roomId();
+    ChatRoom chatRoom = chatRoomRepository.findById(roomId).orElseThrow();
+    chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, buyer, "첫번째 메시지"));
+    chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, seller, "두번째 메시지"));
+
+    ChatMessagesResponse response =
+        chatRoomService.getPreviousMessages(buyer.getId(), roomId, null, 30);
+
+    assertThat(response.messages()).hasSize(2);
+    assertThat(response.messages())
+        .extracting(message -> message.content())
+        .containsExactly("두번째 메시지", "첫번째 메시지");
+    assertThat(response.messages().getFirst().roomId()).isEqualTo(roomId);
+    assertThat(response.messages().getFirst().senderId()).isEqualTo(seller.getId());
+    assertThat(response.messages().getFirst().senderNickname()).isEqualTo("열무판매자");
+    assertThat(response.messages().getFirst().createdAt()).isNotNull();
+    assertThat(response.hasNext()).isFalse();
+  }
+
+  @Test
+  void 커서_이전_메시지를_조회하고_추가_존재_여부를_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Long roomId = chatRoomService.createChatRoom(buyer.getId(), product.getId()).roomId();
+    ChatRoom chatRoom = chatRoomRepository.findById(roomId).orElseThrow();
+    chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, buyer, "첫번째 메시지"));
+    ChatMessage secondMessage =
+        chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, seller, "두번째 메시지"));
+    ChatMessage thirdMessage =
+        chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, buyer, "세번째 메시지"));
+
+    ChatMessagesResponse response =
+        chatRoomService.getPreviousMessages(buyer.getId(), roomId, thirdMessage.getId(), 1);
+
+    assertThat(response.messages()).hasSize(1);
+    assertThat(response.messages().getFirst().messageId()).isEqualTo(secondMessage.getId());
+    assertThat(response.messages().getFirst().content()).isEqualTo("두번째 메시지");
+    assertThat(response.hasNext()).isTrue();
+  }
+
+  @Test
+  void 메시지가_없는_채팅방은_빈_목록을_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Long roomId = chatRoomService.createChatRoom(buyer.getId(), product.getId()).roomId();
+
+    ChatMessagesResponse response =
+        chatRoomService.getPreviousMessages(seller.getId(), roomId, null, 30);
+
+    assertThat(response.messages()).isEmpty();
+    assertThat(response.hasNext()).isFalse();
+  }
+
+  @Test
+  void 없는_채팅방의_이전_메시지를_조회하면_실패한다() {
+    User user = saveUser("user@example.com", "열무유저");
+
+    assertThatThrownBy(() -> chatRoomService.getPreviousMessages(user.getId(), 999L, null, 30))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND));
+  }
+
+  @Test
+  void 참여자가_아니면_이전_메시지_조회에_실패한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User otherUser = saveUser("other@example.com", "열무구경꾼");
+    Product product = saveProduct(seller);
+    Long roomId = chatRoomService.createChatRoom(buyer.getId(), product.getId()).roomId();
+
+    assertThatThrownBy(
+            () -> chatRoomService.getPreviousMessages(otherUser.getId(), roomId, null, 30))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.CHAT_ROOM_ACCESS_DENIED));
+  }
+
+  @Test
+  void 잘못된_메시지_조회조건이면_실패한다() {
+    User user = saveUser("user@example.com", "열무유저");
+
+    assertThatThrownBy(() -> chatRoomService.getPreviousMessages(user.getId(), 1L, null, 0))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_PAGINATION));
+    assertThatThrownBy(() -> chatRoomService.getPreviousMessages(user.getId(), 1L, null, 101))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_PAGINATION));
+    assertThatThrownBy(() -> chatRoomService.getPreviousMessages(user.getId(), 1L, 0L, 30))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_PAGINATION));
   }
 
   @Test

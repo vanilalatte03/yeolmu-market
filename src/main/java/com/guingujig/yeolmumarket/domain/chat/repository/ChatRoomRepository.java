@@ -16,6 +16,9 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
   @EntityGraph(attributePaths = {"product", "buyer", "seller"})
   Optional<ChatRoom> findByProductAndBuyerAndSeller(Product product, User buyer, User seller);
 
+  @EntityGraph(attributePaths = {"buyer", "seller"})
+  Optional<ChatRoom> findWithParticipantsById(Long id);
+
   @EntityGraph(attributePaths = {"product", "buyer", "seller"})
   @Query(
       """
