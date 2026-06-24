@@ -1,6 +1,6 @@
 # ADR-003: 상품 거래 상태와 노출 상태 분리
 
-- 상태: 채택됨
+- 상태: 대체됨 (ADR-006)
 - 날짜: 2026-06-22
 - 관련: `docs/PRD.md` (7.2 상품, 8.1 상품 상태), `docs/API.md` (ProductStatus, ProductVisibility, 관리자 상품 숨김), `docs/ERD.md` (product)
 

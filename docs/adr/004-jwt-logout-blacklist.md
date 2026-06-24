@@ -1,6 +1,6 @@
 # ADR-004: Redis 기반 JWT 로그아웃 블랙리스트
 
-- 상태: 채택됨
+- 상태: 대체됨 (ADR-007)
 - 날짜: 2026-06-23
 - 관련: `docs/PRD.md` (7.1 회원), `docs/API.md` (인증 API), `docs/ERD.md` (Redis 데이터 제외)
 
