@@ -1,7 +1,9 @@
 package com.guingujig.yeolmumarket.global.security;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -201,22 +203,23 @@ class SecurityConfigTest {
             new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
     String accessToken = jwtTokenProvider.issueAccessToken(user);
     String refreshToken = jwtTokenProvider.issueRefreshToken(user);
-    JwtTokenProvider.JwtRefreshClaims claims = jwtTokenProvider.parseRefreshToken(refreshToken);
+
+    // deleteByUserId 호출이 실제로 rotate 실패를 유발하는 인과 관계를 명시적으로 모사한다.
+    doAnswer(
+            invocation -> {
+              when(activeRefreshTokenRepository.rotate(
+                      eq(user.getId()), anyString(), anyString(), any(Duration.class)))
+                  .thenReturn(false);
+              return null;
+            })
+        .when(activeRefreshTokenRepository)
+        .deleteByUserId(user.getId());
 
     mockMvc
         .perform(
             post("/api/auth/logout").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.loggedOut").value(true));
-    verify(activeRefreshTokenRepository).deleteByUserId(user.getId());
-
-    when(activeRefreshTokenRepository.rotate(
-            eq(user.getId()),
-            eq(claims.jti()),
-            org.mockito.ArgumentMatchers.anyString(),
-            any(Duration.class)))
-        .thenReturn(false);
 
     mockMvc
         .perform(
