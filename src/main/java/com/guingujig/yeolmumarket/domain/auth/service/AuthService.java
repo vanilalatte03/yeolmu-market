@@ -124,10 +124,13 @@ public class AuthService {
    * <p>access token을 먼저 폐기하면 이후 실패 시 같은 토큰으로 재시도할 수 없으므로, refresh token 삭제를 먼저 수행한다.
    */
   public void logout(Long userId, String accessToken) {
-    Duration remaining = jwtTokenProvider.getAccessTokenRemainingTtl(accessToken);
-    String tokenHash = jwtTokenProvider.hashToken(accessToken);
     activeRefreshTokenRepository.deleteByUserId(userId);
-    revokedAccessTokenRepository.add(tokenHash, remaining);
+    try {
+      Duration remaining = jwtTokenProvider.getAccessTokenRemainingTtl(accessToken);
+      revokedAccessTokenRepository.add(jwtTokenProvider.hashToken(accessToken), remaining);
+    } catch (JwtException ignored) {
+      // 필터 통과 직후 만료 경계에 걸린 경우: 이미 만료된 토큰은 블랙리스트 등록 불필요
+    }
   }
 
   private JwtRefreshClaims parseRefreshClaims(String refreshToken) {
