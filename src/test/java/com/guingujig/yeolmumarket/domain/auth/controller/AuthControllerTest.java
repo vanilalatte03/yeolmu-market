@@ -3,7 +3,6 @@ package com.guingujig.yeolmumarket.domain.auth.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesPattern;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
@@ -414,36 +413,6 @@ class AuthControllerTest {
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
         .andExpect(jsonPath("$.errors[0]", containsString(": ")));
-  }
-
-  @Test
-  void 로그아웃_후_refresh_token으로_재발급하면_401_REVOKED_TOKEN으로_응답한다() throws Exception {
-    User user =
-        userRepository.save(
-            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
-    String refreshToken = jwtTokenProvider.issueRefreshToken(user);
-    JwtRefreshClaims claims = jwtTokenProvider.parseRefreshToken(refreshToken);
-    when(activeRefreshTokenRepository.rotate(
-            eq(user.getId()),
-            eq(claims.jti()),
-            org.mockito.ArgumentMatchers.anyString(),
-            any(Duration.class)))
-        .thenReturn(false);
-
-    mockMvc
-        .perform(
-            post("/api/auth/refresh")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-                    {
-                      "refreshToken": "%s"
-                    }
-                    """
-                        .formatted(refreshToken)))
-        .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.success").value(false))
-        .andExpect(jsonPath("$.code").value("REVOKED_TOKEN"));
   }
 
   private String extractRefreshToken(MvcResult result) throws java.io.UnsupportedEncodingException {

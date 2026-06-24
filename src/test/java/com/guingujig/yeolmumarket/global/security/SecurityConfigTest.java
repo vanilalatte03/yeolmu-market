@@ -195,6 +195,46 @@ class SecurityConfigTest {
   }
 
   @Test
+  void 로그아웃_후_refresh_token으로_재발급하면_401_REVOKED_TOKEN으로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String accessToken = jwtTokenProvider.issueAccessToken(user);
+    String refreshToken = jwtTokenProvider.issueRefreshToken(user);
+    JwtTokenProvider.JwtRefreshClaims claims = jwtTokenProvider.parseRefreshToken(refreshToken);
+
+    mockMvc
+        .perform(
+            post("/api/auth/logout").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.loggedOut").value(true));
+    verify(activeRefreshTokenRepository).deleteByUserId(user.getId());
+
+    when(activeRefreshTokenRepository.rotate(
+            eq(user.getId()),
+            eq(claims.jti()),
+            org.mockito.ArgumentMatchers.anyString(),
+            any(Duration.class)))
+        .thenReturn(false);
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "refreshToken": "%s"
+                    }
+                    """
+                        .formatted(refreshToken)))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REVOKED_TOKEN"));
+  }
+
+  @Test
   void 보호_API는_블랙리스트에_등록된_JWT면_401_REVOKED_TOKEN으로_응답한다() throws Exception {
     User user =
         userRepository.save(
