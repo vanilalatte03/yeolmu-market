@@ -1674,6 +1674,7 @@ P0에서는 주문 생성 상태의 주문만 취소할 수 있다.
 | 코드 | HTTP | 발생 조건 |
 | --- | --- | --- |
 | `UNAUTHORIZED` | 401 | 토큰 누락 |
+| `INVALID_PAGINATION` | 400 | `size` 또는 `beforeMessageId` 오류 |
 | `CHAT_ROOM_ACCESS_DENIED` | 403 | 채팅방 참여자가 아닌 사용자의 조회 시도 |
 | `CHAT_ROOM_NOT_FOUND` | 404 | 채팅방 없음 |
 
