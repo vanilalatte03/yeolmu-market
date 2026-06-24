@@ -1,6 +1,7 @@
-package com.guingujig.yeolmumarket.domain.payment.entity;
+package com.guingujig.yeolmumarket.domain.refund.entity;
 
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
+import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.global.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -11,6 +12,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
@@ -22,13 +24,11 @@ import lombok.NoArgsConstructor;
 @Getter
 @Entity
 @Table(
-    name = "payment",
-    uniqueConstraints = {
-      @UniqueConstraint(name = "uk_payment_order", columnNames = "order_id"),
-      @UniqueConstraint(name = "uk_payment_idempotency_key", columnNames = "idempotency_key")
-    })
+    name = "refund_request",
+    uniqueConstraints =
+        @UniqueConstraint(name = "uk_refund_request_order", columnNames = "order_id"))
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Payment extends BaseTimeEntity {
+public class RefundRequest extends BaseTimeEntity {
 
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -38,28 +38,29 @@ public class Payment extends BaseTimeEntity {
   @JoinColumn(name = "order_id", nullable = false)
   private Order order;
 
-  @Column(nullable = false, length = 30)
-  private String method;
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "requester_id", nullable = false)
+  private User requester;
+
+  @Column(nullable = false, length = 255)
+  private String reason;
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 20)
-  private PaymentStatus status;
+  private RefundRequestStatus status;
 
-  @Column(nullable = false)
-  private Integer amount;
+  @Column(name = "seller_response", length = 255)
+  private String sellerResponse;
 
-  @Column(name = "idempotency_key", nullable = false, length = 100)
-  private String idempotencyKey;
+  @Column(name = "requested_at", nullable = false)
+  private LocalDateTime requestedAt;
 
-  @Column(name = "paid_at")
-  private LocalDateTime paidAt;
+  @Column(name = "approved_at")
+  private LocalDateTime approvedAt;
 
-  @Column(name = "failed_at")
-  private LocalDateTime failedAt;
+  @Column(name = "rejected_at")
+  private LocalDateTime rejectedAt;
 
-  @Column(name = "canceled_at")
-  private LocalDateTime canceledAt;
-
-  @Column(name = "cancel_reason", length = 255)
-  private String cancelReason;
+  @Column(name = "resolved_at")
+  private LocalDateTime resolvedAt;
 }
