@@ -3,20 +3,28 @@ package com.guingujig.yeolmumarket.domain.auth.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.guingujig.yeolmumarket.domain.auth.repository.ActiveRefreshTokenRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.entity.UserRole;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
+import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
@@ -28,16 +36,20 @@ class AuthControllerTest {
   private final WebApplicationContext context;
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
+  private final JwtTokenProvider jwtTokenProvider;
+  @MockitoBean private ActiveRefreshTokenRepository activeRefreshTokenRepository;
   private MockMvc mockMvc;
 
   @Autowired
   AuthControllerTest(
       WebApplicationContext context,
       UserRepository userRepository,
-      PasswordEncoder passwordEncoder) {
+      PasswordEncoder passwordEncoder,
+      JwtTokenProvider jwtTokenProvider) {
     this.context = context;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
+    this.jwtTokenProvider = jwtTokenProvider;
   }
 
   @BeforeEach
@@ -124,27 +136,39 @@ class AuthControllerTest {
         userRepository.save(
             new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
 
-    mockMvc
-        .perform(
-            post("/api/auth/login")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
+    MvcResult result =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
                     {
                       "email": "customer@example.com",
                       "password": "Password123!"
                     }
                     """))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.code").value("SUCCESS"))
-        .andExpect(jsonPath("$.data.tokenType").value("Bearer"))
-        .andExpect(jsonPath("$.data.accessToken", matchesPattern("[^.]+\\.[^.]+\\.[^.]+")))
-        .andExpect(jsonPath("$.data.expiresIn").value(3600))
-        .andExpect(jsonPath("$.data.user.userId").value(user.getId()))
-        .andExpect(jsonPath("$.data.user.email").value("customer@example.com"))
-        .andExpect(jsonPath("$.data.user.nickname").value("열무구매자"))
-        .andExpect(jsonPath("$.data.user.role").value("USER"));
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.code").value("SUCCESS"))
+            .andExpect(jsonPath("$.data.tokenType").value("Bearer"))
+            .andExpect(jsonPath("$.data.accessToken", matchesPattern("[^.]+\\.[^.]+\\.[^.]+")))
+            .andExpect(jsonPath("$.data.refreshToken", matchesPattern("[^.]+\\.[^.]+\\.[^.]+")))
+            .andExpect(jsonPath("$.data.expiresIn").value(3600))
+            .andExpect(jsonPath("$.data.refreshExpiresIn").value(1209600))
+            .andExpect(jsonPath("$.data.user.userId").value(user.getId()))
+            .andExpect(jsonPath("$.data.user.email").value("customer@example.com"))
+            .andExpect(jsonPath("$.data.user.nickname").value("열무구매자"))
+            .andExpect(jsonPath("$.data.user.role").value("USER"))
+            .andReturn();
+
+    String responseBody = result.getResponse().getContentAsString();
+    String refreshToken = responseBody.replaceAll("(?s).*\"refreshToken\":\"([^\"]+)\".*", "$1");
+    ArgumentCaptor<String> tokenHashCaptor = ArgumentCaptor.forClass(String.class);
+    verify(activeRefreshTokenRepository)
+        .save(eq(user.getId()), tokenHashCaptor.capture(), eq(Duration.ofSeconds(1209600)));
+    assertThat(tokenHashCaptor.getValue()).isEqualTo(jwtTokenProvider.hashToken(refreshToken));
+    assertThat(tokenHashCaptor.getValue()).isNotEqualTo(refreshToken);
   }
 
   @Test

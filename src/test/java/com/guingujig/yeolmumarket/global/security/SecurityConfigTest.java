@@ -111,6 +111,20 @@ class SecurityConfigTest {
   }
 
   @Test
+  void 보호_API는_refresh_token으로_인증할_수_없다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String refreshToken = "Bearer " + jwtTokenProvider.issueRefreshToken(user);
+
+    mockMvc
+        .perform(get("/test/security/me").header(HttpHeaders.AUTHORIZATION, refreshToken))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+  }
+
+  @Test
   void 관리자_API는_USER_권한이면_403으로_응답한다() throws Exception {
     User user =
         userRepository.save(

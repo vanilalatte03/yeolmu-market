@@ -25,7 +25,10 @@ import tools.jackson.databind.ObjectMapper;
 public class JwtTokenProvider {
 
   private static final String HMAC_SHA256 = "HmacSHA256";
+  private static final String SHA_256 = "SHA-256";
   private static final String JWT_ALGORITHM = "HS256";
+  private static final String TOKEN_TYPE_ACCESS = "ACCESS";
+  private static final String TOKEN_TYPE_REFRESH = "REFRESH";
   private static final Base64.Encoder BASE64_URL_ENCODER = Base64.getUrlEncoder().withoutPadding();
   private static final Base64.Decoder BASE64_URL_DECODER = Base64.getUrlDecoder();
   private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
@@ -33,39 +36,78 @@ public class JwtTokenProvider {
   private final ObjectMapper objectMapper;
   private final byte[] secret;
   private final long accessTokenValiditySeconds;
+  private final long refreshTokenValiditySeconds;
 
   public JwtTokenProvider(
       ObjectMapper objectMapper,
       @Value("${jwt.secret}") String secret,
-      @Value("${jwt.access-token-validity-seconds}") long accessTokenValiditySeconds) {
+      @Value("${jwt.access-token-validity-seconds}") long accessTokenValiditySeconds,
+      @Value("${jwt.refresh-token-validity-seconds}") long refreshTokenValiditySeconds) {
     this.objectMapper = objectMapper;
     validateSecret(secret);
+    validateValiditySeconds(accessTokenValiditySeconds, "access token");
+    validateValiditySeconds(refreshTokenValiditySeconds, "refresh token");
     this.secret = secret.getBytes(StandardCharsets.UTF_8);
     this.accessTokenValiditySeconds = accessTokenValiditySeconds;
+    this.refreshTokenValiditySeconds = refreshTokenValiditySeconds;
   }
 
   public String issueAccessToken(User user) {
-    return generateAccessToken(user, accessTokenValiditySeconds);
+    return generateToken(user, TOKEN_TYPE_ACCESS, accessTokenValiditySeconds);
+  }
+
+  public String issueRefreshToken(User user) {
+    return generateToken(user, TOKEN_TYPE_REFRESH, refreshTokenValiditySeconds);
   }
 
   /** 테스트 전용: 이미 만료된 토큰을 발급한다. */
   String issueExpiredAccessToken(User user) {
-    return generateAccessToken(user, -1);
+    return generateToken(user, TOKEN_TYPE_ACCESS, -1);
+  }
+
+  /** 테스트 전용: 이미 만료된 refresh token을 발급한다. */
+  String issueExpiredRefreshToken(User user) {
+    return generateToken(user, TOKEN_TYPE_REFRESH, -1);
   }
 
   public long getAccessTokenValiditySeconds() {
     return accessTokenValiditySeconds;
   }
 
+  public long getRefreshTokenValiditySeconds() {
+    return refreshTokenValiditySeconds;
+  }
+
+  public String hashToken(String token) {
+    try {
+      MessageDigest digest = MessageDigest.getInstance(SHA_256);
+      return BASE64_URL_ENCODER.encodeToString(
+          digest.digest(token.getBytes(StandardCharsets.UTF_8)));
+    } catch (Exception exception) {
+      throw new IllegalStateException("JWT 해시 생성에 실패했습니다.", exception);
+    }
+  }
+
   public Authentication getAuthentication(String token) {
     JwtClaims claims = parseClaims(token);
+    if (!TOKEN_TYPE_ACCESS.equals(claims.tokenType())) {
+      throw new JwtException(ErrorCode.INVALID_TOKEN, "access token이 아닙니다.");
+    }
     AuthenticatedUser principal =
         new AuthenticatedUser(claims.userId(), claims.email(), claims.role());
     return UsernamePasswordAuthenticationToken.authenticated(
         principal, null, List.of(new SimpleGrantedAuthority("ROLE_" + claims.role().name())));
   }
 
-  private String generateAccessToken(User user, long validitySeconds) {
+  public JwtRefreshClaims parseRefreshToken(String token) {
+    JwtClaims claims = parseClaims(token);
+    if (!TOKEN_TYPE_REFRESH.equals(claims.tokenType())) {
+      throw new JwtException(ErrorCode.INVALID_TOKEN, "refresh token이 아닙니다.");
+    }
+    return new JwtRefreshClaims(claims.userId(), claims.expiresAtEpochSeconds());
+  }
+
+  private String generateToken(User user, String tokenType, long validitySeconds) {
     Instant now = Instant.now();
 
     Map<String, Object> header = new LinkedHashMap<>();
@@ -76,6 +118,7 @@ public class JwtTokenProvider {
     payload.put("sub", user.getId().toString());
     payload.put("email", user.getEmail());
     payload.put("role", user.getRole().name());
+    payload.put("tokenType", tokenType);
     payload.put("iat", now.getEpochSecond());
     payload.put("exp", now.plusSeconds(validitySeconds).getEpochSecond());
 
@@ -107,7 +150,9 @@ public class JwtTokenProvider {
       return new JwtClaims(
           Long.parseLong(readStringClaim(payload, "sub")),
           readStringClaim(payload, "email"),
-          UserRole.valueOf(readStringClaim(payload, "role")));
+          UserRole.valueOf(readStringClaim(payload, "role")),
+          readStringClaim(payload, "tokenType"),
+          expiresAt);
     } catch (JwtException e) {
       throw e;
     } catch (RuntimeException e) {
@@ -174,5 +219,14 @@ public class JwtTokenProvider {
     }
   }
 
-  private record JwtClaims(Long userId, String email, UserRole role) {}
+  private void validateValiditySeconds(long validitySeconds, String tokenName) {
+    if (validitySeconds <= 0) {
+      throw new IllegalArgumentException(tokenName + " 만료 시간은 0보다 커야 합니다.");
+    }
+  }
+
+  public record JwtRefreshClaims(Long userId, long expiresAtEpochSeconds) {}
+
+  private record JwtClaims(
+      Long userId, String email, UserRole role, String tokenType, long expiresAtEpochSeconds) {}
 }
