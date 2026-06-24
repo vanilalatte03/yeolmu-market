@@ -87,5 +87,10 @@ infra   - 외부 연동 (필요 시)
     ✅ `spring-boot-starter-webmvc` / 모듈별 `*-test` (`spring-boot-starter-webmvc-test`, `-data-jpa-test`, `-validation-test`)
   - 새 의존성·import는 추측하지 말고 `build.gradle`의 실제 모듈명을 기준으로 한다.
 - 시간 값은 서버/DB/JWT 모두 UTC 기준으로 다룬다. Entity의 `LocalDateTime`은 DB `DATETIME`에 저장된 UTC 시각으로 해석하고, JWT/TTL/만료 계산은 `Instant`/epoch seconds/`Duration`을 사용한다. 수동 현재 시각이 필요하면 `LocalDateTime.now()` 대신 UTC 기준을 명시한다.
+- 테스트 fixture에서 정렬·만료·시간 비교용 값을 만들 때도 `LocalDateTime.now()`를 쓰지 않는다. 현재 시각 자체를 검증하는 테스트가 아니면 고정 시각을 쓴다.
+  - ❌ `ReflectionTestUtils.setField(room, "lastMessageAt", LocalDateTime.now());`
+  - ✅ `LocalDateTime baseTime = LocalDateTime.of(2026, 6, 24, 10, 0);`
+    `ReflectionTestUtils.setField(room, "lastMessageAt", baseTime);`
+  - 현재 시각이 정말 필요하면 UTC 기준을 명시한다.
 - 이슈 작업을 시작하면 **코드부터 손대지 말고 가장 먼저** 해당 이슈의 Project Status를 `In progress`로 바꾼다. 이걸 빠뜨리는 사례가 반복됐다. 규칙 원문은 위 `PR / 이슈` 섹션.
 - 민감정보(DB 비밀번호, `JWT_SECRET` 등)는 코드나 `application.yml`에 하드코딩하지 않고 `.env`로 관리한다(`.env`·`.env.*`는 `.gitignore`로 제외, `.env.example`만 추적). 환경변수를 새로 추가하면 같은 커밋에서 `.env.example`에도 키를 추가한다(값은 비워 둔다).
