@@ -5,6 +5,7 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Path;
 import java.util.List;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +30,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+  private static final Set<String> PAGINATION_PARAMETER_NAMES = Set.of("page", "size");
   private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
   @ExceptionHandler(BusinessException.class)
@@ -93,9 +95,11 @@ public class GlobalExceptionHandler {
   public ResponseEntity<ApiResponse<Void>> handleMethodArgumentTypeMismatchException(
       MethodArgumentTypeMismatchException exception) {
     ErrorCode errorCode =
-        exception.getRequiredType() != null && exception.getRequiredType().isEnum()
-            ? ErrorCode.INVALID_ENUM_VALUE
-            : ErrorCode.VALIDATION_FAILED;
+        PAGINATION_PARAMETER_NAMES.contains(exception.getName())
+            ? ErrorCode.INVALID_PAGINATION
+            : exception.getRequiredType() != null && exception.getRequiredType().isEnum()
+                ? ErrorCode.INVALID_ENUM_VALUE
+                : ErrorCode.VALIDATION_FAILED;
 
     return ResponseEntity.status(errorCode.getHttpStatus())
         .body(ApiResponse.failure(errorCode.name(), errorCode.getMessage()));
