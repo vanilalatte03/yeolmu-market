@@ -3,7 +3,11 @@ package com.guingujig.yeolmumarket.domain.chat.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.guingujig.yeolmumarket.domain.chat.dto.ChatRoomListItemResponse;
 import com.guingujig.yeolmumarket.domain.chat.dto.CreateChatRoomResponse;
+import com.guingujig.yeolmumarket.domain.chat.entity.ChatMessage;
+import com.guingujig.yeolmumarket.domain.chat.entity.ChatRoom;
+import com.guingujig.yeolmumarket.domain.chat.repository.ChatMessageRepository;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatRoomRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
@@ -12,6 +16,7 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.response.PageResponse;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +38,7 @@ class ChatRoomServiceTest {
 
   private final ChatRoomService chatRoomService;
   private final ChatRoomRepository chatRoomRepository;
+  private final ChatMessageRepository chatMessageRepository;
   private final ProductRepository productRepository;
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
@@ -41,11 +47,13 @@ class ChatRoomServiceTest {
   ChatRoomServiceTest(
       ChatRoomService chatRoomService,
       ChatRoomRepository chatRoomRepository,
+      ChatMessageRepository chatMessageRepository,
       ProductRepository productRepository,
       UserRepository userRepository,
       PasswordEncoder passwordEncoder) {
     this.chatRoomService = chatRoomService;
     this.chatRoomRepository = chatRoomRepository;
+    this.chatMessageRepository = chatMessageRepository;
     this.productRepository = productRepository;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
@@ -62,6 +70,7 @@ class ChatRoomServiceTest {
   }
 
   private void deleteAll() {
+    chatMessageRepository.deleteAll();
     chatRoomRepository.deleteAll();
     productRepository.deleteAll();
     userRepository.deleteAll();
@@ -186,6 +195,135 @@ class ChatRoomServiceTest {
             BusinessException.class,
             exception ->
                 assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_NOT_FOUND));
+  }
+
+  @Test
+  void 구매자로_참여한_채팅방_목록을_조회한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    CreateChatRoomResponse createdRoom =
+        chatRoomService.createChatRoom(buyer.getId(), product.getId());
+
+    PageResponse<ChatRoomListItemResponse> response =
+        chatRoomService.getMyChatRooms(buyer.getId(), 0, 10);
+
+    assertThat(response.totalElements()).isEqualTo(1);
+    assertThat(response.content()).hasSize(1);
+    ChatRoomListItemResponse item = response.content().getFirst();
+    assertThat(item.roomId()).isEqualTo(createdRoom.roomId());
+    assertThat(item.productId()).isEqualTo(product.getId());
+    assertThat(item.productTitle()).isEqualTo("아이패드 미니 6");
+    assertThat(item.opponentNickname()).isEqualTo("열무판매자");
+  }
+
+  @Test
+  void 판매자로_참여한_채팅방_목록을_조회한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    chatRoomService.createChatRoom(buyer.getId(), product.getId());
+
+    PageResponse<ChatRoomListItemResponse> response =
+        chatRoomService.getMyChatRooms(seller.getId(), 0, 10);
+
+    assertThat(response.content()).hasSize(1);
+    assertThat(response.content().getFirst().opponentNickname()).isEqualTo("열무구매자");
+  }
+
+  @Test
+  void 참여하지_않은_채팅방은_목록에서_제외한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User otherUser = saveUser("other@example.com", "열무구경꾼");
+    Product product = saveProduct(seller);
+    chatRoomService.createChatRoom(buyer.getId(), product.getId());
+
+    PageResponse<ChatRoomListItemResponse> response =
+        chatRoomService.getMyChatRooms(otherUser.getId(), 0, 10);
+
+    assertThat(response.content()).isEmpty();
+    assertThat(response.totalElements()).isZero();
+  }
+
+  @Test
+  void 메시지가_없는_채팅방도_목록에_포함하고_마지막_메시지는_null이다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    chatRoomService.createChatRoom(buyer.getId(), product.getId());
+
+    PageResponse<ChatRoomListItemResponse> response =
+        chatRoomService.getMyChatRooms(buyer.getId(), 0, 10);
+
+    ChatRoomListItemResponse item = response.content().getFirst();
+    assertThat(item.lastMessage()).isNull();
+    assertThat(item.lastMessageAt()).isNull();
+  }
+
+  @Test
+  void 최신_메시지_요약을_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Long roomId = chatRoomService.createChatRoom(buyer.getId(), product.getId()).roomId();
+    ChatRoom chatRoom = chatRoomRepository.findById(roomId).orElseThrow();
+    chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, buyer, "거래 가능할까요?"));
+    chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, seller, "네 가능합니다."));
+
+    PageResponse<ChatRoomListItemResponse> response =
+        chatRoomService.getMyChatRooms(buyer.getId(), 0, 10);
+
+    ChatRoomListItemResponse item = response.content().getFirst();
+    assertThat(item.lastMessage()).isEqualTo("네 가능합니다.");
+    assertThat(item.lastMessageAt()).isNotNull();
+  }
+
+  @Test
+  void 채팅방_목록은_마지막_메시지_시각_기준으로_정렬한다() {
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User firstSeller = saveUser("first-seller@example.com", "첫번째판매자");
+    User secondSeller = saveUser("second-seller@example.com", "두번째판매자");
+    Product firstProduct = saveProduct(firstSeller);
+    Product secondProduct = saveProduct(secondSeller);
+    Long firstRoomId = chatRoomService.createChatRoom(buyer.getId(), firstProduct.getId()).roomId();
+    Long secondRoomId =
+        chatRoomService.createChatRoom(buyer.getId(), secondProduct.getId()).roomId();
+    ChatRoom firstRoom = chatRoomRepository.findById(firstRoomId).orElseThrow();
+    ChatRoom secondRoom = chatRoomRepository.findById(secondRoomId).orElseThrow();
+    LocalDateTime baseTime = LocalDateTime.of(2026, 6, 24, 10, 0);
+    ReflectionTestUtils.setField(firstRoom, "lastMessageAt", baseTime.minusMinutes(10));
+    ReflectionTestUtils.setField(secondRoom, "lastMessageAt", baseTime);
+    chatRoomRepository.saveAllAndFlush(List.of(firstRoom, secondRoom));
+
+    PageResponse<ChatRoomListItemResponse> response =
+        chatRoomService.getMyChatRooms(buyer.getId(), 0, 10);
+
+    assertThat(response.content())
+        .extracting(ChatRoomListItemResponse::roomId)
+        .containsExactly(secondRoomId, firstRoomId);
+  }
+
+  @Test
+  void 잘못된_페이지_요청이면_실패한다() {
+    User user = saveUser("user@example.com", "열무유저");
+
+    assertThatThrownBy(() -> chatRoomService.getMyChatRooms(user.getId(), -1, 10))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_PAGINATION));
+  }
+
+  @Test
+  void 페이지_크기가_최대값을_넘으면_실패한다() {
+    User user = saveUser("user@example.com", "열무유저");
+
+    assertThatThrownBy(() -> chatRoomService.getMyChatRooms(user.getId(), 0, 101))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_PAGINATION));
   }
 
   private Product saveProduct(User seller) {

@@ -12,6 +12,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -43,4 +44,19 @@ public class ChatMessage {
   @CreatedDate
   @Column(name = "created_at", nullable = false, updatable = false)
   private LocalDateTime createdAt;
+
+  public static ChatMessage create(ChatRoom chatRoom, User sender, String content) {
+    ChatMessage chatMessage = new ChatMessage();
+    chatMessage.chatRoom = Objects.requireNonNull(chatRoom, "chatRoom은 필수입니다.");
+    chatMessage.sender = Objects.requireNonNull(sender, "sender는 필수입니다.");
+    chatMessage.content = requireText(content);
+    return chatMessage;
+  }
+
+  private static String requireText(String content) {
+    if (content == null || content.isBlank()) {
+      throw new IllegalArgumentException("메시지 내용은 필수입니다.");
+    }
+    return content;
+  }
 }
