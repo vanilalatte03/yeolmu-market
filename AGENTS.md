@@ -80,12 +80,12 @@ infra   - 외부 연동 (필요 시)
 > 규칙을 추상적으로 적지 말고, 틀린 실제 코드와 맞는 코드를 짧은 before/after 예시로 박는다.
 > 관리 담당자 1명을 정하고, 나머지는 "에이전트가 또 이거 틀렸어요"만 공유한다.
 
-- (예시) WebSocket 설정은 손으로 잡은 뼈대가 동작하는 걸 확인한 뒤 확장을 맡긴다. 0에서 통째로 시키지 않는다.
 - Windows PowerShell에서 한글/UTF-8 파일을 읽을 때는 콘솔 인코딩을 UTF-8로 맞추고 `Get-Content -Encoding UTF8`로 확인한다.
 - Javadoc은 "왜"가 필요한 곳에만 단다(public Service 메서드·도메인 규칙·복잡한 분기). getter/자명한 코드엔 달지 않는다. 기준은 `docs/CONVENTIONS.md`의 Javadoc 섹션.
 - Spring Boot 4를 쓴다. 코덱스가 SB3 학습데이터 기준으로 옛 starter/import를 생성하기 쉬우니 주의:
   - 의존성 ❌ `spring-boot-starter-web` / 단일 `spring-boot-starter-test`
     ✅ `spring-boot-starter-webmvc` / 모듈별 `*-test` (`spring-boot-starter-webmvc-test`, `-data-jpa-test`, `-validation-test`)
   - 새 의존성·import는 추측하지 말고 `build.gradle`의 실제 모듈명을 기준으로 한다.
+- 시간 값은 서버/DB/JWT 모두 UTC 기준으로 다룬다. Entity의 `LocalDateTime`은 DB `DATETIME`에 저장된 UTC 시각으로 해석하고, JWT/TTL/만료 계산은 `Instant`/epoch seconds/`Duration`을 사용한다. 수동 현재 시각이 필요하면 `LocalDateTime.now()` 대신 UTC 기준을 명시한다.
 - 이슈 작업을 시작하면 **코드부터 손대지 말고 가장 먼저** 해당 이슈의 Project Status를 `In progress`로 바꾼다. 이걸 빠뜨리는 사례가 반복됐다. 규칙 원문은 위 `PR / 이슈` 섹션.
 - 민감정보(DB 비밀번호, `JWT_SECRET` 등)는 코드나 `application.yml`에 하드코딩하지 않고 `.env`로 관리한다(`.env`·`.env.*`는 `.gitignore`로 제외, `.env.example`만 추적). 환경변수를 새로 추가하면 같은 커밋에서 `.env.example`에도 키를 추가한다(값은 비워 둔다).

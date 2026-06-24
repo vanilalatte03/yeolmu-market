@@ -33,7 +33,7 @@
 - REST 요청/응답 Content-Type: `application/json; charset=UTF-8`
 - 이미지 업로드 API Content-Type: `multipart/form-data`
 - 금액 단위: 원화 정수. 소수점 금액은 사용하지 않는다.
-- 일시 형식: ISO 8601 문자열. 예: `2026-06-22T18:30:00+09:00`
+- 일시 형식: ISO 8601 문자열. 예: `2026-06-22T09:30:00Z`
 
 ### 인증
 
@@ -338,7 +338,7 @@ JWT 폐기와 refresh token 회전 정책은 `docs/adr/007-jwt-refresh-token-rot
   "email": "customer@example.com",
   "nickname": "열무구매자",
   "role": "USER",
-  "createdAt": "2026-06-22T18:30:00+09:00"
+  "createdAt": "2026-06-22T09:30:00Z"
 }
 ```
 
@@ -505,7 +505,7 @@ refresh token을 검증하고 새 access token을 발급한다.
   "userId": 1,
   "nickname": "열무구매자",
   "role": "USER",
-  "createdAt": "2026-06-22T18:30:00+09:00"
+  "createdAt": "2026-06-22T09:30:00Z"
 }
 ```
 
@@ -546,7 +546,7 @@ refresh token을 검증하고 새 access token을 발급한다.
   "email": "customer@example.com",
   "nickname": "열무판매자",
   "role": "USER",
-  "updatedAt": "2026-06-22T18:35:00+09:00"
+  "updatedAt": "2026-06-22T09:35:00Z"
 }
 ```
 
@@ -611,7 +611,7 @@ P1 이미지 기능을 제외한 기본 상품 기능은 P0 범위다.
     "userId": 1,
     "nickname": "열무판매자"
   },
-  "createdAt": "2026-06-22T18:30:00+09:00"
+  "createdAt": "2026-06-22T09:30:00Z"
 }
 ```
 
@@ -655,7 +655,7 @@ P1 이미지 기능을 제외한 기본 상품 기능은 P0 범위다.
       "status": "ON_SALE",
       "thumbnailUrl": "https://cdn.example.com/products/10/thumbnail.jpg",
       "sellerNickname": "열무판매자",
-      "createdAt": "2026-06-22T18:30:00+09:00"
+      "createdAt": "2026-06-22T09:30:00Z"
     }
   ],
   "page": 0,
@@ -724,8 +724,8 @@ P0에서는 `thumbnailUrl`이 `null`이다.
     "nickname": "열무판매자",
     "averageRating": 4.8
   },
-  "createdAt": "2026-06-22T18:30:00+09:00",
-  "updatedAt": "2026-06-22T18:30:00+09:00"
+  "createdAt": "2026-06-22T09:30:00Z",
+  "updatedAt": "2026-06-22T09:30:00Z"
 }
 ```
 
@@ -794,7 +794,7 @@ P0에서는 `thumbnailUrl`이 `null`이다.
   "description": "박스 포함입니다.",
   "price": 430000,
   "status": "ON_SALE",
-  "updatedAt": "2026-06-22T18:40:00+09:00"
+  "updatedAt": "2026-06-22T09:40:00Z"
 }
 ```
 
@@ -873,7 +873,7 @@ P0에서는 `thumbnailUrl`이 `null`이다.
       "title": "아이패드 미니 6세대",
       "price": 430000,
       "status": "ON_SALE",
-      "createdAt": "2026-06-22T18:30:00+09:00"
+      "createdAt": "2026-06-22T09:30:00Z"
     }
   ],
   "page": 0,
@@ -918,7 +918,7 @@ P0에서는 `thumbnailUrl`이 `null`이다.
       "title": "아이패드 미니 6세대",
       "price": 430000,
       "status": "ON_SALE",
-      "createdAt": "2026-06-22T18:30:00+09:00"
+      "createdAt": "2026-06-22T09:30:00Z"
     }
   ],
   "page": 0,
@@ -967,7 +967,7 @@ P0에서는 `thumbnailUrl`이 `null`이다.
       "imageId": 1,
       "url": "https://cdn.example.com/products/10/1.jpg",
       "thumbnail": true,
-      "uploadedAt": "2026-06-22T18:30:00+09:00"
+      "uploadedAt": "2026-06-22T09:30:00Z"
     }
   ]
 }
@@ -1094,7 +1094,7 @@ P0에서는 `thumbnailUrl`이 `null`이다.
       "status": "ON_SALE",
       "hidden": true,
       "sellerNickname": "열무판매자",
-      "updatedAt": "2026-06-22T18:40:00+09:00"
+      "updatedAt": "2026-06-22T09:40:00Z"
     }
   ],
   "page": 0,
@@ -1154,7 +1154,7 @@ Redis 캐시 키와 인기 검색어 집계용 자료구조는 관계형 ERD 테
       "status": "ON_SALE",
       "thumbnailUrl": "https://cdn.example.com/products/10/thumbnail.jpg",
       "sellerNickname": "열무판매자",
-      "createdAt": "2026-06-22T18:30:00+09:00"
+      "createdAt": "2026-06-22T09:30:00Z"
     }
   ],
   "page": 0,
@@ -1264,7 +1264,7 @@ P0에서는 주문 생성, 주문 상세/목록 조회, 취소를 사용하고, 
     "nickname": "열무판매자"
   },
   "status": "CREATED",
-  "createdAt": "2026-06-22T18:45:00+09:00"
+  "createdAt": "2026-06-22T09:45:00Z"
 }
 ```
 
@@ -1317,8 +1317,8 @@ P0에서는 주문 생성, 주문 상세/목록 조회, 취소를 사용하고, 
     "status": "PENDING"
   },
   "status": "CREATED",
-  "createdAt": "2026-06-22T18:45:00+09:00",
-  "updatedAt": "2026-06-22T18:45:00+09:00"
+  "createdAt": "2026-06-22T09:45:00Z",
+  "updatedAt": "2026-06-22T09:45:00Z"
 }
 ```
 
@@ -1368,7 +1368,7 @@ P0 응답에는 `payment`가 포함되지 않는다.
       "price": 430000,
       "sellerNickname": "열무판매자",
       "status": "CREATED",
-      "createdAt": "2026-06-22T18:45:00+09:00"
+      "createdAt": "2026-06-22T09:45:00Z"
     }
   ],
   "page": 0,
@@ -1415,7 +1415,7 @@ P0 응답에는 `payment`가 포함되지 않는다.
       "price": 430000,
       "buyerNickname": "열무구매자",
       "status": "CREATED",
-      "createdAt": "2026-06-22T18:45:00+09:00"
+      "createdAt": "2026-06-22T09:45:00Z"
     }
   ],
   "page": 0,
@@ -1468,7 +1468,7 @@ P0에서는 주문 생성 상태의 주문만 취소할 수 있다.
   "orderId": 100,
   "status": "CANCELED",
   "productStatus": "ON_SALE",
-  "canceledAt": "2026-06-22T19:00:00+09:00"
+  "canceledAt": "2026-06-22T10:00:00Z"
 }
 ```
 
@@ -1516,7 +1516,7 @@ P0에서는 주문 생성 상태의 주문만 취소할 수 있다.
   "orderId": 100,
   "status": "SHIPPING",
   "trackingNumber": "1234-5678-9012",
-  "shippedAt": "2026-06-22T19:20:00+09:00"
+  "shippedAt": "2026-06-22T10:20:00Z"
 }
 ```
 
@@ -1571,7 +1571,7 @@ P0에서는 주문 생성 상태의 주문만 취소할 수 있다.
     "userId": 1,
     "nickname": "열무판매자"
   },
-  "createdAt": "2026-06-22T18:50:00+09:00"
+  "createdAt": "2026-06-22T09:50:00Z"
 }
 ```
 
@@ -1610,7 +1610,7 @@ P0에서는 주문 생성 상태의 주문만 취소할 수 있다.
       "productTitle": "아이패드 미니 6세대",
       "opponentNickname": "열무판매자",
       "lastMessage": "거래 가능할까요?",
-      "lastMessageAt": "2026-06-22T18:55:00+09:00"
+      "lastMessageAt": "2026-06-22T09:55:00Z"
     }
   ],
   "page": 0,
@@ -1661,7 +1661,7 @@ P0에서는 주문 생성 상태의 주문만 취소할 수 있다.
     "userId": 1,
     "nickname": "열무판매자"
   },
-  "createdAt": "2026-06-22T18:50:00+09:00"
+  "createdAt": "2026-06-22T09:50:00Z"
 }
 ```
 
@@ -1706,7 +1706,7 @@ P0에서는 주문 생성 상태의 주문만 취소할 수 있다.
       "senderId": 2,
       "senderNickname": "열무구매자",
       "content": "거래 가능할까요?",
-      "createdAt": "2026-06-22T18:55:00+09:00"
+      "createdAt": "2026-06-22T09:55:00Z"
     }
   ],
   "hasNext": false
@@ -1767,7 +1767,7 @@ Authorization: Bearer {accessToken}
   "senderId": 2,
   "senderNickname": "열무구매자",
   "content": "거래 가능할까요?",
-  "createdAt": "2026-06-22T18:55:00+09:00"
+  "createdAt": "2026-06-22T09:55:00Z"
 }
 ```
 
@@ -1815,7 +1815,7 @@ Authorization: Bearer {accessToken}
   "senderId": 2,
   "senderNickname": "열무구매자",
   "content": "거래 가능할까요?",
-  "createdAt": "2026-06-22T18:55:00+09:00"
+  "createdAt": "2026-06-22T09:55:00Z"
 }
 ```
 
@@ -1907,7 +1907,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
   "status": "PAID",
   "orderStatus": "PAID",
   "productStatus": "RESERVED",
-  "paidAt": "2026-06-22T19:10:00+09:00"
+  "paidAt": "2026-06-22T10:10:00Z"
 }
 ```
 
@@ -1922,7 +1922,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
   "status": "FAILED",
   "orderStatus": "CANCELED",
   "productStatus": "ON_SALE",
-  "failedAt": "2026-06-22T19:10:00+09:00"
+  "failedAt": "2026-06-22T10:10:00Z"
 }
 ```
 
@@ -1960,7 +1960,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
   "orderId": 100,
   "status": "PAID",
   "amount": 430000,
-  "paidAt": "2026-06-22T19:10:00+09:00"
+  "paidAt": "2026-06-22T10:10:00Z"
 }
 ```
 
@@ -1996,7 +1996,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
   "amount": 430000,
   "method": "MOCK_CARD",
   "status": "PAID",
-  "paidAt": "2026-06-22T19:10:00+09:00",
+  "paidAt": "2026-06-22T10:10:00Z",
   "canceledAt": null
 }
 ```
@@ -2053,7 +2053,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
   "status": "CANCELED",
   "orderStatus": "CANCELED",
   "productStatus": "ON_SALE",
-  "canceledAt": "2026-06-22T19:20:00+09:00"
+  "canceledAt": "2026-06-22T10:20:00Z"
 }
 ```
 
@@ -2066,7 +2066,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
   "status": "REFUNDED",
   "orderStatus": "REFUNDED",
   "productStatus": "ON_SALE",
-  "canceledAt": "2026-06-22T19:20:00+09:00"
+  "canceledAt": "2026-06-22T10:20:00Z"
 }
 ```
 
@@ -2105,7 +2105,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
   "orderId": 100,
   "status": "COMPLETED",
   "productStatus": "SOLD_OUT",
-  "confirmedAt": "2026-06-22T19:30:00+09:00"
+  "confirmedAt": "2026-06-22T10:30:00Z"
 }
 ```
 
@@ -2179,7 +2179,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 {
   "categoryId": 3,
   "name": "디지털기기",
-  "createdAt": "2026-06-22T18:30:00+09:00"
+  "createdAt": "2026-06-22T09:30:00Z"
 }
 ```
 
@@ -2225,7 +2225,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 {
   "categoryId": 3,
   "name": "디지털/가전",
-  "updatedAt": "2026-06-22T18:40:00+09:00"
+  "updatedAt": "2026-06-22T09:40:00Z"
 }
 ```
 
@@ -2307,7 +2307,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
       "status": "ON_SALE",
       "thumbnailUrl": "https://cdn.example.com/products/10/thumbnail.jpg",
       "sellerNickname": "열무판매자",
-      "createdAt": "2026-06-22T18:30:00+09:00"
+      "createdAt": "2026-06-22T09:30:00Z"
     }
   ],
   "page": 0,
@@ -2426,7 +2426,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
       "price": 430000,
       "status": "ON_SALE",
       "thumbnailUrl": "https://cdn.example.com/products/10/thumbnail.jpg",
-      "wishedAt": "2026-06-22T18:30:00+09:00"
+      "wishedAt": "2026-06-22T09:30:00Z"
     }
   ],
   "page": 0,
@@ -2549,7 +2549,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
   "revieweeId": 1,
   "score": 5,
   "content": "시간 약속을 잘 지켜주셨어요.",
-  "createdAt": "2026-06-22T20:00:00+09:00"
+  "createdAt": "2026-06-22T11:00:00Z"
 }
 ```
 
@@ -2600,7 +2600,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
   "reviewId": 700,
   "score": 4,
   "content": "거래는 좋았고 응답은 조금 늦었습니다.",
-  "updatedAt": "2026-06-22T20:10:00+09:00"
+  "updatedAt": "2026-06-22T11:10:00Z"
 }
 ```
 
@@ -2671,7 +2671,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
       "revieweeNickname": "열무판매자",
       "score": 5,
       "content": "시간 약속을 잘 지켜주셨어요.",
-      "createdAt": "2026-06-22T20:00:00+09:00"
+      "createdAt": "2026-06-22T11:00:00Z"
     }
   ],
   "page": 0,
@@ -2716,7 +2716,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
       "reviewerNickname": "열무구매자",
       "score": 5,
       "content": "시간 약속을 잘 지켜주셨어요.",
-      "createdAt": "2026-06-22T20:00:00+09:00"
+      "createdAt": "2026-06-22T11:00:00Z"
     }
   ],
   "page": 0,
@@ -2766,7 +2766,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
       "reviewerNickname": "열무구매자",
       "score": 5,
       "content": "시간 약속을 잘 지켜주셨어요.",
-      "createdAt": "2026-06-22T20:00:00+09:00"
+      "createdAt": "2026-06-22T11:00:00Z"
     }
   ],
   "page": 0,
@@ -2857,7 +2857,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
   "orderId": 100,
   "status": "DISPUTED",
   "orderStatus": "DISPUTED",
-  "rejectedAt": "2026-06-22T21:10:00+09:00"
+  "rejectedAt": "2026-06-22T12:10:00Z"
 }
 ```
 
@@ -2905,7 +2905,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
   "orderId": 100,
   "status": "REQUESTED",
   "orderStatus": "REFUND_REQUESTED",
-  "requestedAt": "2026-06-22T21:00:00+09:00"
+  "requestedAt": "2026-06-22T12:00:00Z"
 }
 ```
 
@@ -2949,7 +2949,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
   "status": "APPROVED",
   "orderStatus": "REFUNDED",
   "productStatus": "ON_SALE",
-  "approvedAt": "2026-06-22T21:15:00+09:00"
+  "approvedAt": "2026-06-22T12:15:00Z"
 }
 ```
 
@@ -3001,7 +3001,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
   "status": "CLOSED",
   "orderStatus": "REFUNDED",
   "productStatus": "ON_SALE",
-  "resolvedAt": "2026-06-22T21:30:00+09:00"
+  "resolvedAt": "2026-06-22T12:30:00Z"
 }
 ```
 
@@ -3014,7 +3014,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
   "status": "CLOSED",
   "orderStatus": "COMPLETED",
   "productStatus": "SOLD_OUT",
-  "resolvedAt": "2026-06-22T21:30:00+09:00"
+  "resolvedAt": "2026-06-22T12:30:00Z"
 }
 ```
 
