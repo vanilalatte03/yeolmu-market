@@ -16,6 +16,7 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.entity.UserRole;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
+import com.guingujig.yeolmumarket.global.security.JwtTokenProvider.JwtRefreshClaims;
 import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -166,11 +167,12 @@ class AuthControllerTest {
 
     String responseBody = result.getResponse().getContentAsString();
     String refreshToken = responseBody.replaceAll("(?s).*\"refreshToken\":\"([^\"]+)\".*", "$1");
-    ArgumentCaptor<String> tokenHashCaptor = ArgumentCaptor.forClass(String.class);
+    JwtRefreshClaims refreshClaims = jwtTokenProvider.parseRefreshToken(refreshToken);
+    ArgumentCaptor<String> refreshJtiCaptor = ArgumentCaptor.forClass(String.class);
     verify(activeRefreshTokenRepository)
-        .save(eq(user.getId()), tokenHashCaptor.capture(), eq(Duration.ofSeconds(1209600)));
-    assertThat(tokenHashCaptor.getValue()).isEqualTo(jwtTokenProvider.hashToken(refreshToken));
-    assertThat(tokenHashCaptor.getValue()).isNotEqualTo(refreshToken);
+        .save(eq(user.getId()), refreshJtiCaptor.capture(), eq(Duration.ofSeconds(1209600)));
+    assertThat(refreshJtiCaptor.getValue()).isEqualTo(refreshClaims.jti());
+    assertThat(refreshJtiCaptor.getValue()).isNotEqualTo(refreshToken);
   }
 
   @Test
@@ -179,8 +181,13 @@ class AuthControllerTest {
         userRepository.save(
             new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
     String oldRefreshToken = jwtTokenProvider.issueRefreshToken(user);
-    when(activeRefreshTokenRepository.findHashByUserId(user.getId()))
-        .thenReturn(java.util.Optional.of(jwtTokenProvider.hashToken(oldRefreshToken)));
+    JwtRefreshClaims oldRefreshClaims = jwtTokenProvider.parseRefreshToken(oldRefreshToken);
+    when(activeRefreshTokenRepository.rotate(
+            eq(user.getId()),
+            eq(oldRefreshClaims.jti()),
+            org.mockito.ArgumentMatchers.anyString(),
+            eq(Duration.ofSeconds(1209600))))
+        .thenReturn(true);
 
     MvcResult result =
         mockMvc
@@ -205,12 +212,17 @@ class AuthControllerTest {
             .andReturn();
 
     String newRefreshToken = extractRefreshToken(result);
-    ArgumentCaptor<String> tokenHashCaptor = ArgumentCaptor.forClass(String.class);
+    JwtRefreshClaims newRefreshClaims = jwtTokenProvider.parseRefreshToken(newRefreshToken);
+    ArgumentCaptor<String> refreshJtiCaptor = ArgumentCaptor.forClass(String.class);
     verify(activeRefreshTokenRepository)
-        .save(eq(user.getId()), tokenHashCaptor.capture(), eq(Duration.ofSeconds(1209600)));
+        .rotate(
+            eq(user.getId()),
+            eq(oldRefreshClaims.jti()),
+            refreshJtiCaptor.capture(),
+            eq(Duration.ofSeconds(1209600)));
     assertThat(newRefreshToken).isNotEqualTo(oldRefreshToken);
-    assertThat(tokenHashCaptor.getValue()).isEqualTo(jwtTokenProvider.hashToken(newRefreshToken));
-    assertThat(tokenHashCaptor.getValue()).isNotEqualTo(oldRefreshToken);
+    assertThat(refreshJtiCaptor.getValue()).isEqualTo(newRefreshClaims.jti());
+    assertThat(refreshJtiCaptor.getValue()).isNotEqualTo(oldRefreshClaims.jti());
   }
 
   @Test
@@ -219,9 +231,13 @@ class AuthControllerTest {
         userRepository.save(
             new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
     String oldRefreshToken = jwtTokenProvider.issueRefreshToken(user);
-    String activeRefreshToken = jwtTokenProvider.issueRefreshToken(user);
-    when(activeRefreshTokenRepository.findHashByUserId(user.getId()))
-        .thenReturn(java.util.Optional.of(jwtTokenProvider.hashToken(activeRefreshToken)));
+    JwtRefreshClaims oldRefreshClaims = jwtTokenProvider.parseRefreshToken(oldRefreshToken);
+    when(activeRefreshTokenRepository.rotate(
+            eq(user.getId()),
+            eq(oldRefreshClaims.jti()),
+            org.mockito.ArgumentMatchers.anyString(),
+            eq(Duration.ofSeconds(1209600))))
+        .thenReturn(false);
 
     mockMvc
         .perform(
@@ -275,8 +291,15 @@ class AuthControllerTest {
             .andExpect(status().isOk())
             .andReturn();
     String secondLoginRefreshToken = extractRefreshToken(secondLoginResult);
-    when(activeRefreshTokenRepository.findHashByUserId(user.getId()))
-        .thenReturn(java.util.Optional.of(jwtTokenProvider.hashToken(secondLoginRefreshToken)));
+    assertThat(secondLoginRefreshToken).isNotEqualTo(firstLoginRefreshToken);
+    JwtRefreshClaims firstLoginRefreshClaims =
+        jwtTokenProvider.parseRefreshToken(firstLoginRefreshToken);
+    when(activeRefreshTokenRepository.rotate(
+            eq(user.getId()),
+            eq(firstLoginRefreshClaims.jti()),
+            org.mockito.ArgumentMatchers.anyString(),
+            eq(Duration.ofSeconds(1209600))))
+        .thenReturn(false);
 
     mockMvc
         .perform(

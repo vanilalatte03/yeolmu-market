@@ -1,11 +1,12 @@
 package com.guingujig.yeolmumarket.domain.auth.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Duration;
-import java.util.Optional;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,6 +14,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 
 @ExtendWith(MockitoExtension.class)
 class RedisActiveRefreshTokenRepositoryTest {
@@ -30,33 +32,52 @@ class RedisActiveRefreshTokenRepositoryTest {
   }
 
   @Test
-  void 활성_refresh_token_해시를_TTL과_함께_저장한다() {
+  void 활성_refresh_token_jti를_TTL과_함께_저장한다() {
     Duration ttl = Duration.ofSeconds(1209600);
     when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
 
-    repository.save(1L, "token-hash", ttl);
+    repository.save(1L, "refresh-jti", ttl);
 
-    verify(valueOperations).set(KEY, "token-hash", ttl);
+    verify(valueOperations).set(KEY, "refresh-jti", ttl);
   }
 
   @Test
-  void 사용자별_활성_refresh_token_해시를_조회한다() {
-    when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-    when(valueOperations.get(KEY)).thenReturn("token-hash");
+  void 현재_jti가_일치하면_lua_script로_새_jti로_교체한다() {
+    Duration ttl = Duration.ofSeconds(1209600);
+    when(stringRedisTemplate.execute(
+            org.mockito.ArgumentMatchers.<RedisScript<Long>>any(),
+            eq(List.of(KEY)),
+            eq("old-jti"),
+            eq("new-jti"),
+            eq("1209600")))
+        .thenReturn(1L);
 
-    Optional<String> tokenHash = repository.findHashByUserId(1L);
+    boolean rotated = repository.rotate(1L, "old-jti", "new-jti", ttl);
 
-    assertThat(tokenHash).contains("token-hash");
+    assertThat(rotated).isTrue();
+    verify(stringRedisTemplate)
+        .execute(
+            org.mockito.ArgumentMatchers.<RedisScript<Long>>any(),
+            eq(List.of(KEY)),
+            eq("old-jti"),
+            eq("new-jti"),
+            eq("1209600"));
   }
 
   @Test
-  void 사용자별_활성_refresh_token_해시가_없으면_빈_값을_반환한다() {
-    when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-    when(valueOperations.get(KEY)).thenReturn(null);
+  void 현재_jti가_일치하지_않으면_교체하지_않는다() {
+    Duration ttl = Duration.ofSeconds(1209600);
+    when(stringRedisTemplate.execute(
+            org.mockito.ArgumentMatchers.<RedisScript<Long>>any(),
+            eq(List.of(KEY)),
+            eq("old-jti"),
+            eq("new-jti"),
+            eq("1209600")))
+        .thenReturn(0L);
 
-    Optional<String> tokenHash = repository.findHashByUserId(1L);
+    boolean rotated = repository.rotate(1L, "old-jti", "new-jti", ttl);
 
-    assertThat(tokenHash).isEmpty();
+    assertThat(rotated).isFalse();
   }
 
   @Test

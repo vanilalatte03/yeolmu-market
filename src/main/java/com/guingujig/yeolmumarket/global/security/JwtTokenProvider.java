@@ -105,7 +105,7 @@ public class JwtTokenProvider {
     if (!TOKEN_TYPE_REFRESH.equals(claims.tokenType())) {
       throw new JwtException(ErrorCode.INVALID_TOKEN, "refresh token이 아닙니다.");
     }
-    return new JwtRefreshClaims(claims.userId(), claims.expiresAtEpochSeconds());
+    return new JwtRefreshClaims(claims.userId(), claims.jti(), claims.expiresAtEpochSeconds());
   }
 
   private String generateToken(User user, String tokenType, long validitySeconds) {
@@ -154,6 +154,7 @@ public class JwtTokenProvider {
           readStringClaim(payload, "email"),
           UserRole.valueOf(readStringClaim(payload, "role")),
           readStringClaim(payload, "tokenType"),
+          readStringClaim(payload, "jti"),
           expiresAt);
     } catch (JwtException e) {
       throw e;
@@ -227,8 +228,13 @@ public class JwtTokenProvider {
     }
   }
 
-  public record JwtRefreshClaims(Long userId, long expiresAtEpochSeconds) {}
+  public record JwtRefreshClaims(Long userId, String jti, long expiresAtEpochSeconds) {}
 
   private record JwtClaims(
-      Long userId, String email, UserRole role, String tokenType, long expiresAtEpochSeconds) {}
+      Long userId,
+      String email,
+      UserRole role,
+      String tokenType,
+      String jti,
+      long expiresAtEpochSeconds) {}
 }

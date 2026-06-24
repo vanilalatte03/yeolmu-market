@@ -49,7 +49,7 @@ public class AuthService {
   /**
    * 이메일과 비밀번호를 검증하고 access token과 refresh token을 함께 발급한다.
    *
-   * <p>발급한 refresh token은 원문을 저장하지 않고 해시값만 Redis에 저장한다. 사용자별 활성 refresh token은 하나만 유지되므로 새 로그인은 기존
+   * <p>발급한 refresh token은 원문을 저장하지 않고 jti만 Redis에 저장한다. 사용자별 활성 refresh token은 하나만 유지되므로 새 로그인은 기존
    * refresh token을 대체한다.
    */
   @Transactional
@@ -65,9 +65,10 @@ public class AuthService {
 
     String accessToken = jwtTokenProvider.issueAccessToken(user);
     String refreshToken = jwtTokenProvider.issueRefreshToken(user);
+    JwtRefreshClaims refreshClaims = parseRefreshClaims(refreshToken);
     activeRefreshTokenRepository.save(
         user.getId(),
-        jwtTokenProvider.hashToken(refreshToken),
+        refreshClaims.jti(),
         Duration.ofSeconds(jwtTokenProvider.getRefreshTokenValiditySeconds()));
 
     return new LoginResponse(
@@ -82,20 +83,12 @@ public class AuthService {
   /**
    * 활성 refresh token을 검증한 뒤 새 access token과 refresh token을 발급한다.
    *
-   * <p>재발급에 성공하면 기존 refresh token 해시를 새 refresh token 해시로 교체해 이전 refresh token 재사용을 막는다.
+   * <p>재발급에 성공하면 Redis Lua script로 기존 refresh token jti를 새 jti로 원자적으로 교체해 이전 refresh token 재사용을
+   * 막는다.
    */
   @Transactional
   public RefreshTokenResponse refreshToken(RefreshTokenRequest request) {
     JwtRefreshClaims claims = parseRefreshClaims(request.refreshToken());
-    String requestTokenHash = jwtTokenProvider.hashToken(request.refreshToken());
-    String activeTokenHash =
-        activeRefreshTokenRepository
-            .findHashByUserId(claims.userId())
-            .orElseThrow(() -> new BusinessException(ErrorCode.REVOKED_TOKEN));
-
-    if (!activeTokenHash.equals(requestTokenHash)) {
-      throw new BusinessException(ErrorCode.REVOKED_TOKEN);
-    }
 
     User user =
         userRepository
@@ -103,10 +96,17 @@ public class AuthService {
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
     String accessToken = jwtTokenProvider.issueAccessToken(user);
     String refreshToken = jwtTokenProvider.issueRefreshToken(user);
-    activeRefreshTokenRepository.save(
-        user.getId(),
-        jwtTokenProvider.hashToken(refreshToken),
-        Duration.ofSeconds(jwtTokenProvider.getRefreshTokenValiditySeconds()));
+    JwtRefreshClaims newRefreshClaims = parseRefreshClaims(refreshToken);
+    boolean rotated =
+        activeRefreshTokenRepository.rotate(
+            user.getId(),
+            claims.jti(),
+            newRefreshClaims.jti(),
+            Duration.ofSeconds(jwtTokenProvider.getRefreshTokenValiditySeconds()));
+
+    if (!rotated) {
+      throw new BusinessException(ErrorCode.REVOKED_TOKEN);
+    }
 
     return new RefreshTokenResponse(
         "Bearer",
