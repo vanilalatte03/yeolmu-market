@@ -13,6 +13,7 @@ description: "PR 작성/PR 올리기/PR 만들기 요청 시 현재 브랜치의
 
 - 실제 커밋/변경 파일/diff에 근거해서만 작성한다. 추측·향후 계획은 넣지 않는다.
 - 확인하지 않은 테스트를 완료로 표시하지 않는다.
+- 이슈 번호는 추측하지 않는다. 확인된 번호가 있으면 `Closes #N`, 없으면 `관련 이슈 없음: 확인된 이슈 번호 없음`으로 쓴다.
 - `## AI 활용 내용` 섹션은 사용자가 PR 생성 후 직접 수정하므로 제목 아래 `-`만 남기고 placeholder 문구를 넣지 않는다.
 - base 브랜치는 지시 없으면 `origin/develop` → `origin/main` 순.
 - 현재 브랜치가 push되어 있지 않으면 생성하지 않고 push 필요를 안내한다.
@@ -28,6 +29,9 @@ git diff --name-only <base>...HEAD
 ```
 
 전체 diff는 파일 목록/통계로 부족할 때만 `git diff <base>...HEAD -- <file>`로 좁혀서 본다.
+이슈 번호는 브랜치명, 커밋 메시지, 사용자 요청, 관련 GitHub 이슈에서 확인한다.
+번호가 보이면 `gh issue view <이슈번호>`로 실제 이슈를 확인하고, 번호가 불명확하면 `gh issue list --state open --limit 30`로 후보를 찾는다.
+그래도 불명확하면 이슈 번호를 추측하지 않고 PR 생성을 계속한다.
 
 ## PR 제목
 
@@ -54,11 +58,13 @@ git diff --name-only <base>...HEAD
 
 ## 리뷰 포인트
 -
+
+## 연결 이슈
+Closes #N 또는 관련 이슈 없음: 확인된 이슈 번호 없음
 ```
 
 실행한 OS에 맞는 실제 테스트 명령만 체크한다.
 (macOS/Linux `./gradlew test`, Windows `.\gradlew.bat test`)
-이슈 연동이 필요하면 본문 마지막에 `Closes #이슈번호`를 넣는다.
 
 ## PR 생성
 
