@@ -116,6 +116,105 @@ class ChatRoomControllerTest {
   }
 
   @Test
+  void 인증된_참여자는_이전_메시지를_조회할_수_있다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = productRepository.save(Product.create(seller, "아이패드 미니 6", "생활기스", 450000));
+    ChatRoom chatRoom = chatRoomRepository.saveAndFlush(ChatRoom.create(product, buyer, seller));
+    chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, buyer, "거래 가능할까요?"));
+    ChatMessage secondMessage =
+        chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, seller, "네 가능합니다."));
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            get("/api/chat-rooms/{roomId}/messages", chatRoom.getId())
+                .param("size", "1")
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.messages[0].messageId").value(secondMessage.getId()))
+        .andExpect(jsonPath("$.data.messages[0].roomId").value(chatRoom.getId()))
+        .andExpect(jsonPath("$.data.messages[0].senderId").value(seller.getId()))
+        .andExpect(jsonPath("$.data.messages[0].senderNickname").value("열무판매자"))
+        .andExpect(jsonPath("$.data.messages[0].content").value("네 가능합니다."))
+        .andExpect(jsonPath("$.data.messages[0].createdAt", matchesPattern(".*(Z|\\+00:00)$")))
+        .andExpect(jsonPath("$.data.hasNext").value(true));
+  }
+
+  @Test
+  void 인증되지_않은_사용자가_이전_메시지를_조회하면_401로_응답한다() throws Exception {
+    mockMvc
+        .perform(get("/api/chat-rooms/{roomId}/messages", 1L))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+  }
+
+  @Test
+  void 없는_채팅방의_이전_메시지를_조회하면_404로_응답한다() throws Exception {
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            get("/api/chat-rooms/{roomId}/messages", 999L)
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("CHAT_ROOM_NOT_FOUND"));
+  }
+
+  @Test
+  void 참여자가_아닌_사용자가_이전_메시지를_조회하면_403으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User otherUser = saveUser("other@example.com", "열무구경꾼");
+    Product product = productRepository.save(Product.create(seller, "아이패드 미니 6", "생활기스", 450000));
+    ChatRoom chatRoom = chatRoomRepository.saveAndFlush(ChatRoom.create(product, buyer, seller));
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(otherUser);
+
+    mockMvc
+        .perform(
+            get("/api/chat-rooms/{roomId}/messages", chatRoom.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("CHAT_ROOM_ACCESS_DENIED"));
+  }
+
+  @Test
+  void 잘못된_크기로_이전_메시지를_조회하면_400으로_응답한다() throws Exception {
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            get("/api/chat-rooms/{roomId}/messages", 1L)
+                .param("size", "0")
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_PAGINATION"));
+  }
+
+  @Test
+  void 잘못된_커서로_이전_메시지를_조회하면_400으로_응답한다() throws Exception {
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            get("/api/chat-rooms/{roomId}/messages", 1L)
+                .param("beforeMessageId", "0")
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_PAGINATION"));
+  }
+
+  @Test
   void 인증되지_않은_사용자가_내_채팅방_목록을_조회하면_401로_응답한다() throws Exception {
     mockMvc
         .perform(get("/api/chat-rooms"))

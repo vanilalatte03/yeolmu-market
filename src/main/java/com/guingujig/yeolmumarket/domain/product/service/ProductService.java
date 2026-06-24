@@ -2,8 +2,11 @@ package com.guingujig.yeolmumarket.domain.product.service;
 
 import com.guingujig.yeolmumarket.domain.product.dto.CreateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.CreateProductResponse;
+import com.guingujig.yeolmumarket.domain.product.dto.DeleteProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.ProductDetailResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.ProductListItemResponse;
+import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductRequest;
+import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductResponse;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
@@ -12,6 +15,9 @@ import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -80,6 +86,63 @@ public class ProductService {
             .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
 
     return ProductDetailResponse.from(product);
+  }
+
+  /**
+   * 상품 판매자 본인만 P0 수정 가능 필드인 제목, 설명, 가격을 변경할 수 있다.
+   *
+   * <p>삭제된 상품은 존재하지 않는 상품처럼 처리한다.
+   */
+  @Transactional
+  public UpdateProductResponse updateProduct(
+      Long sellerId, Long productId, UpdateProductRequest request) {
+    validateUpdatableValue(request);
+    Product product = getExistingProduct(productId);
+    validateOwner(product, sellerId);
+
+    product.updateInfo(request.title(), request.description(), request.price());
+    productRepository.flush();
+    return UpdateProductResponse.from(product);
+  }
+
+  /**
+   * 상품 판매자 본인만 상품을 소프트 삭제할 수 있다.
+   *
+   * <p>P0에서는 예약 중 상태를 거래 진행 중으로 보고 삭제를 거부한다.
+   */
+  @Transactional
+  public DeleteProductResponse deleteProduct(Long sellerId, Long productId) {
+    Product product = getExistingProduct(productId);
+    validateOwner(product, sellerId);
+    validateDeletable(product);
+
+    product.delete(LocalDateTime.now(ZoneOffset.UTC));
+    return DeleteProductResponse.success();
+  }
+
+  private Product getExistingProduct(Long productId) {
+    return productRepository
+        .findWithSellerById(productId)
+        .filter(product -> !product.isDeleted())
+        .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+  }
+
+  private void validateOwner(Product product, Long sellerId) {
+    if (!Objects.equals(product.getSeller().getId(), sellerId)) {
+      throw new BusinessException(ErrorCode.PRODUCT_ACCESS_DENIED);
+    }
+  }
+
+  private void validateUpdatableValue(UpdateProductRequest request) {
+    if (!request.isUpdatableValuePresent()) {
+      throw new BusinessException(ErrorCode.VALIDATION_FAILED, "수정할 값은 하나 이상이어야 합니다.");
+    }
+  }
+
+  private void validateDeletable(Product product) {
+    if (product.hasActiveOrder()) {
+      throw new BusinessException(ErrorCode.PRODUCT_HAS_ACTIVE_ORDER);
+    }
   }
 
   private void validatePagination(int page, int size) {

@@ -78,6 +78,33 @@ public class Product extends BaseTimeEntity {
     return product;
   }
 
+  /** P0 상품 수정은 제목, 설명, 가격만 부분 변경하며 카테고리와 이미지는 변경하지 않는다. */
+  public void updateInfo(String title, String description, Integer price) {
+    if (title != null) {
+      this.title = requireText(title, "상품명은 필수입니다.");
+    }
+    if (description != null) {
+      this.description = requireText(description, "상품 설명은 필수입니다.");
+    }
+    if (price != null) {
+      this.price = requirePositive(price);
+    }
+  }
+
+  /** 판매자 삭제는 행을 제거하지 않고 공개 조회에서 제외되는 삭제 상태와 삭제 시각만 기록한다. */
+  public void delete(LocalDateTime deletedAt) {
+    this.status = ProductStatus.DELETED;
+    this.deletedAt = Objects.requireNonNull(deletedAt, "deletedAt은 필수입니다.");
+  }
+
+  public boolean isDeleted() {
+    return status == ProductStatus.DELETED || deletedAt != null;
+  }
+
+  public boolean hasActiveOrder() {
+    return status == ProductStatus.RESERVED;
+  }
+
   private static String requireText(String value, String message) {
     if (value == null || value.isBlank()) {
       throw new IllegalArgumentException(message);

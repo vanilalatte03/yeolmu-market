@@ -1,5 +1,6 @@
 package com.guingujig.yeolmumarket.domain.chat.service;
 
+import com.guingujig.yeolmumarket.domain.chat.dto.ChatMessagesResponse;
 import com.guingujig.yeolmumarket.domain.chat.dto.ChatRoomListItemResponse;
 import com.guingujig.yeolmumarket.domain.chat.dto.CreateChatRoomResponse;
 import com.guingujig.yeolmumarket.domain.chat.entity.ChatMessage;
@@ -14,6 +15,7 @@ import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -82,6 +84,30 @@ public class ChatRoomService {
     return PageResponse.from(response);
   }
 
+  /**
+   * 채팅방 참여자가 저장된 메시지를 최신 메시지부터 커서 방식으로 조회한다.
+   *
+   * <p>{@code beforeMessageId}가 있으면 해당 메시지 ID보다 오래된 메시지만 조회한다.
+   */
+  @Transactional(readOnly = true)
+  public ChatMessagesResponse getPreviousMessages(
+      Long userId, Long roomId, Long beforeMessageId, int size) {
+    validateMessageCursor(beforeMessageId, size);
+
+    ChatRoom chatRoom =
+        chatRoomRepository
+            .findWithParticipantsById(roomId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+    validateParticipant(chatRoom, userId);
+
+    List<ChatMessage> messages =
+        chatMessageRepository.findPreviousMessages(
+            chatRoom, beforeMessageId, PageRequest.of(0, size + 1));
+    boolean hasNext = messages.size() > size;
+    List<ChatMessage> pageMessages = hasNext ? messages.subList(0, size) : messages;
+    return ChatMessagesResponse.of(pageMessages, hasNext);
+  }
+
   private ChatRoom findOrCreateChatRoom(Product product, User buyer, User seller) {
     return chatRoomRepository
         .findByProductAndBuyerAndSeller(product, buyer, seller)
@@ -107,6 +133,19 @@ public class ChatRoomService {
   private void validatePagination(int page, int size) {
     if (page < 0 || size <= 0 || size > MAX_PAGE_SIZE) {
       throw new BusinessException(ErrorCode.INVALID_PAGINATION);
+    }
+  }
+
+  private void validateMessageCursor(Long beforeMessageId, int size) {
+    if (size <= 0 || size > MAX_PAGE_SIZE || (beforeMessageId != null && beforeMessageId <= 0)) {
+      throw new BusinessException(ErrorCode.INVALID_PAGINATION);
+    }
+  }
+
+  private void validateParticipant(ChatRoom chatRoom, Long userId) {
+    if (!chatRoom.getBuyer().getId().equals(userId)
+        && !chatRoom.getSeller().getId().equals(userId)) {
+      throw new BusinessException(ErrorCode.CHAT_ROOM_ACCESS_DENIED);
     }
   }
 

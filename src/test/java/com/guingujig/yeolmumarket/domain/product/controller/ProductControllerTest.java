@@ -4,8 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -291,6 +293,143 @@ class ProductControllerTest {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void 판매자가_자신의_상품을_수정하면_변경된_상품_정보를_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            put("/api/products/{productId}", product.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "title": "아이패드 미니 6세대",
+                      "description": "박스 포함입니다.",
+                      "price": 430000
+                    }
+                    """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.productId").value(product.getId()))
+        .andExpect(jsonPath("$.data.title").value("아이패드 미니 6세대"))
+        .andExpect(jsonPath("$.data.description").value("박스 포함입니다."))
+        .andExpect(jsonPath("$.data.price").value(430000))
+        .andExpect(jsonPath("$.data.status").value("ON_SALE"))
+        .andExpect(jsonPath("$.data.updatedAt", matchesPattern(".*(Z|\\+00:00)$")));
+
+    Product updatedProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(updatedProduct.getTitle()).isEqualTo("아이패드 미니 6세대");
+    assertThat(updatedProduct.getDescription()).isEqualTo("박스 포함입니다.");
+    assertThat(updatedProduct.getPrice()).isEqualTo(430000);
+  }
+
+  @Test
+  void 판매자가_아닌_사용자가_상품_수정을_시도하면_403으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User other = saveUser("other@example.com", "다른사용자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(other);
+
+    mockMvc
+        .perform(
+            put("/api/products/{productId}", product.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "title": "아이패드 미니 6세대"
+                    }
+                    """))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("PRODUCT_ACCESS_DENIED"));
+  }
+
+  @Test
+  void 수정할_값이_없으면_400으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            put("/api/products/{productId}", product.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void 판매자가_자신의_상품을_삭제하면_deleted_true를_응답하고_공개_조회에서_제외한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            delete("/api/products/{productId}", product.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.deleted").value(true));
+
+    Product deletedProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(deletedProduct.getStatus()).isEqualTo(ProductStatus.DELETED);
+    assertThat(deletedProduct.getDeletedAt()).isNotNull();
+
+    mockMvc
+        .perform(get("/api/products/{productId}", product.getId()))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("PRODUCT_NOT_FOUND"));
+
+    mockMvc
+        .perform(get("/api/products"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content", hasSize(0)))
+        .andExpect(jsonPath("$.data.totalElements").value(0));
+  }
+
+  @Test
+  void 판매자가_아닌_사용자가_상품_삭제를_시도하면_403으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User other = saveUser("other@example.com", "다른사용자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(other);
+
+    mockMvc
+        .perform(
+            delete("/api/products/{productId}", product.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("PRODUCT_ACCESS_DENIED"));
+  }
+
+  @Test
+  void 거래_진행_중인_상품_삭제_시도는_409로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProductWithStatus(seller, "예약 상품", 20000, ProductStatus.RESERVED);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            delete("/api/products/{productId}", product.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("PRODUCT_HAS_ACTIVE_ORDER"));
   }
 
   private User saveUser(String email, String nickname) {
