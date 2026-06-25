@@ -48,6 +48,7 @@ public class SecurityConfig {
                         "/api/categories",
                         "/api/categories/*/products",
                         "/api/users/*/products",
+                        "/api/users/*",
                         "/api/users/*/reviews")
                     .permitAll()
                     .requestMatchers("/api/admin/**")
