@@ -97,6 +97,7 @@ public class OrderService {
 
     order.cancel();
     order.getProduct().cancelReservation();
+    orderRepository.flush();
 
     return CancelOrderResponse.from(order);
   }

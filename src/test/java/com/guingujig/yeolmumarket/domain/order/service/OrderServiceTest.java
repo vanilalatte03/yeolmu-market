@@ -16,6 +16,7 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -363,6 +364,20 @@ class OrderServiceTest {
 
     assertThat(second.orderId()).isNotNull();
     assertThat(second.status()).isEqualTo(OrderStatus.CREATED);
+  }
+
+  @Test
+  void 주문_취소_응답의_canceledAt이_DB의_modifiedAt과_일치한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    CreateOrderResponse created = orderService.createOrder(buyer.getId(), product.getId());
+
+    CancelOrderResponse response = orderService.cancelOrder(buyer.getId(), created.orderId());
+
+    Order canceledOrder = orderRepository.findById(created.orderId()).orElseThrow();
+    assertThat(response.canceledAt())
+        .isEqualTo(canceledOrder.getModifiedAt().atOffset(ZoneOffset.UTC));
   }
 
   @Test
