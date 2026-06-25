@@ -14,6 +14,11 @@ public class UserService {
 
   private final UserRepository userRepository;
 
+  /**
+   * 회원 ID로 공개 프로필을 조회한다.
+   *
+   * <p>회원이 존재하지 않으면 {@code USER_NOT_FOUND}를 던진다.
+   */
   @Transactional(readOnly = true)
   public GetUserResponse getUser(Long userId) {
     return userRepository

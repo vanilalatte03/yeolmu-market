@@ -9,41 +9,32 @@ import com.guingujig.yeolmumarket.domain.auth.repository.ActiveRefreshTokenRepos
 import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.context.WebApplicationContext;
 
 @SpringBootTest
+@AutoConfigureMockMvc
 @Transactional
 class UserControllerTest {
 
-  private final WebApplicationContext context;
+  private final MockMvc mockMvc;
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
   @MockitoBean private ActiveRefreshTokenRepository activeRefreshTokenRepository;
   @MockitoBean private RevokedAccessTokenRepository revokedAccessTokenRepository;
-  private MockMvc mockMvc;
 
   @Autowired
   UserControllerTest(
-      WebApplicationContext context,
-      UserRepository userRepository,
-      PasswordEncoder passwordEncoder) {
-    this.context = context;
+      MockMvc mockMvc, UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    this.mockMvc = mockMvc;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
-  }
-
-  @BeforeEach
-  void setUp() {
-    mockMvc = MockMvcBuilders.webAppContextSetup(context).build();
   }
 
   @Test
@@ -74,7 +65,7 @@ class UserControllerTest {
   }
 
   @Test
-  void 비인증_요청으로_유저_공개_정보를_조회할_수_있다() throws Exception {
+  void Authorization_헤더_없이_유저_공개_정보를_조회할_수_있다() throws Exception {
     User user =
         userRepository.save(
             new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
