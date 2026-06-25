@@ -1,7 +1,9 @@
 package com.guingujig.yeolmumarket.domain.chat.websocket;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 
+import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
 import com.guingujig.yeolmumarket.domain.chat.entity.ChatRoom;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatMessageRepository;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatRoomRepository;
@@ -37,6 +39,7 @@ import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
 import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
@@ -44,6 +47,8 @@ import org.springframework.web.socket.messaging.WebSocketStompClient;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ChatWebSocketIntegrationTest {
+
+  @MockitoBean private RevokedAccessTokenRepository revokedAccessTokenRepository;
 
   private static final Duration TIMEOUT = Duration.ofSeconds(3);
   private static final Duration SUBSCRIPTION_PROBE_INTERVAL = Duration.ofMillis(50);
@@ -138,6 +143,20 @@ class ChatWebSocketIntegrationTest {
     String payload = connectExpectingError(headers);
 
     assertThat(payload).contains("\"code\":\"EXPIRED_TOKEN\"");
+  }
+
+  @Test
+  void 폐기된_토큰_CONNECT는_ERROR_frame으로_실패한다() throws Exception {
+    User user = saveUser("buyer@example.com", "열무구매자");
+    String accessToken = jwtTokenProvider.issueAccessToken(user);
+    when(revokedAccessTokenRepository.exists(jwtTokenProvider.hashToken(accessToken)))
+        .thenReturn(true);
+    StompHeaders headers = new StompHeaders();
+    headers.add(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken);
+
+    String payload = connectExpectingError(headers);
+
+    assertThat(payload).contains("\"code\":\"REVOKED_TOKEN\"");
   }
 
   @Test

@@ -1717,6 +1717,8 @@ CONNECT 인증 실패 시 서버는 STOMP `ERROR` frame으로 아래 payload를 
 | `UNAUTHORIZED` | 토큰 누락 |
 | `INVALID_TOKEN` | 잘못된 토큰 |
 | `EXPIRED_TOKEN` | 만료된 토큰 |
+| `REVOKED_TOKEN` | 로그아웃되어 폐기된 토큰 |
+| `REDIS_UNAVAILABLE` | 폐기 토큰 조회 실패 |
 
 ### 채팅방 메시지 구독
 

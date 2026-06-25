@@ -1,9 +1,11 @@
 package com.guingujig.yeolmumarket.domain.chat.websocket;
 
+import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.security.JwtAuthenticationService;
 import com.guingujig.yeolmumarket.global.security.JwtException;
-import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
@@ -26,7 +28,7 @@ public class ChatWebSocketAuthenticationInterceptor implements ChannelIntercepto
 
   private static final String BEARER_PREFIX = "Bearer ";
 
-  private final JwtTokenProvider jwtTokenProvider;
+  private final JwtAuthenticationService jwtAuthenticationService;
 
   @Override
   public Message<?> preSend(Message<?> message, MessageChannel channel) {
@@ -42,11 +44,15 @@ public class ChatWebSocketAuthenticationInterceptor implements ChannelIntercepto
 
     try {
       Authentication authentication =
-          jwtTokenProvider.getAuthentication(authorization.substring(BEARER_PREFIX.length()));
+          jwtAuthenticationService.authenticate(authorization.substring(BEARER_PREFIX.length()));
       accessor.setUser(authentication);
       return message;
     } catch (JwtException exception) {
       throw new ChatWebSocketAuthenticationException(exception.getErrorCode());
+    } catch (BusinessException exception) {
+      throw new ChatWebSocketAuthenticationException(exception.getErrorCode());
+    } catch (DataAccessException exception) {
+      throw new ChatWebSocketAuthenticationException(ErrorCode.REDIS_UNAVAILABLE);
     }
   }
 
