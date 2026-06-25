@@ -39,7 +39,6 @@ public enum ErrorCode {
   ORDER_ALREADY_EXISTS(HttpStatus.CONFLICT, "동일 상품에 이미 유효한 주문이 존재합니다."),
   CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, "채팅방을 찾을 수 없습니다."),
   CHAT_ROOM_ACCESS_DENIED(HttpStatus.FORBIDDEN, "채팅방 참여자가 아닙니다."),
-  MESSAGE_SEND_NOT_ALLOWED(HttpStatus.FORBIDDEN, "메시지를 보낼 수 없는 채팅방입니다."),
   CANNOT_CHAT_OWN_PRODUCT(HttpStatus.BAD_REQUEST, "자신의 상품에는 채팅방을 만들 수 없습니다."),
   PAYMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "결제를 찾을 수 없습니다."),
   PAYMENT_ACCESS_DENIED(HttpStatus.FORBIDDEN, "결제에 대한 권한이 없습니다."),
