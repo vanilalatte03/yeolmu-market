@@ -58,9 +58,9 @@ infra   - 외부 연동 (필요 시)
 - 이슈 구현을 시작할 때 해당 이슈의 Project Status를 `In progress`로 변경한다.
 - PR 본문에 연결 이슈를 `Closes #N` 형식으로 명시한다.
 
-## 스킬 / 훅 (코덱스)
+## 스킬 / 훅 (코덱스/Claude)
 
-- 스킬은 `.agents/skills/<이름>/SKILL.md`에 둔다(repo 공유). 코덱스가 `description`으로 자동/수동 발동한다.
+- 스킬 원본은 `.agents/skills/<이름>/SKILL.md`에 둔다(repo 공유). Claude Code용 복사본은 `.claude/skills/<이름>/SKILL.md`에 두고, `scripts/check-skill-sync.ps1`와 CI로 동기화를 검증한다.
 - 현재 공유 스킬은 `review`, `pr-writer`이며 세부 트리거와 출력 형식은 각 `SKILL.md`를 따른다.
 - 포맷 강제는 git pre-commit(`.githooks/pre-commit`, Spotless 검사). 클론 후 1회 `git config core.hooksPath .githooks` 실행.
 
