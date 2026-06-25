@@ -295,6 +295,10 @@ class OrderServiceTest {
     Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
     CreateOrderResponse created = orderService.createOrder(buyer.getId(), product.getId());
 
+    Product savedProduct = productRepository.findById(product.getId()).orElseThrow();
+    savedProduct.updateInfo(null, null, 500000);
+    productRepository.saveAndFlush(savedProduct);
+
     GetOrderResponse response = orderService.getOrder(buyer.getId(), created.orderId());
 
     assertThat(response.product().price()).isEqualTo(430000);
