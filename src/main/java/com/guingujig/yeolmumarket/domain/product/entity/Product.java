@@ -110,6 +110,11 @@ public class Product extends BaseTimeEntity {
     return status == ProductStatus.RESERVED;
   }
 
+  /** ON_SALE 상태의 상품을 RESERVED로 전이한다. 호출 전에 ON_SALE 여부를 반드시 검증해야 한다. */
+  public void reserve() {
+    this.status = ProductStatus.RESERVED;
+  }
+
   private static String requireText(String value, String message) {
     if (value == null || value.isBlank()) {
       throw new IllegalArgumentException(message);

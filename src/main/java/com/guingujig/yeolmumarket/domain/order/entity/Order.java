@@ -15,6 +15,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -53,4 +54,19 @@ public class Order extends BaseTimeEntity {
 
   @Column(name = "shipped_at")
   private LocalDateTime shippedAt;
+
+  /**
+   * 주문 생성 시점의 상품 가격을 스냅샷으로 저장하고 CREATED 상태로 초기화한다.
+   *
+   * <p>seller는 product.getSeller()를 그대로 전달해야 하며, 호출 전에 상품 판매 가능 여부를 반드시 검증해야 한다.
+   */
+  public static Order create(User buyer, User seller, Product product) {
+    Order order = new Order();
+    order.buyer = Objects.requireNonNull(buyer, "buyer는 필수입니다.");
+    order.seller = Objects.requireNonNull(seller, "seller는 필수입니다.");
+    order.product = Objects.requireNonNull(product, "product는 필수입니다.");
+    order.orderStatus = OrderStatus.CREATED;
+    order.orderPrice = product.getPrice();
+    return order;
+  }
 }
