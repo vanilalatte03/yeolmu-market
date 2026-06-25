@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -29,6 +30,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.messaging.converter.ByteArrayMessageConverter;
 import org.springframework.messaging.converter.CompositeMessageConverter;
 import org.springframework.messaging.converter.StringMessageConverter;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
@@ -44,6 +46,9 @@ import org.springframework.web.socket.messaging.WebSocketStompClient;
 class ChatWebSocketIntegrationTest {
 
   private static final Duration TIMEOUT = Duration.ofSeconds(3);
+  private static final Duration SUBSCRIPTION_PROBE_INTERVAL = Duration.ofMillis(50);
+  private static final String USER_ERROR_DESTINATION = "/user/queue/errors";
+  private static final String SERVER_ERROR_DESTINATION = "/queue/errors";
 
   private final UserRepository userRepository;
   private final ProductRepository productRepository;
@@ -51,6 +56,7 @@ class ChatWebSocketIntegrationTest {
   private final ChatMessageRepository chatMessageRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
+  private final SimpMessagingTemplate messagingTemplate;
   private final List<StompSession> sessions = new ArrayList<>();
 
   @LocalServerPort private int port;
@@ -64,13 +70,15 @@ class ChatWebSocketIntegrationTest {
       ChatRoomRepository chatRoomRepository,
       ChatMessageRepository chatMessageRepository,
       PasswordEncoder passwordEncoder,
-      JwtTokenProvider jwtTokenProvider) {
+      JwtTokenProvider jwtTokenProvider,
+      SimpMessagingTemplate messagingTemplate) {
     this.userRepository = userRepository;
     this.productRepository = productRepository;
     this.chatRoomRepository = chatRoomRepository;
     this.chatMessageRepository = chatMessageRepository;
     this.passwordEncoder = passwordEncoder;
     this.jwtTokenProvider = jwtTokenProvider;
+    this.messagingTemplate = messagingTemplate;
   }
 
   @BeforeEach
@@ -99,10 +107,9 @@ class ChatWebSocketIntegrationTest {
     StompSession session = connectWithToken(user);
 
     ErrorQueueFrameHandler errorHandler = new ErrorQueueFrameHandler();
-    session.subscribe("/user/queue/errors", errorHandler);
+    subscribeToErrorQueue(session, user, errorHandler);
 
     assertThat(session.isConnected()).isTrue();
-    assertThat(errorHandler.pollPayload(Duration.ofMillis(300))).isNull();
   }
 
   @Test
@@ -140,13 +147,12 @@ class ChatWebSocketIntegrationTest {
     ChatRoom chatRoom = saveChatRoom(seller, buyer);
     StompSession session = connectWithToken(buyer);
     ErrorQueueFrameHandler errorHandler = new ErrorQueueFrameHandler();
-    session.subscribe("/user/queue/errors", errorHandler);
-    waitForSubscriptionRegistration();
+    subscribeToErrorQueue(session, buyer, errorHandler);
 
     session.subscribe("/sub/chat-rooms/" + chatRoom.getId(), new NoopFrameHandler());
 
     assertThat(session.isConnected()).isTrue();
-    assertThat(errorHandler.pollPayload(Duration.ofMillis(300))).isNull();
+    assertThat(errorHandler.pollPayload()).isNull();
   }
 
   @Test
@@ -154,8 +160,7 @@ class ChatWebSocketIntegrationTest {
     User user = saveUser("buyer@example.com", "열무구매자");
     StompSession session = connectWithToken(user);
     ErrorQueueFrameHandler errorHandler = new ErrorQueueFrameHandler();
-    session.subscribe("/user/queue/errors", errorHandler);
-    waitForSubscriptionRegistration();
+    subscribeToErrorQueue(session, user, errorHandler);
 
     session.subscribe("/sub/chat-rooms/999", new NoopFrameHandler());
 
@@ -173,8 +178,7 @@ class ChatWebSocketIntegrationTest {
     ChatRoom chatRoom = saveChatRoom(seller, buyer);
     StompSession session = connectWithToken(otherUser);
     ErrorQueueFrameHandler errorHandler = new ErrorQueueFrameHandler();
-    session.subscribe("/user/queue/errors", errorHandler);
-    waitForSubscriptionRegistration();
+    subscribeToErrorQueue(session, otherUser, errorHandler);
 
     session.subscribe("/sub/chat-rooms/" + chatRoom.getId(), new NoopFrameHandler());
 
@@ -224,8 +228,29 @@ class ChatWebSocketIntegrationTest {
     return userRepository.save(new User(email, passwordEncoder.encode("Password123!"), nickname));
   }
 
-  private void waitForSubscriptionRegistration() throws InterruptedException {
-    Thread.sleep(200);
+  private void subscribeToErrorQueue(
+      StompSession session, User user, ErrorQueueFrameHandler errorHandler)
+      throws InterruptedException {
+    session.subscribe(USER_ERROR_DESTINATION, errorHandler);
+    waitForErrorQueueReady(user, errorHandler);
+  }
+
+  private void waitForErrorQueueReady(User user, ErrorQueueFrameHandler errorHandler)
+      throws InterruptedException {
+    String probePayload = "__subscription_probe__:" + UUID.randomUUID();
+    long deadline = System.nanoTime() + TIMEOUT.toNanos();
+    while (System.nanoTime() < deadline) {
+      messagingTemplate.convertAndSendToUser(
+          user.getId().toString(), SERVER_ERROR_DESTINATION, probePayload);
+      String payload = errorHandler.pollPayload(SUBSCRIPTION_PROBE_INTERVAL);
+      if (probePayload.equals(payload)) {
+        return;
+      }
+      assertThat(payload)
+          .as("unexpected user error queue payload during subscription probe")
+          .isNull();
+    }
+    assertThat(false).as("user error queue subscription should receive probe").isTrue();
   }
 
   private String issueExpiredAccessToken(User user) {

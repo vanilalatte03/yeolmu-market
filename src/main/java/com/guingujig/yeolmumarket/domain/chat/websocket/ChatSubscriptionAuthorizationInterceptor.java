@@ -74,6 +74,7 @@ public class ChatSubscriptionAuthorizationInterceptor implements ChannelIntercep
   private Principal requireUser(StompHeaderAccessor accessor) {
     Principal user = accessor.getUser();
     if (user == null) {
+      // CONNECT 이후 Principal 부재는 구독 권한 실패가 아니라 인증 상태 불변식 위반이다.
       throw new ChatWebSocketAuthenticationException(ErrorCode.UNAUTHORIZED);
     }
     return user;
