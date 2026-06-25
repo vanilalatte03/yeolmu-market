@@ -60,7 +60,7 @@ infra   - 외부 연동 (필요 시)
 
 ## 스킬 / 훅 (코덱스/Claude)
 
-- 스킬 원본은 `.agents/skills/<이름>/SKILL.md`에 둔다(repo 공유). Claude Code용 복사본은 `.claude/skills/<이름>/SKILL.md`에 두고, `scripts/check-skill-sync.ps1`와 CI로 동기화를 검증한다.
+- 스킬 원본은 `.agents/skills/<이름>/SKILL.md`에 둔다(repo 공유). Claude Code용 복사본은 `.claude/skills/<이름>/SKILL.md`에 두고, 미러링 대상은 `scripts/skill-sync.json`에 명시한다. 복사는 `scripts/sync-claude-skills.ps1`, 검증은 `scripts/check-skill-sync.ps1`와 CI가 담당한다.
 - 현재 공유 스킬은 `review`, `pr-writer`이며 세부 트리거와 출력 형식은 각 `SKILL.md`를 따른다.
 - 포맷 강제는 git pre-commit(`.githooks/pre-commit`, Spotless 검사). 클론 후 1회 `git config core.hooksPath .githooks` 실행.
 

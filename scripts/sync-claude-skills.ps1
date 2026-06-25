@@ -29,16 +29,6 @@ function Get-RelativePath {
     )
 }
 
-function Report-Failure {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string] $Message
-    )
-
-    Write-Host "ERROR: $Message"
-    $script:failed = $true
-}
-
 function Assert-SkillName {
     param(
         [Parameter(Mandatory = $true)]
@@ -75,8 +65,6 @@ if (-not (Test-Path -LiteralPath $sourceRoot)) {
     throw "Missing source skill directory: $sourceRoot"
 }
 
-$script:failed = $false
-
 foreach ($skillName in $skillNames) {
     Assert-SkillName -SkillName $skillName
 
@@ -84,47 +72,40 @@ foreach ($skillName in $skillNames) {
     $targetDir = Join-Path $targetRoot $skillName
 
     if (-not (Test-Path -LiteralPath $sourceDir)) {
-        Report-Failure "Missing source skill directory: $sourceDir"
-        continue
+        throw "Missing source skill directory: $sourceDir"
     }
 
-    if (-not (Test-Path -LiteralPath $targetDir)) {
-        Report-Failure "Missing target skill directory: $targetDir"
-        continue
-    }
+    New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
 
     $sourceFiles = Get-ChildItem -LiteralPath $sourceDir -Recurse -File | Sort-Object FullName
-    $targetFiles = Get-ChildItem -LiteralPath $targetDir -Recurse -File | Sort-Object FullName
-
     foreach ($sourceFile in $sourceFiles) {
         $relativePath = Get-RelativePath -Root $sourceDir -Path $sourceFile.FullName
         $targetFile = Join-Path $targetDir $relativePath
+        $targetFileDir = Split-Path -Parent $targetFile
 
-        if (-not (Test-Path -LiteralPath $targetFile)) {
-            Report-Failure "Missing target skill file: $targetFile"
-            continue
-        }
-
-        $sourceHash = (Get-FileHash -LiteralPath $sourceFile.FullName -Algorithm SHA256).Hash
-        $targetHash = (Get-FileHash -LiteralPath $targetFile -Algorithm SHA256).Hash
-
-        if ($sourceHash -ne $targetHash) {
-            Report-Failure "Skill file is out of sync: $skillName/$relativePath"
-        }
+        New-Item -ItemType Directory -Force -Path $targetFileDir | Out-Null
+        Copy-Item -LiteralPath $sourceFile.FullName -Destination $targetFile -Force
     }
 
+    $targetFiles = Get-ChildItem -LiteralPath $targetDir -Recurse -File | Sort-Object FullName
     foreach ($targetFile in $targetFiles) {
         $relativePath = Get-RelativePath -Root $targetDir -Path $targetFile.FullName
         $sourceFile = Join-Path $sourceDir $relativePath
 
         if (-not (Test-Path -LiteralPath $sourceFile)) {
-            Report-Failure "Target skill file has no source copy: $targetFile"
+            Remove-Item -LiteralPath $targetFile.FullName -Force
         }
     }
+
+    $targetDirs = Get-ChildItem -LiteralPath $targetDir -Recurse -Directory |
+        Sort-Object FullName -Descending
+    foreach ($targetSubDir in $targetDirs) {
+        if (-not (Get-ChildItem -LiteralPath $targetSubDir.FullName -Force)) {
+            Remove-Item -LiteralPath $targetSubDir.FullName -Force
+        }
+    }
+
+    Write-Host "Synced skill: $skillName"
 }
 
-if ($script:failed) {
-    exit 1
-}
-
-Write-Host "Skill copies are in sync."
+& (Join-Path $PSScriptRoot "check-skill-sync.ps1")

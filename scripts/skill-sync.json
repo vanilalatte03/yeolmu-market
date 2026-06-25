@@ -1,0 +1,8 @@
+{
+  "sourceRoot": ".agents/skills",
+  "targetRoot": ".claude/skills",
+  "skills": [
+    "pr-writer",
+    "review"
+  ]
+}
