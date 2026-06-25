@@ -33,6 +33,12 @@ public class UserService {
         .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
   }
 
+  /**
+   * 내 정보(닉네임, 비밀번호)를 수정한다.
+   *
+   * <p>두 필드 모두 null이면 {@code VALIDATION_FAILED}를 던진다. 회원이 존재하지 않으면 {@code USER_NOT_FOUND}를 던진다.
+   * blank 값은 DTO 단에서 trim 후 {@code @Size} 검증으로 사전 차단된다.
+   */
   @Transactional
   public UpdateUserResponse updateMe(Long userId, UpdateUserRequest request) {
     if (!StringUtils.hasText(request.nickname()) && !StringUtils.hasText(request.password())) {
@@ -48,6 +54,7 @@ public class UserService {
       user.updateNickname(request.nickname());
     }
     if (StringUtils.hasText(request.password())) {
+      // TODO: 비밀번호 변경 시 로그아웃 로직 추가
       user.updatePassword(passwordEncoder.encode(request.password()));
     }
 
