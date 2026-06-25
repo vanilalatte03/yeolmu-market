@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -38,6 +39,14 @@ public class GlobalExceptionHandler {
     ErrorCode errorCode = exception.getErrorCode();
     return ResponseEntity.status(errorCode.getHttpStatus())
         .body(ApiResponse.failure(errorCode.name(), exception.getMessage()));
+  }
+
+  @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+  public ResponseEntity<ApiResponse<Void>> handleOptimisticLockingFailureException(
+      ObjectOptimisticLockingFailureException exception) {
+    ErrorCode errorCode = ErrorCode.ORDER_ALREADY_EXISTS;
+    return ResponseEntity.status(errorCode.getHttpStatus())
+        .body(ApiResponse.failure(errorCode.name(), errorCode.getMessage()));
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)
