@@ -1,5 +1,6 @@
 package com.guingujig.yeolmumarket.domain.order.service;
 
+import com.guingujig.yeolmumarket.domain.order.dto.CancelOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.CreateOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.GetOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
@@ -72,6 +73,32 @@ public class OrderService {
     orderRepository.save(order);
 
     return CreateOrderResponse.from(order);
+  }
+
+  /**
+   * 주문 구매자가 CREATED 상태의 주문을 취소하고 예약된 상품을 ON_SALE로 되돌린다.
+   *
+   * <p>주문 상태 변경과 상품 상태 변경을 하나의 트랜잭션에서 처리한다.
+   *
+   * @throws BusinessException ORDER_NOT_FOUND - 주문이 존재하지 않는 경우
+   * @throws BusinessException ORDER_ACCESS_DENIED - 구매자가 아닌 사용자가 취소하는 경우
+   * @throws BusinessException INVALID_ORDER_STATUS - CREATED가 아닌 주문을 취소하는 경우
+   */
+  @Transactional
+  public CancelOrderResponse cancelOrder(Long requesterId, Long orderId) {
+    Order order =
+        orderRepository
+            .findWithDetailsById(orderId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+
+    if (!Objects.equals(order.getBuyer().getId(), requesterId)) {
+      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
+    }
+
+    order.cancel();
+    order.getProduct().cancelReservation();
+
+    return CancelOrderResponse.from(order);
   }
 
   /**
