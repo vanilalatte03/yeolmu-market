@@ -67,4 +67,13 @@ public class ChatRoom {
   public boolean isParticipant(Long userId) {
     return buyer.getId().equals(userId) || seller.getId().equals(userId);
   }
+
+  /**
+   * 메시지 저장 트랜잭션 안에서 마지막 대화 시각을 저장된 메시지 생성 시각으로 맞춘다.
+   *
+   * <p>채팅방 목록 정렬은 이 값을 기준으로 하므로, 메시지 저장과 같은 트랜잭션에서만 갱신한다.
+   */
+  public void updateLastMessageAt(LocalDateTime lastMessageAt) {
+    this.lastMessageAt = Objects.requireNonNull(lastMessageAt, "lastMessageAt은 필수입니다.");
+  }
 }
