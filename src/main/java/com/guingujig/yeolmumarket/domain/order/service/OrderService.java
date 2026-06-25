@@ -1,6 +1,7 @@
 package com.guingujig.yeolmumarket.domain.order.service;
 
 import com.guingujig.yeolmumarket.domain.order.dto.CreateOrderResponse;
+import com.guingujig.yeolmumarket.domain.order.dto.GetOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
@@ -71,5 +72,27 @@ public class OrderService {
     orderRepository.save(order);
 
     return CreateOrderResponse.from(order);
+  }
+
+  /**
+   * 주문 구매자 또는 판매자가 주문 상세 정보를 조회한다.
+   *
+   * @throws BusinessException ORDER_NOT_FOUND - 주문이 존재하지 않는 경우
+   * @throws BusinessException ORDER_ACCESS_DENIED - 구매자·판매자가 아닌 사용자가 조회하는 경우
+   */
+  @Transactional(readOnly = true)
+  public GetOrderResponse getOrder(Long requesterId, Long orderId) {
+    Order order =
+        orderRepository
+            .findWithDetailsById(orderId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+
+    boolean isBuyer = Objects.equals(order.getBuyer().getId(), requesterId);
+    boolean isSeller = Objects.equals(order.getSeller().getId(), requesterId);
+    if (!isBuyer && !isSeller) {
+      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
+    }
+
+    return GetOrderResponse.from(order);
   }
 }
