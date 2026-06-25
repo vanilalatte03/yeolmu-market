@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -298,6 +299,25 @@ class SecurityConfigTest {
     mockMvc
         .perform(
             get("/test/security/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REDIS_UNAVAILABLE"));
+  }
+
+  @Test
+  void 로그아웃_중_Redis_저장에_실패하면_503_REDIS_UNAVAILABLE로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String accessToken = jwtTokenProvider.issueAccessToken(user);
+    String expectedHash = jwtTokenProvider.hashToken(accessToken);
+    doThrow(new RedisConnectionFailureException("Redis unavailable"))
+        .when(revokedAccessTokenRepository)
+        .add(eq(expectedHash), any(Duration.class));
+
+    mockMvc
+        .perform(
+            post("/api/auth/logout").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isServiceUnavailable())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("REDIS_UNAVAILABLE"));

@@ -3,7 +3,9 @@ package com.guingujig.yeolmumarket.domain.auth.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -24,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -175,6 +178,31 @@ class AuthControllerTest {
         .save(eq(user.getId()), refreshJtiCaptor.capture(), eq(Duration.ofSeconds(1209600)));
     assertThat(refreshJtiCaptor.getValue()).isEqualTo(refreshClaims.jti());
     assertThat(refreshJtiCaptor.getValue()).isNotEqualTo(refreshToken);
+  }
+
+  @Test
+  void 로그인_중_Redis_저장에_실패하면_503으로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    doThrow(new RedisConnectionFailureException("Redis unavailable"))
+        .when(activeRefreshTokenRepository)
+        .save(eq(user.getId()), anyString(), eq(Duration.ofSeconds(1209600)));
+
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "email": "customer@example.com",
+                      "password": "Password123!"
+                    }
+                    """))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REDIS_UNAVAILABLE"));
   }
 
   @Test

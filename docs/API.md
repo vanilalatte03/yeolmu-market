@@ -50,6 +50,7 @@ refresh token은 Redis에 활성 토큰 해시 또는 식별자를 저장해 서
 이번 프로젝트는 사용자별 활성 refresh token을 1개만 허용한다.
 로그인 또는 refresh token 재발급 성공 시 기존 refresh token은 폐기되고 새 refresh token만 유효하다.
 로그아웃 시 요청에 사용된 access token을 블랙리스트에 등록하고, 인증된 회원의 활성 refresh token도 Redis에서 삭제한다.
+인증 및 토큰 관리 중 Redis 조회 또는 쓰기에 실패하면 `REDIS_UNAVAILABLE`로 응답한다.
 JWT 폐기와 refresh token 회전 정책은 `docs/adr/007-jwt-refresh-token-rotation.md`를 따른다.
 
 인증이 필요 없는 API는 다음과 같다.
@@ -251,6 +252,7 @@ JWT 폐기와 refresh token 회전 정책은 `docs/adr/007-jwt-refresh-token-rot
 | `METHOD_NOT_ALLOWED` | 405 | 지원하지 않는 HTTP method |
 | `CONFLICT` | 409 | 현재 상태와 충돌하는 요청 |
 | `INTERNAL_SERVER_ERROR` | 500 | 서버 내부 오류 |
+| `REDIS_UNAVAILABLE` | 503 | Redis 조회 또는 쓰기 실패 |
 
 ## 도메인 에러 코드 카탈로그
 
@@ -391,6 +393,7 @@ JWT 폐기와 refresh token 회전 정책은 `docs/adr/007-jwt-refresh-token-rot
 | --- | --- | --- |
 | `VALIDATION_FAILED` | 400 | 이메일 누락 또는 형식 오류, 비밀번호 누락 |
 | `INVALID_LOGIN_CREDENTIALS` | 401 | 이메일 또는 비밀번호 불일치 |
+| `REDIS_UNAVAILABLE` | 503 | 활성 refresh token 저장 실패 |
 
 ### 로그아웃
 
@@ -426,6 +429,7 @@ JWT 폐기와 refresh token 회전 정책은 `docs/adr/007-jwt-refresh-token-rot
 | `INVALID_TOKEN` | 401 | 잘못된 토큰 |
 | `EXPIRED_TOKEN` | 401 | 만료된 토큰 |
 | `REVOKED_TOKEN` | 401 | 이미 로그아웃되어 폐기된 토큰 |
+| `REDIS_UNAVAILABLE` | 503 | access token 블랙리스트 등록 또는 활성 refresh token 삭제 실패 |
 
 ### 리프레시 토큰
 
@@ -471,6 +475,7 @@ refresh token을 검증하고 새 access token을 발급한다.
 | `INVALID_TOKEN` | 401 | 잘못된 refresh token |
 | `EXPIRED_TOKEN` | 401 | 만료된 refresh token |
 | `REVOKED_TOKEN` | 401 | 폐기되었거나 현재 활성 토큰이 아닌 refresh token |
+| `REDIS_UNAVAILABLE` | 503 | 활성 refresh token 조회 또는 회전 실패 |
 
 ## 유저 API
 

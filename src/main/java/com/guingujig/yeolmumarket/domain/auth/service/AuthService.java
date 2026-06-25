@@ -17,6 +17,7 @@ import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider.JwtRefreshClaims;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataAccessException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -68,10 +69,14 @@ public class AuthService {
     String accessToken = jwtTokenProvider.issueAccessToken(user);
     String refreshToken = jwtTokenProvider.issueRefreshToken(user);
     JwtRefreshClaims refreshClaims = parseRefreshClaims(refreshToken);
-    activeRefreshTokenRepository.save(
-        user.getId(),
-        refreshClaims.jti(),
-        Duration.ofSeconds(jwtTokenProvider.getRefreshTokenValiditySeconds()));
+    try {
+      activeRefreshTokenRepository.save(
+          user.getId(),
+          refreshClaims.jti(),
+          Duration.ofSeconds(jwtTokenProvider.getRefreshTokenValiditySeconds()));
+    } catch (DataAccessException exception) {
+      throw new BusinessException(ErrorCode.REDIS_UNAVAILABLE);
+    }
 
     return new LoginResponse(
         "Bearer",
@@ -99,12 +104,17 @@ public class AuthService {
     String accessToken = jwtTokenProvider.issueAccessToken(user);
     String refreshToken = jwtTokenProvider.issueRefreshToken(user);
     JwtRefreshClaims newRefreshClaims = parseRefreshClaims(refreshToken);
-    boolean rotated =
-        activeRefreshTokenRepository.rotate(
-            user.getId(),
-            claims.jti(),
-            newRefreshClaims.jti(),
-            Duration.ofSeconds(jwtTokenProvider.getRefreshTokenValiditySeconds()));
+    boolean rotated;
+    try {
+      rotated =
+          activeRefreshTokenRepository.rotate(
+              user.getId(),
+              claims.jti(),
+              newRefreshClaims.jti(),
+              Duration.ofSeconds(jwtTokenProvider.getRefreshTokenValiditySeconds()));
+    } catch (DataAccessException exception) {
+      throw new BusinessException(ErrorCode.REDIS_UNAVAILABLE);
+    }
 
     if (!rotated) {
       throw new BusinessException(ErrorCode.REVOKED_TOKEN);
@@ -124,7 +134,15 @@ public class AuthService {
    * <p>access token을 먼저 폐기하면 이후 실패 시 같은 토큰으로 재시도할 수 없으므로, refresh token 삭제를 먼저 수행한다.
    */
   public void logout(Long userId, String accessToken) {
-    activeRefreshTokenRepository.deleteByUserId(userId);
+    try {
+      activeRefreshTokenRepository.deleteByUserId(userId);
+      revokeAccessTokenIfAlive(accessToken);
+    } catch (DataAccessException exception) {
+      throw new BusinessException(ErrorCode.REDIS_UNAVAILABLE);
+    }
+  }
+
+  private void revokeAccessTokenIfAlive(String accessToken) {
     try {
       Duration remaining = jwtTokenProvider.getAccessTokenRemainingTtl(accessToken);
       revokedAccessTokenRepository.add(jwtTokenProvider.hashToken(accessToken), remaining);
