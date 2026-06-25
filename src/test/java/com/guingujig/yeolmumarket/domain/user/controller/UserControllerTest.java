@@ -109,7 +109,8 @@ class UserControllerTest {
             put("/api/users/me")
                 .header(HttpHeaders.AUTHORIZATION, accessToken)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(
+                    """
                     {"nickname": "새닉네임"}
                     """))
         .andExpect(status().isOk())
@@ -132,7 +133,8 @@ class UserControllerTest {
             put("/api/users/me")
                 .header(HttpHeaders.AUTHORIZATION, accessToken)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(
+                    """
                     {"password": "NewPassword123!"}
                     """))
         .andExpect(status().isOk())
@@ -188,7 +190,8 @@ class UserControllerTest {
         .perform(
             put("/api/users/me")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(
+                    """
                     {"nickname": "새닉네임"}
                     """))
         .andExpect(status().isUnauthorized())
@@ -207,7 +210,8 @@ class UserControllerTest {
             put("/api/users/me")
                 .header(HttpHeaders.AUTHORIZATION, accessToken)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(
+                    """
                     {"nickname": "새닉네임"}
                     """))
         .andExpect(status().isNotFound())

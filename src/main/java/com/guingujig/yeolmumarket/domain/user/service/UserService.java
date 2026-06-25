@@ -51,6 +51,7 @@ public class UserService {
       user.updatePassword(passwordEncoder.encode(request.password()));
     }
 
+    userRepository.flush();
     return UpdateUserResponse.from(user);
   }
 }
