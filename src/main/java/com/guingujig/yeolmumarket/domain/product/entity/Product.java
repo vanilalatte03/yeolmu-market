@@ -3,6 +3,8 @@ package com.guingujig.yeolmumarket.domain.product.entity;
 import com.guingujig.yeolmumarket.domain.category.entity.Category;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.global.entity.BaseTimeEntity;
+import com.guingujig.yeolmumarket.global.exception.BusinessException;
+import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -120,6 +122,18 @@ public class Product extends BaseTimeEntity {
       throw new IllegalStateException("ON_SALE 상태의 상품만 예약할 수 있습니다.");
     }
     this.status = ProductStatus.RESERVED;
+  }
+
+  /**
+   * RESERVED 상태의 상품을 ON_SALE로 전이한다. 주문 취소 시 예약을 해제하는 데 사용한다.
+   *
+   * <p>RESERVED가 아닌 상태에서 호출하면 {@link BusinessException}을 던져 잘못된 전이를 차단한다.
+   */
+  public void cancelReservation() {
+    if (this.status != ProductStatus.RESERVED) {
+      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+    }
+    this.status = ProductStatus.ON_SALE;
   }
 
   private static String requireText(String value, String message) {

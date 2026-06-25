@@ -3,6 +3,8 @@ package com.guingujig.yeolmumarket.domain.order.entity;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.global.entity.BaseTimeEntity;
+import com.guingujig.yeolmumarket.global.exception.BusinessException;
+import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -68,5 +70,17 @@ public class Order extends BaseTimeEntity {
     order.orderStatus = OrderStatus.CREATED;
     order.orderPrice = product.getPrice();
     return order;
+  }
+
+  /**
+   * CREATED 상태의 주문을 CANCELED로 전이한다.
+   *
+   * <p>CREATED가 아닌 상태에서 호출하면 {@link BusinessException}을 던져 잘못된 전이를 차단한다.
+   */
+  public void cancel() {
+    if (this.orderStatus != OrderStatus.CREATED) {
+      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+    }
+    this.orderStatus = OrderStatus.CANCELED;
   }
 }
