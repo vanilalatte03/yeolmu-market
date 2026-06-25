@@ -94,6 +94,38 @@ public class ProductService {
   }
 
   /**
+   * 키워드와 가격 조건으로 일반 사용자에게 공개 가능한 상품만 검색한다.
+   *
+   * <p>숨김 상품과 삭제 상품은 검색 결과에서 제외하며, 가격 범위가 잘못되면 {@code VALIDATION_FAILED}로 응답한다.
+   */
+  @Transactional(readOnly = true)
+  public PageResponse<ProductListItemResponse> searchProducts(
+      String keyword,
+      Integer minPrice,
+      Integer maxPrice,
+      ProductStatus status,
+      int page,
+      int size,
+      String sort) {
+    validatePagination(page, size);
+    validatePriceRange(minPrice, maxPrice);
+    ProductStatus queryStatus = resolveStatus(status);
+    validatePublicListStatus(queryStatus);
+
+    Page<ProductListItemResponse> products =
+        productRepository
+            .searchPublicProducts(
+                normalizeKeyword(keyword),
+                minPrice,
+                maxPrice,
+                queryStatus,
+                PageRequest.of(page, size, resolveSort(sort)))
+            .map(ProductListItemResponse::from);
+
+    return PageResponse.from(products);
+  }
+
+  /**
    * 특정 판매자의 공개 상품 목록을 조회한다.
    *
    * <p>비회원도 호출할 수 있으므로 숨김 상품과 삭제 상품은 항상 제외하고, 존재하지 않는 판매자 ID는 회원 없음으로 응답한다.
@@ -221,6 +253,14 @@ public class ProductService {
     }
   }
 
+  private void validatePriceRange(Integer minPrice, Integer maxPrice) {
+    if ((minPrice != null && minPrice < 0)
+        || (maxPrice != null && maxPrice < 0)
+        || (minPrice != null && maxPrice != null && minPrice > maxPrice)) {
+      throw new BusinessException(ErrorCode.VALIDATION_FAILED, "가격 범위가 올바르지 않습니다.");
+    }
+  }
+
   private void validateSellerExists(Long sellerId) {
     if (!userRepository.existsById(sellerId)) {
       throw new BusinessException(ErrorCode.USER_NOT_FOUND);
@@ -265,6 +305,13 @@ public class ProductService {
     if (status == ProductStatus.DELETED) {
       throw new BusinessException(ErrorCode.INVALID_ENUM_VALUE);
     }
+  }
+
+  private String normalizeKeyword(String keyword) {
+    if (keyword == null || keyword.isBlank()) {
+      return null;
+    }
+    return keyword.trim().toLowerCase();
   }
 
   private Sort resolveSort(String sort) {
