@@ -190,7 +190,7 @@ class OrderControllerTest {
         .andExpect(jsonPath("$.data.product.productId").value(product.getId()))
         .andExpect(jsonPath("$.data.product.title").value("아이패드 미니 6세대"))
         .andExpect(jsonPath("$.data.product.price").value(430000))
-        .andExpect(jsonPath("$.data.product.status").value("ON_SALE"))
+        .andExpect(jsonPath("$.data.product.status").value("RESERVED"))
         .andExpect(jsonPath("$.data.buyer.userId").value(buyer.getId()))
         .andExpect(jsonPath("$.data.buyer.nickname").value("열무구매자"))
         .andExpect(jsonPath("$.data.seller.userId").value(seller.getId()))
@@ -286,6 +286,8 @@ class OrderControllerTest {
   }
 
   private Order saveOrder(User buyer, Product product) {
+    product.reserve();
+    productRepository.save(product);
     return orderRepository.save(Order.create(buyer, product));
   }
 }
