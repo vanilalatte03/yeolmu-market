@@ -94,6 +94,11 @@ class SecurityConfigTest {
   }
 
   @Test
+  void 웹소켓_handshake는_HTTP_인증_없이_보안_필터를_통과한다() throws Exception {
+    mockMvc.perform(get("/ws")).andExpect(status().isBadRequest());
+  }
+
+  @Test
   void 보호_API는_JWT가_없으면_401_UNAUTHORIZED로_응답한다() throws Exception {
     mockMvc
         .perform(get("/test/security/me"))

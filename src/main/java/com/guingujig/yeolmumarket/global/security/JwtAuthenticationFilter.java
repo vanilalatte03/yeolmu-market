@@ -1,6 +1,6 @@
 package com.guingujig.yeolmumarket.global.security;
 
-import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
+import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import jakarta.servlet.FilterChain;
@@ -25,8 +25,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
   public static final String JWT_ERROR_ATTRIBUTE = "JWT_ERROR_CODE";
   private static final String BEARER_PREFIX = "Bearer ";
 
-  private final JwtTokenProvider jwtTokenProvider;
-  private final RevokedAccessTokenRepository revokedAccessTokenRepository;
+  private final JwtAuthenticationService jwtAuthenticationService;
   private final ObjectMapper objectMapper;
 
   @Override
@@ -36,14 +35,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     String token = resolveToken(request);
     if (token != null) {
       try {
-        Authentication auth = jwtTokenProvider.getAuthentication(token);
-        String tokenHash = jwtTokenProvider.hashToken(token);
-        if (revokedAccessTokenRepository.exists(tokenHash)) {
-          request.setAttribute(JWT_ERROR_ATTRIBUTE, ErrorCode.REVOKED_TOKEN);
-        } else {
-          SecurityContextHolder.getContext().setAuthentication(auth);
-        }
+        Authentication auth = jwtAuthenticationService.authenticate(token);
+        SecurityContextHolder.getContext().setAuthentication(auth);
       } catch (JwtException e) {
+        request.setAttribute(JWT_ERROR_ATTRIBUTE, e.getErrorCode());
+      } catch (BusinessException e) {
         request.setAttribute(JWT_ERROR_ATTRIBUTE, e.getErrorCode());
       } catch (DataAccessException e) {
         writeError(response, ErrorCode.REDIS_UNAVAILABLE);

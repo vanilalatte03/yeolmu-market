@@ -1689,7 +1689,7 @@ STOMP over WebSocket 연결을 시작한다.
 
 - Method: `WS Connect`
 - Path: `/ws`
-- 인증: 필요
+- 인증: STOMP CONNECT 프레임에서 필요
 - HTTP Status: `101 Switching Protocols`
 
 #### Connect Headers
@@ -1698,13 +1698,27 @@ STOMP over WebSocket 연결을 시작한다.
 Authorization: Bearer {accessToken}
 ```
 
+CONNECT 성공 후 클라이언트는 STOMP 작업 단위 오류를 받기 위해 `/user/queue/errors`를 구독한다.
+이 오류 큐는 SUBSCRIBE/SEND 처리 실패를 전달하며, CONNECT 인증 실패에는 사용하지 않는다.
+
 #### Errors
 
-| 코드 | HTTP | 발생 조건 |
-| --- | --- | --- |
-| `UNAUTHORIZED` | 401 | 토큰 누락 |
-| `INVALID_TOKEN` | 401 | 잘못된 토큰 |
-| `EXPIRED_TOKEN` | 401 | 만료된 토큰 |
+CONNECT 인증 실패 시 서버는 STOMP `ERROR` frame으로 아래 payload를 전송하고 WebSocket 세션을 종료한다.
+
+```json
+{
+  "code": "INVALID_TOKEN",
+  "message": "잘못된 JWT입니다."
+}
+```
+
+| 코드 | 발생 조건 |
+| --- | --- |
+| `UNAUTHORIZED` | 토큰 누락 |
+| `INVALID_TOKEN` | 잘못된 토큰 |
+| `EXPIRED_TOKEN` | 만료된 토큰 |
+| `REVOKED_TOKEN` | 로그아웃되어 폐기된 토큰 |
+| `REDIS_UNAVAILABLE` | 폐기 토큰 조회 실패 |
 
 ### 채팅방 메시지 구독
 
@@ -1712,7 +1726,7 @@ Authorization: Bearer {accessToken}
 
 - Method: `SUB`
 - Destination: `/sub/chat-rooms/{roomId}`
-- 인증: 필요
+- 인증: CONNECT에서 설정된 Principal 필요
 
 #### Path Variables
 
@@ -1720,7 +1734,7 @@ Authorization: Bearer {accessToken}
 | --- | --- | --- |
 | `roomId` | Long | 채팅방 ID |
 
-#### Message Payload
+#### 수신 Message Payload
 
 ```json
 {
@@ -1735,6 +1749,16 @@ Authorization: Bearer {accessToken}
 
 #### Errors
 
+SUBSCRIBE 권한 또는 채팅방 검증 실패 시 서버는 해당 구독을 등록하지 않고, `/user/queue/errors`로 아래 payload를 전송하며 연결은 유지한다.
+
+```json
+{
+  "code": "CHAT_ROOM_ACCESS_DENIED",
+  "message": "채팅방 참여자가 아닙니다.",
+  "roomId": 300
+}
+```
+
 | 코드 | 발생 조건 |
 | --- | --- |
 | `CHAT_ROOM_ACCESS_DENIED` | 채팅방 참여자가 아닌 사용자의 구독 시도 |
@@ -1746,7 +1770,7 @@ Authorization: Bearer {accessToken}
 
 - Method: `PUB`
 - Destination: `/pub/chat-rooms/{roomId}/message`
-- 인증: 필요
+- 인증: CONNECT에서 설정된 Principal 필요
 
 #### Path Variables
 
@@ -1782,6 +1806,16 @@ Authorization: Bearer {accessToken}
 ```
 
 #### Errors
+
+SEND 처리 중 검증 또는 비즈니스 오류가 발생하면 메시지를 저장·발행하지 않고, `/user/queue/errors`로 아래 payload를 전송하며 연결은 유지한다.
+
+```json
+{
+  "code": "VALIDATION_FAILED",
+  "message": "요청 본문, 쿼리 파라미터, 경로 변수 검증에 실패했습니다.",
+  "roomId": 300
+}
+```
 
 | 코드 | 발생 조건 |
 | --- | --- |

@@ -38,6 +38,8 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/auth/refresh")
                     .permitAll()
+                    .requestMatchers("/ws", "/ws/**")
+                    .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/users/me/products")
                     .authenticated()
                     .requestMatchers(
