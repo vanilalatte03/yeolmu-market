@@ -36,6 +36,7 @@ public class ChatRoomService {
   private final ChatMessageRepository chatMessageRepository;
   private final ProductRepository productRepository;
   private final UserRepository userRepository;
+  private final ChatRoomAuthorizationService chatRoomAuthorizationService;
 
   /**
    * 구매자와 상품 판매자 사이의 채팅방을 생성하거나 기존 방을 반환한다.
@@ -98,7 +99,7 @@ public class ChatRoomService {
         chatRoomRepository
             .findWithParticipantsById(roomId)
             .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
-    validateParticipant(chatRoom, userId);
+    chatRoomAuthorizationService.validateParticipant(chatRoom, userId);
 
     List<ChatMessage> messages =
         chatMessageRepository.findPreviousMessages(
@@ -139,13 +140,6 @@ public class ChatRoomService {
   private void validateMessageCursor(Long beforeMessageId, int size) {
     if (size <= 0 || size > MAX_PAGE_SIZE || (beforeMessageId != null && beforeMessageId <= 0)) {
       throw new BusinessException(ErrorCode.INVALID_PAGINATION);
-    }
-  }
-
-  private void validateParticipant(ChatRoom chatRoom, Long userId) {
-    if (!chatRoom.getBuyer().getId().equals(userId)
-        && !chatRoom.getSeller().getId().equals(userId)) {
-      throw new BusinessException(ErrorCode.CHAT_ROOM_ACCESS_DENIED);
     }
   }
 

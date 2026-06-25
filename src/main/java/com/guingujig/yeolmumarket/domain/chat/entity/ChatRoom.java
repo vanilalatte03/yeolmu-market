@@ -63,4 +63,8 @@ public class ChatRoom {
     chatRoom.seller = Objects.requireNonNull(seller, "seller는 필수입니다.");
     return chatRoom;
   }
+
+  public boolean isParticipant(Long userId) {
+    return buyer.getId().equals(userId) || seller.getId().equals(userId);
+  }
 }
