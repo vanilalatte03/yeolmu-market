@@ -185,6 +185,44 @@ class UserControllerTest {
   }
 
   @Test
+  void 공백_문자열_닉네임은_400으로_응답한다() throws Exception {
+    User user = saveUser("customer@example.com", "열무구매자");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(user);
+
+    mockMvc
+        .perform(
+            put("/api/users/me")
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"nickname": "   "}
+                    """))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void 공백_문자열_비밀번호는_400으로_응답한다() throws Exception {
+    User user = saveUser("customer@example.com", "열무구매자");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(user);
+
+    mockMvc
+        .perform(
+            put("/api/users/me")
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"password": "        "}
+                    """))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
   void 미인증_요청은_401로_응답한다() throws Exception {
     mockMvc
         .perform(
