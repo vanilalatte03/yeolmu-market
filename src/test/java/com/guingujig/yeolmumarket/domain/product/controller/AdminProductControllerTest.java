@@ -2,6 +2,7 @@ package com.guingujig.yeolmumarket.domain.product.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -120,6 +121,40 @@ class AdminProductControllerTest {
   }
 
   @Test
+  void 관리자는_숨김_상품_목록을_페이지로_조회할_수_있다() throws Exception {
+    User admin = saveAdmin("admin@example.com", "열무관리자");
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product firstHiddenProduct = saveHiddenProduct(seller, "숨김 상품", 20000);
+    Product secondHiddenProduct =
+        saveHiddenProductWithStatus(seller, "예약 숨김 상품", 30000, ProductStatus.RESERVED);
+    saveProduct(seller, "공개 상품", 10000);
+    saveHiddenProductWithStatus(seller, "삭제 숨김 상품", 40000, ProductStatus.DELETED);
+
+    mockMvc
+        .perform(
+            get("/api/admin/products/hidden")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken(admin))
+                .param("page", "0")
+                .param("size", "10"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.content", hasSize(2)))
+        .andExpect(jsonPath("$.data.content[0].productId").value(secondHiddenProduct.getId()))
+        .andExpect(jsonPath("$.data.content[0].title").value("예약 숨김 상품"))
+        .andExpect(jsonPath("$.data.content[0].status").value("RESERVED"))
+        .andExpect(jsonPath("$.data.content[0].hidden").value(true))
+        .andExpect(jsonPath("$.data.content[0].sellerNickname").value("열무판매자"))
+        .andExpect(jsonPath("$.data.content[0].updatedAt", matchesPattern(".*(Z|\\+00:00)$")))
+        .andExpect(jsonPath("$.data.content[1].productId").value(firstHiddenProduct.getId()))
+        .andExpect(jsonPath("$.data.page").value(0))
+        .andExpect(jsonPath("$.data.size").value(10))
+        .andExpect(jsonPath("$.data.totalElements").value(2))
+        .andExpect(jsonPath("$.data.totalPages").value(1))
+        .andExpect(jsonPath("$.data.hasNext").value(false));
+  }
+
+  @Test
   void 일반_사용자는_상품_숨김_상태를_변경할_수_없다() throws Exception {
     User user = saveUser("user@example.com", "열무사용자");
     User seller = saveUser("seller@example.com", "열무판매자");
@@ -136,6 +171,18 @@ class AdminProductControllerTest {
                       "hidden": true
                     }
                     """))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+  }
+
+  @Test
+  void 일반_사용자는_숨김_상품_목록을_조회할_수_없다() throws Exception {
+    User user = saveUser("user@example.com", "열무사용자");
+
+    mockMvc
+        .perform(
+            get("/api/admin/products/hidden").header(HttpHeaders.AUTHORIZATION, bearerToken(user)))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("FORBIDDEN"));
@@ -235,6 +282,14 @@ class AdminProductControllerTest {
   private Product saveHiddenProduct(User seller, String title, Integer price) {
     Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
     product.changeHidden(true);
+    return productRepository.saveAndFlush(product);
+  }
+
+  private Product saveHiddenProductWithStatus(
+      User seller, String title, Integer price, ProductStatus status) {
+    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    product.changeHidden(true);
+    ReflectionTestUtils.setField(product, "status", status);
     return productRepository.saveAndFlush(product);
   }
 

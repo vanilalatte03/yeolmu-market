@@ -3,6 +3,7 @@ package com.guingujig.yeolmumarket.domain.product.service;
 import com.guingujig.yeolmumarket.domain.product.dto.CreateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.CreateProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.DeleteProductResponse;
+import com.guingujig.yeolmumarket.domain.product.dto.HiddenProductListItemResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.ProductDetailResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.ProductListItemResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusRequest;
@@ -173,6 +174,26 @@ public class ProductService {
 
     product.changeHidden(request.hidden());
     return UpdateProductHiddenStatusResponse.from(product);
+  }
+
+  /**
+   * 관리자가 숨김 처리된 상품 목록을 조회한다.
+   *
+   * <p>삭제 상품은 숨김 관리 대상에서 제외하고, 최근 변경된 상품부터 반환한다.
+   */
+  @Transactional(readOnly = true)
+  public PageResponse<HiddenProductListItemResponse> getHiddenProducts(int page, int size) {
+    validatePagination(page, size);
+
+    Page<HiddenProductListItemResponse> products =
+        productRepository
+            .findByHiddenTrueAndDeletedAtIsNullAndStatusNot(
+                ProductStatus.DELETED,
+                PageRequest.of(
+                    page, size, Sort.by(Sort.Order.desc("modifiedAt"), Sort.Order.desc("id"))))
+            .map(HiddenProductListItemResponse::from);
+
+    return PageResponse.from(products);
   }
 
   private Product getExistingProduct(Long productId) {
