@@ -208,9 +208,11 @@ class OrderServiceTest {
     }
 
     startLatch.countDown();
-    doneLatch.await(10, TimeUnit.SECONDS);
-    executor.shutdown();
+    boolean allDone = doneLatch.await(10, TimeUnit.SECONDS);
+    executor.shutdownNow();
+    executor.awaitTermination(5, TimeUnit.SECONDS);
 
+    assertThat(allDone).as("모든 주문 스레드가 10초 내에 완료되어야 합니다").isTrue();
     assertThat(successCount.get()).isEqualTo(1);
     assertThat(failures).hasSize(threadCount - 1);
     assertThat(failures)
