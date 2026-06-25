@@ -15,6 +15,7 @@ import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -189,7 +190,7 @@ class OrderServiceTest {
     CountDownLatch startLatch = new CountDownLatch(1);
     CountDownLatch doneLatch = new CountDownLatch(threadCount);
     AtomicInteger successCount = new AtomicInteger(0);
-    AtomicInteger failCount = new AtomicInteger(0);
+    List<Throwable> failures = new CopyOnWriteArrayList<>();
 
     for (User buyer : buyers) {
       executor.submit(
@@ -199,7 +200,7 @@ class OrderServiceTest {
               orderService.createOrder(buyer.getId(), productId);
               successCount.incrementAndGet();
             } catch (Exception e) {
-              failCount.incrementAndGet();
+              failures.add(e);
             } finally {
               doneLatch.countDown();
             }
@@ -211,7 +212,14 @@ class OrderServiceTest {
     executor.shutdown();
 
     assertThat(successCount.get()).isEqualTo(1);
-    assertThat(failCount.get()).isEqualTo(threadCount - 1);
+    assertThat(failures).hasSize(threadCount - 1);
+    assertThat(failures)
+        .allSatisfy(
+            e -> {
+              assertThat(e).isInstanceOf(BusinessException.class);
+              ErrorCode code = ((BusinessException) e).getErrorCode();
+              assertThat(code).isIn(ErrorCode.ORDER_ALREADY_EXISTS, ErrorCode.PRODUCT_NOT_ON_SALE);
+            });
     assertThat(orderRepository.count()).isEqualTo(1);
 
     Product reserved = productRepository.findById(productId).orElseThrow();
