@@ -1323,6 +1323,7 @@ P0에서는 `categoryId` 검색 조건을 사용하지 않고, `thumbnailUrl`은
 P0에서는 주문 생성, 주문 상세 조회, 취소를 사용하고, 배송 증빙과 거래 완료는 P1에서 도입한다.
 동시 주문 제어는 `docs/adr/001-concurrent-order-control.md`를 따른다.
 주문/결제/배송/환불/분쟁 상태 흐름은 `docs/adr/005-mock-safe-payment-transaction-policy.md`를 따른다.
+주문 취소 요청 body와 취소 사유 제외 정책은 `docs/adr/008-order-cancel-without-reason.md`를 따른다.
 
 ### 주문 생성
 
@@ -1456,15 +1457,10 @@ P0에서는 주문 생성 상태의 주문만 취소할 수 있다.
 
 #### Request Body
 
-| 필드 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `reason` | String | N | 취소 사유 |
+없음
 
-```json
-{
-  "reason": "구매 의사 취소"
-}
-```
+주문 취소 사유는 요청으로 받지 않고 저장하지 않는다.
+결제 취소 사유는 주문 취소와 별개이며, 결제 취소 API 정책을 따른다.
 
 #### Response Data
 
