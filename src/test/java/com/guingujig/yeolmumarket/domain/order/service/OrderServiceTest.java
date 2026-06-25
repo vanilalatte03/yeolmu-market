@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.guingujig.yeolmumarket.domain.order.dto.CreateOrderResponse;
+import com.guingujig.yeolmumarket.domain.order.dto.GetOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
@@ -226,6 +227,83 @@ class OrderServiceTest {
 
     Product reserved = productRepository.findById(productId).orElseThrow();
     assertThat(reserved.getStatus()).isEqualTo(ProductStatus.RESERVED);
+  }
+
+  @Test
+  void 구매자가_주문_상세_조회에_성공한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    CreateOrderResponse created = orderService.createOrder(buyer.getId(), product.getId());
+
+    GetOrderResponse response = orderService.getOrder(buyer.getId(), created.orderId());
+
+    assertThat(response.orderId()).isEqualTo(created.orderId());
+    assertThat(response.status()).isEqualTo(OrderStatus.CREATED);
+    assertThat(response.product().productId()).isEqualTo(product.getId());
+    assertThat(response.product().title()).isEqualTo("아이패드 미니 6세대");
+    assertThat(response.product().price()).isEqualTo(430000);
+    assertThat(response.product().status()).isEqualTo(ProductStatus.RESERVED);
+    assertThat(response.buyer().userId()).isEqualTo(buyer.getId());
+    assertThat(response.seller().userId()).isEqualTo(seller.getId());
+    assertThat(response.createdAt()).isNotNull();
+    assertThat(response.updatedAt()).isNotNull();
+  }
+
+  @Test
+  void 판매자가_주문_상세_조회에_성공한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    CreateOrderResponse created = orderService.createOrder(buyer.getId(), product.getId());
+
+    GetOrderResponse response = orderService.getOrder(seller.getId(), created.orderId());
+
+    assertThat(response.orderId()).isEqualTo(created.orderId());
+    assertThat(response.buyer().userId()).isEqualTo(buyer.getId());
+    assertThat(response.seller().userId()).isEqualTo(seller.getId());
+  }
+
+  @Test
+  void 주문_참여자가_아닌_사용자는_주문_상세_조회에_실패한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User other = saveUser("other@example.com", "타인");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    CreateOrderResponse created = orderService.createOrder(buyer.getId(), product.getId());
+
+    assertThatThrownBy(() -> orderService.getOrder(other.getId(), created.orderId()))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ORDER_ACCESS_DENIED));
+  }
+
+  @Test
+  void 존재하지_않는_주문_상세_조회는_실패한다() {
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+
+    assertThatThrownBy(() -> orderService.getOrder(buyer.getId(), Long.MAX_VALUE))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ORDER_NOT_FOUND));
+  }
+
+  @Test
+  void 주문_상세_응답의_상품_가격이_orderPrice_스냅샷을_사용한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    CreateOrderResponse created = orderService.createOrder(buyer.getId(), product.getId());
+
+    Product savedProduct = productRepository.findById(product.getId()).orElseThrow();
+    savedProduct.updateInfo(null, null, 500000);
+    productRepository.saveAndFlush(savedProduct);
+
+    GetOrderResponse response = orderService.getOrder(buyer.getId(), created.orderId());
+
+    assertThat(response.product().price()).isEqualTo(430000);
+    assertThat(orderRepository.findById(created.orderId()).orElseThrow().getOrderPrice())
+        .isEqualTo(430000);
   }
 
   private void deleteAll() {
