@@ -197,6 +197,37 @@ class SecurityConfigTest {
   }
 
   @Test
+  void 로그아웃_후_같은_토큰으로_재호출하면_401_REVOKED_TOKEN으로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String accessToken = jwtTokenProvider.issueAccessToken(user);
+    String expectedHash = jwtTokenProvider.hashToken(accessToken);
+
+    // add 호출 시 exists도 true를 반환하도록 인과 관계를 명시적으로 모사한다.
+    doAnswer(
+            invocation -> {
+              when(revokedAccessTokenRepository.exists(expectedHash)).thenReturn(true);
+              return null;
+            })
+        .when(revokedAccessTokenRepository)
+        .add(eq(expectedHash), any(Duration.class));
+
+    mockMvc
+        .perform(
+            post("/api/auth/logout").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.loggedOut").value(true));
+
+    mockMvc
+        .perform(
+            post("/api/auth/logout").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REVOKED_TOKEN"));
+  }
+
+  @Test
   void 로그아웃_후_refresh_token으로_재발급하면_401_REVOKED_TOKEN으로_응답한다() throws Exception {
     User user =
         userRepository.save(
