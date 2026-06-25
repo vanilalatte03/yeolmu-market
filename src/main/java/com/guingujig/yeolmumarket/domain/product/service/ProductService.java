@@ -7,6 +7,7 @@ import com.guingujig.yeolmumarket.domain.product.dto.ProductDetailResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.ProductListItemResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductResponse;
+import com.guingujig.yeolmumarket.domain.product.dto.UserProductListItemResponse;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
@@ -21,6 +22,7 @@ import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -89,6 +91,43 @@ public class ProductService {
   }
 
   /**
+   * 특정 판매자의 공개 상품 목록을 조회한다.
+   *
+   * <p>비회원도 호출할 수 있으므로 숨김 상품과 삭제 상품은 항상 제외하고, 존재하지 않는 판매자 ID는 회원 없음으로 응답한다.
+   */
+  @Transactional(readOnly = true)
+  public PageResponse<UserProductListItemResponse> getPublicSellerProducts(
+      Long sellerId, int page, int size, ProductStatus status) {
+    validatePagination(page, size);
+    validateSellerExists(sellerId);
+
+    Pageable pageable = PageRequest.of(page, size, resolveSort(null));
+    Page<Product> products =
+        status == ProductStatus.DELETED
+            ? Page.empty(pageable)
+            : findPublicSellerProducts(sellerId, status, pageable);
+
+    return PageResponse.from(products.map(UserProductListItemResponse::from));
+  }
+
+  /**
+   * 로그인 사용자가 본인 판매 상품을 관리 목적으로 조회한다.
+   *
+   * <p>숨김 상품도 포함하지만, 상태 필터가 없으면 삭제 상품은 제외한다. 삭제 상태를 명시하면 삭제 상품만 조회할 수 있다.
+   */
+  @Transactional(readOnly = true)
+  public PageResponse<UserProductListItemResponse> getMyProducts(
+      Long sellerId, int page, int size, ProductStatus status) {
+    validatePagination(page, size);
+    validateSellerExists(sellerId);
+
+    Pageable pageable = PageRequest.of(page, size, resolveSort(null));
+    Page<Product> products = findMyProducts(sellerId, status, pageable);
+
+    return PageResponse.from(products.map(UserProductListItemResponse::from));
+  }
+
+  /**
    * 상품 판매자 본인만 P0 수정 가능 필드인 제목, 설명, 가격을 변경할 수 있다.
    *
    * <p>삭제된 상품은 존재하지 않는 상품처럼 처리한다.
@@ -143,6 +182,33 @@ public class ProductService {
     if (product.hasActiveOrder()) {
       throw new BusinessException(ErrorCode.PRODUCT_HAS_ACTIVE_ORDER);
     }
+  }
+
+  private void validateSellerExists(Long sellerId) {
+    if (!userRepository.existsById(sellerId)) {
+      throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+    }
+  }
+
+  private Page<Product> findPublicSellerProducts(
+      Long sellerId, ProductStatus status, Pageable pageable) {
+    if (status == null) {
+      return productRepository.findBySellerIdAndHiddenFalseAndDeletedAtIsNullAndStatusNot(
+          sellerId, ProductStatus.DELETED, pageable);
+    }
+    return productRepository.findBySellerIdAndHiddenFalseAndDeletedAtIsNullAndStatus(
+        sellerId, status, pageable);
+  }
+
+  private Page<Product> findMyProducts(Long sellerId, ProductStatus status, Pageable pageable) {
+    if (status == null) {
+      return productRepository.findBySellerIdAndDeletedAtIsNullAndStatusNot(
+          sellerId, ProductStatus.DELETED, pageable);
+    }
+    if (status == ProductStatus.DELETED) {
+      return productRepository.findBySellerIdAndStatus(sellerId, status, pageable);
+    }
+    return productRepository.findBySellerIdAndDeletedAtIsNullAndStatus(sellerId, status, pageable);
   }
 
   private void validatePagination(int page, int size) {
