@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.guingujig.yeolmumarket.domain.product.dto.DeleteProductResponse;
+import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusRequest;
+import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductResponse;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
@@ -128,6 +130,70 @@ class ProductServiceTest {
             BusinessException.class,
             exception ->
                 assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_HAS_ACTIVE_ORDER));
+  }
+
+  @Test
+  void 상품을_숨김_처리하면_hidden만_변경하고_상품_상태는_유지한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProductWithStatus(seller, "예약 상품", 20000, ProductStatus.RESERVED);
+
+    UpdateProductHiddenStatusResponse response =
+        productService.updateProductHiddenStatus(
+            product.getId(), new UpdateProductHiddenStatusRequest(true));
+
+    assertThat(response.productId()).isEqualTo(product.getId());
+    assertThat(response.status()).isEqualTo(ProductStatus.RESERVED);
+    assertThat(response.hidden()).isTrue();
+
+    Product hiddenProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(hiddenProduct.getStatus()).isEqualTo(ProductStatus.RESERVED);
+    assertThat(hiddenProduct.isHidden()).isTrue();
+  }
+
+  @Test
+  void 숨김_상품을_숨김_해제할_수_있다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    product.changeHidden(true);
+    productRepository.flush();
+
+    UpdateProductHiddenStatusResponse response =
+        productService.updateProductHiddenStatus(
+            product.getId(), new UpdateProductHiddenStatusRequest(false));
+
+    assertThat(response.productId()).isEqualTo(product.getId());
+    assertThat(response.status()).isEqualTo(ProductStatus.ON_SALE);
+    assertThat(response.hidden()).isFalse();
+
+    Product visibleProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(visibleProduct.isHidden()).isFalse();
+  }
+
+  @Test
+  void 존재하지_않는_상품_숨김_상태_변경은_실패한다() {
+    assertThatThrownBy(
+            () ->
+                productService.updateProductHiddenStatus(
+                    Long.MAX_VALUE, new UpdateProductHiddenStatusRequest(true)))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_NOT_FOUND));
+  }
+
+  @Test
+  void 삭제된_상품_숨김_상태_변경은_실패한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProductWithStatus(seller, "삭제 상품", 20000, ProductStatus.DELETED);
+
+    assertThatThrownBy(
+            () ->
+                productService.updateProductHiddenStatus(
+                    product.getId(), new UpdateProductHiddenStatusRequest(true)))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_NOT_FOUND));
   }
 
   private void deleteAll() {
