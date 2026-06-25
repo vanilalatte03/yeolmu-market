@@ -12,6 +12,7 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import jakarta.persistence.EntityManager;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -25,6 +26,7 @@ public class OrderService {
   private final OrderRepository orderRepository;
   private final ProductRepository productRepository;
   private final UserRepository userRepository;
+  private final EntityManager entityManager;
 
   /**
    * 로그인한 구매자가 판매 중인 상품을 주문한다.
@@ -79,8 +81,7 @@ public class OrderService {
    * 주문 구매자가 CREATED 상태의 주문을 취소하고 예약된 상품을 ON_SALE로 되돌린다.
    *
    * <p>주문 상태 변경과 상품 상태 변경을 하나의 트랜잭션에서 처리한다. flush를 명시적으로 호출해 Product.@Version 낙관적 락 충돌을 서비스 내에서
-   * 포착하고 INVALID_ORDER_STATUS로 변환한다. canceledAt은 flush 후 DB가 확정한 modifiedAt 값이므로, flush 없이 읽으면 커밋 전
-   * 값이 반환된다.
+   * 포착하고 INVALID_ORDER_STATUS로 변환한다. canceledAt은 flush와 refresh 후 DB가 확정한 modifiedAt 값으로 반환한다.
    *
    * @throws BusinessException ORDER_NOT_FOUND - 주문이 존재하지 않는 경우
    * @throws BusinessException ORDER_ACCESS_DENIED - 구매자가 아닌 사용자가 취소하는 경우
@@ -105,6 +106,7 @@ public class OrderService {
     } catch (ObjectOptimisticLockingFailureException e) {
       throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
     }
+    entityManager.refresh(order);
 
     return CancelOrderResponse.from(order);
   }
