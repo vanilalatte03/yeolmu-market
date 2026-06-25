@@ -97,6 +97,11 @@ public class Product extends BaseTimeEntity {
     this.deletedAt = Objects.requireNonNull(deletedAt, "deletedAt은 필수입니다.");
   }
 
+  /** 관리자 숨김 처리는 상품 거래 상태를 유지하고 공개 노출 여부만 변경한다. */
+  public void changeHidden(boolean hidden) {
+    this.hidden = hidden;
+  }
+
   public boolean isDeleted() {
     return status == ProductStatus.DELETED || deletedAt != null;
   }

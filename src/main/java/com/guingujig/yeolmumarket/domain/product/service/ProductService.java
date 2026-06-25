@@ -5,6 +5,8 @@ import com.guingujig.yeolmumarket.domain.product.dto.CreateProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.DeleteProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.ProductDetailResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.ProductListItemResponse;
+import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusRequest;
+import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UserProductListItemResponse;
@@ -157,6 +159,20 @@ public class ProductService {
 
     product.delete(LocalDateTime.now(ZoneOffset.UTC));
     return DeleteProductResponse.success();
+  }
+
+  /**
+   * 관리자가 상품 공개 노출 여부를 변경한다.
+   *
+   * <p>존재하지 않거나 삭제된 상품은 숨김 상태 변경 대상이 아니며, 상품 거래 상태는 변경하지 않는다.
+   */
+  @Transactional
+  public UpdateProductHiddenStatusResponse updateProductHiddenStatus(
+      Long productId, UpdateProductHiddenStatusRequest request) {
+    Product product = getExistingProduct(productId);
+
+    product.changeHidden(request.hidden());
+    return UpdateProductHiddenStatusResponse.from(product);
   }
 
   private Product getExistingProduct(Long productId) {
