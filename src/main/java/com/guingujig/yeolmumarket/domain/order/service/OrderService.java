@@ -12,6 +12,7 @@ import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,12 +27,13 @@ public class OrderService {
   /**
    * 로그인한 구매자가 판매 중인 상품을 주문한다.
    *
-   * <p>주문 생성과 상품 상태 변경(ON_SALE → RESERVED)을 하나의 트랜잭션에서 처리한다. Product.@Version 낙관적 락으로 동시 주문 충돌을
-   * 감지하며, 충돌 시 GlobalExceptionHandler가 재시도 없이 409로 응답한다.
+   * <p>주문 생성과 상품 상태 변경(ON_SALE → RESERVED)을 하나의 트랜잭션에서 처리한다. flush를 명시적으로 호출해 Product.@Version 낙관적
+   * 락 충돌을 서비스 내에서 포착하고 ORDER_ALREADY_EXISTS로 변환한다.
    *
    * @throws BusinessException PRODUCT_NOT_FOUND - 상품이 존재하지 않거나 삭제/숨김 처리된 경우
    * @throws BusinessException CANNOT_ORDER_OWN_PRODUCT - 자신의 상품을 주문하려는 경우
    * @throws BusinessException PRODUCT_NOT_ON_SALE - 상품이 ON_SALE 상태가 아닌 경우
+   * @throws BusinessException ORDER_ALREADY_EXISTS - 낙관적 락 충돌로 동시 주문이 실패한 경우
    */
   @Transactional
   public CreateOrderResponse createOrder(Long buyerId, Long productId) {
@@ -61,6 +63,12 @@ public class OrderService {
 
     Order order = Order.create(buyer, product);
     orderRepository.save(order);
+
+    try {
+      productRepository.flush();
+    } catch (ObjectOptimisticLockingFailureException e) {
+      throw new BusinessException(ErrorCode.ORDER_ALREADY_EXISTS);
+    }
 
     return CreateOrderResponse.from(order);
   }

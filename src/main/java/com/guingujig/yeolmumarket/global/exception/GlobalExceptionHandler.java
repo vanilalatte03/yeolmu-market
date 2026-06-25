@@ -44,7 +44,7 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
   public ResponseEntity<ApiResponse<Void>> handleOptimisticLockingFailureException(
       ObjectOptimisticLockingFailureException exception) {
-    ErrorCode errorCode = ErrorCode.ORDER_ALREADY_EXISTS;
+    ErrorCode errorCode = ErrorCode.CONFLICT;
     return ResponseEntity.status(errorCode.getHttpStatus())
         .body(ApiResponse.failure(errorCode.name(), errorCode.getMessage()));
   }
