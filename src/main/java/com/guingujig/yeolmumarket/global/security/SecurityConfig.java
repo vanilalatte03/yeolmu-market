@@ -40,6 +40,8 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers("/ws", "/ws/**")
                     .permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/users/me/products")
+                    .authenticated()
                     .requestMatchers(
                         HttpMethod.GET,
                         "/api/products",
@@ -47,6 +49,8 @@ public class SecurityConfig {
                         "/api/search/popular-keywords",
                         "/api/categories",
                         "/api/categories/*/products",
+                        "/api/users/*/products",
+                        "/api/users/*",
                         "/api/users/*/reviews")
                     .permitAll()
                     .requestMatchers("/api/admin/**")
