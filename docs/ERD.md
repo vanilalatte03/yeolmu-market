@@ -265,6 +265,7 @@ erDiagram
 
 P0 주문이 성공하면 상품은 `RESERVED`가 됩니다. 동일 상품에는 동시에 여러 주문 시도가 가능하지만 성공 주문은 하나만 허용합니다.
 `product_id`에 단순 `UNIQUE` 제약을 두지 않고, 상품 상태 전이와 `product.version` 낙관적 락으로 성공 주문 중복을 막습니다.
+주문 취소 사유와 주문 취소 전용 시각은 `orders`에 저장하지 않습니다. 결제 취소 사유는 `payment.cancel_reason`에서 별도로 다룹니다.
 
 ### payment
 

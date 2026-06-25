@@ -3,8 +3,10 @@ package com.guingujig.yeolmumarket.domain.order.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.guingujig.yeolmumarket.domain.order.dto.CancelOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.CreateOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.GetOrderResponse;
+import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
@@ -14,6 +16,7 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -304,6 +307,158 @@ class OrderServiceTest {
     assertThat(response.product().price()).isEqualTo(430000);
     assertThat(orderRepository.findById(created.orderId()).orElseThrow().getOrderPrice())
         .isEqualTo(430000);
+  }
+
+  @Test
+  void 구매자가_CREATED_주문_취소에_성공한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    CreateOrderResponse created = orderService.createOrder(buyer.getId(), product.getId());
+
+    CancelOrderResponse response = orderService.cancelOrder(buyer.getId(), created.orderId());
+
+    assertThat(response.orderId()).isEqualTo(created.orderId());
+    assertThat(response.status()).isEqualTo(OrderStatus.CANCELED);
+    assertThat(response.productStatus()).isEqualTo(ProductStatus.ON_SALE);
+    assertThat(response.canceledAt()).isNotNull();
+    assertThat(response.canceledAt().getOffset().getTotalSeconds()).isZero();
+  }
+
+  @Test
+  void 주문_취소_시_주문_상태가_CANCELED로_변경된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    CreateOrderResponse created = orderService.createOrder(buyer.getId(), product.getId());
+
+    orderService.cancelOrder(buyer.getId(), created.orderId());
+
+    Order canceled = orderRepository.findById(created.orderId()).orElseThrow();
+    assertThat(canceled.getOrderStatus()).isEqualTo(OrderStatus.CANCELED);
+  }
+
+  @Test
+  void 주문_취소_시_상품_상태가_ON_SALE로_변경된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    CreateOrderResponse created = orderService.createOrder(buyer.getId(), product.getId());
+
+    orderService.cancelOrder(buyer.getId(), created.orderId());
+
+    Product restored = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(restored.getStatus()).isEqualTo(ProductStatus.ON_SALE);
+  }
+
+  @Test
+  void 주문_취소_후_같은_상품을_다시_주문할_수_있다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User buyer2 = saveUser("buyer2@example.com", "열무구매자2");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    CreateOrderResponse first = orderService.createOrder(buyer.getId(), product.getId());
+    orderService.cancelOrder(buyer.getId(), first.orderId());
+
+    CreateOrderResponse second = orderService.createOrder(buyer2.getId(), product.getId());
+
+    assertThat(second.orderId()).isNotNull();
+    assertThat(second.status()).isEqualTo(OrderStatus.CREATED);
+  }
+
+  @Test
+  void 주문_취소_응답의_canceledAt이_DB의_modifiedAt과_일치한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    CreateOrderResponse created = orderService.createOrder(buyer.getId(), product.getId());
+
+    CancelOrderResponse response = orderService.cancelOrder(buyer.getId(), created.orderId());
+
+    Order canceledOrder = orderRepository.findById(created.orderId()).orElseThrow();
+    assertThat(response.canceledAt())
+        .isEqualTo(canceledOrder.getModifiedAt().atOffset(ZoneOffset.UTC));
+  }
+
+  @Test
+  void 판매자는_주문을_취소할_수_없다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    CreateOrderResponse created = orderService.createOrder(buyer.getId(), product.getId());
+
+    assertThatThrownBy(() -> orderService.cancelOrder(seller.getId(), created.orderId()))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ORDER_ACCESS_DENIED));
+  }
+
+  @Test
+  void 주문_참여자가_아닌_사용자는_주문을_취소할_수_없다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User other = saveUser("other@example.com", "타인");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    CreateOrderResponse created = orderService.createOrder(buyer.getId(), product.getId());
+
+    assertThatThrownBy(() -> orderService.cancelOrder(other.getId(), created.orderId()))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ORDER_ACCESS_DENIED));
+  }
+
+  @Test
+  void 존재하지_않는_주문_취소는_실패한다() {
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+
+    assertThatThrownBy(() -> orderService.cancelOrder(buyer.getId(), Long.MAX_VALUE))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ORDER_NOT_FOUND));
+  }
+
+  @Test
+  void 이미_취소된_주문_취소는_실패한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    CreateOrderResponse created = orderService.createOrder(buyer.getId(), product.getId());
+    orderService.cancelOrder(buyer.getId(), created.orderId());
+
+    assertThatThrownBy(() -> orderService.cancelOrder(buyer.getId(), created.orderId()))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_ORDER_STATUS));
+  }
+
+  @Test
+  void CREATED가_아닌_상태의_주문_취소는_실패한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+
+    for (OrderStatus status :
+        new OrderStatus[] {
+          OrderStatus.PAID,
+          OrderStatus.SHIPPING,
+          OrderStatus.COMPLETED,
+          OrderStatus.REFUND_REQUESTED,
+          OrderStatus.REFUNDED,
+          OrderStatus.DISPUTED
+        }) {
+      CreateOrderResponse created = orderService.createOrder(buyer.getId(), product.getId());
+      Order order = orderRepository.findById(created.orderId()).orElseThrow();
+      ReflectionTestUtils.setField(order, "orderStatus", status);
+      orderRepository.saveAndFlush(order);
+      Product p = productRepository.findById(product.getId()).orElseThrow();
+      ReflectionTestUtils.setField(p, "status", ProductStatus.ON_SALE);
+      productRepository.saveAndFlush(p);
+
+      assertThatThrownBy(() -> orderService.cancelOrder(buyer.getId(), created.orderId()))
+          .isInstanceOfSatisfying(
+              BusinessException.class,
+              e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_ORDER_STATUS));
+    }
   }
 
   private void deleteAll() {

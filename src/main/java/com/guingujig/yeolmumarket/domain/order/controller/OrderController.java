@@ -1,5 +1,6 @@
 package com.guingujig.yeolmumarket.domain.order.controller;
 
+import com.guingujig.yeolmumarket.domain.order.dto.CancelOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.CreateOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.GetOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.service.OrderService;
@@ -25,6 +26,13 @@ public class OrderController {
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long productId) {
     CreateOrderResponse response = orderService.createOrder(authenticatedUser.userId(), productId);
     return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
+  }
+
+  @PostMapping("/api/orders/{orderId}/cancel")
+  public ResponseEntity<ApiResponse<CancelOrderResponse>> cancelOrder(
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long orderId) {
+    CancelOrderResponse response = orderService.cancelOrder(authenticatedUser.userId(), orderId);
+    return ResponseEntity.ok(ApiResponse.success(response));
   }
 
   @GetMapping("/api/orders/{orderId}")
