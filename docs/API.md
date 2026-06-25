@@ -265,6 +265,7 @@ JWT 폐기와 refresh token 회전 정책은 `docs/adr/007-jwt-refresh-token-rot
 | `PRODUCT_ACCESS_DENIED` | 403 | 상품 수정, 삭제, 이미지 관리 권한 없음 |
 | `PRODUCT_NOT_ON_SALE` | 409 | 판매 중이 아닌 상품 |
 | `PRODUCT_HAS_ACTIVE_ORDER` | 409 | 거래 진행 중인 상품 삭제 시도 |
+| `PRODUCT_INVALID_STATUS` | 409 | 현재 상품 상태에서 수행할 수 없는 작업 |
 | `CANNOT_ORDER_OWN_PRODUCT` | 400 | 자신의 상품 주문 시도 |
 | `IMAGE_NOT_FOUND` | 404 | 상품 이미지 없음 |
 | `UNSUPPORTED_IMAGE_TYPE` | 400 | 지원하지 않는 이미지 형식 |
