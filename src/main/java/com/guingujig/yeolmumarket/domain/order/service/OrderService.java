@@ -61,14 +61,14 @@ public class OrderService {
 
     product.reserve();
 
-    Order order = Order.create(buyer, product);
-    orderRepository.save(order);
-
     try {
       productRepository.flush();
     } catch (ObjectOptimisticLockingFailureException e) {
       throw new BusinessException(ErrorCode.ORDER_ALREADY_EXISTS);
     }
+
+    Order order = Order.create(buyer, product);
+    orderRepository.save(order);
 
     return CreateOrderResponse.from(order);
   }
