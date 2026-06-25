@@ -7,6 +7,7 @@ import com.guingujig.yeolmumarket.domain.auth.dto.RefreshTokenResponse;
 import com.guingujig.yeolmumarket.domain.auth.dto.SignupRequest;
 import com.guingujig.yeolmumarket.domain.auth.dto.SignupResponse;
 import com.guingujig.yeolmumarket.domain.auth.repository.ActiveRefreshTokenRepository;
+import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
@@ -16,6 +17,7 @@ import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider.JwtRefreshClaims;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataAccessException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +30,7 @@ public class AuthService {
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
   private final ActiveRefreshTokenRepository activeRefreshTokenRepository;
+  private final RevokedAccessTokenRepository revokedAccessTokenRepository;
 
   /**
    * 이메일 중복을 검증한 뒤 신규 회원을 생성한다.
@@ -66,10 +69,14 @@ public class AuthService {
     String accessToken = jwtTokenProvider.issueAccessToken(user);
     String refreshToken = jwtTokenProvider.issueRefreshToken(user);
     JwtRefreshClaims refreshClaims = parseRefreshClaims(refreshToken);
-    activeRefreshTokenRepository.save(
-        user.getId(),
-        refreshClaims.jti(),
-        Duration.ofSeconds(jwtTokenProvider.getRefreshTokenValiditySeconds()));
+    try {
+      activeRefreshTokenRepository.save(
+          user.getId(),
+          refreshClaims.jti(),
+          Duration.ofSeconds(jwtTokenProvider.getRefreshTokenValiditySeconds()));
+    } catch (DataAccessException exception) {
+      throw new BusinessException(ErrorCode.REDIS_UNAVAILABLE);
+    }
 
     return new LoginResponse(
         "Bearer",
@@ -97,12 +104,17 @@ public class AuthService {
     String accessToken = jwtTokenProvider.issueAccessToken(user);
     String refreshToken = jwtTokenProvider.issueRefreshToken(user);
     JwtRefreshClaims newRefreshClaims = parseRefreshClaims(refreshToken);
-    boolean rotated =
-        activeRefreshTokenRepository.rotate(
-            user.getId(),
-            claims.jti(),
-            newRefreshClaims.jti(),
-            Duration.ofSeconds(jwtTokenProvider.getRefreshTokenValiditySeconds()));
+    boolean rotated;
+    try {
+      rotated =
+          activeRefreshTokenRepository.rotate(
+              user.getId(),
+              claims.jti(),
+              newRefreshClaims.jti(),
+              Duration.ofSeconds(jwtTokenProvider.getRefreshTokenValiditySeconds()));
+    } catch (DataAccessException exception) {
+      throw new BusinessException(ErrorCode.REDIS_UNAVAILABLE);
+    }
 
     if (!rotated) {
       throw new BusinessException(ErrorCode.REVOKED_TOKEN);
@@ -114,6 +126,29 @@ public class AuthService {
         refreshToken,
         jwtTokenProvider.getAccessTokenValiditySeconds(),
         jwtTokenProvider.getRefreshTokenValiditySeconds());
+  }
+
+  /**
+   * 로그아웃 요청에 사용된 access token을 폐기하고, 사용자의 활성 refresh token을 삭제한다.
+   *
+   * <p>access token을 먼저 폐기하면 이후 실패 시 같은 토큰으로 재시도할 수 없으므로, refresh token 삭제를 먼저 수행한다.
+   */
+  public void logout(Long userId, String accessToken) {
+    try {
+      activeRefreshTokenRepository.deleteByUserId(userId);
+      revokeAccessTokenIfAlive(accessToken);
+    } catch (DataAccessException exception) {
+      throw new BusinessException(ErrorCode.REDIS_UNAVAILABLE);
+    }
+  }
+
+  private void revokeAccessTokenIfAlive(String accessToken) {
+    try {
+      Duration remaining = jwtTokenProvider.getAccessTokenRemainingTtl(accessToken);
+      revokedAccessTokenRepository.add(jwtTokenProvider.hashToken(accessToken), remaining);
+    } catch (JwtException ignored) {
+      // 필터 통과 직후 만료 경계에 걸린 경우: 이미 만료된 토큰은 블랙리스트 등록 불필요
+    }
   }
 
   private JwtRefreshClaims parseRefreshClaims(String refreshToken) {

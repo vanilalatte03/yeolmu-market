@@ -5,6 +5,7 @@ import com.guingujig.yeolmumarket.domain.user.entity.UserRole;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -69,6 +70,18 @@ public class JwtTokenProvider {
   /** 테스트 전용: 이미 만료된 refresh token을 발급한다. */
   String issueExpiredRefreshToken(User user) {
     return generateToken(user, TOKEN_TYPE_REFRESH, -1);
+  }
+
+  public Duration getAccessTokenRemainingTtl(String token) {
+    JwtClaims claims = parseClaims(token);
+    if (!TOKEN_TYPE_ACCESS.equals(claims.tokenType())) {
+      throw new JwtException(ErrorCode.INVALID_TOKEN, "access token이 아닙니다.");
+    }
+    long remaining = claims.expiresAtEpochSeconds() - Instant.now().getEpochSecond();
+    if (remaining <= 0) {
+      throw new JwtException(ErrorCode.EXPIRED_TOKEN, "JWT가 만료되었습니다.");
+    }
+    return Duration.ofSeconds(remaining);
   }
 
   public long getAccessTokenValiditySeconds() {

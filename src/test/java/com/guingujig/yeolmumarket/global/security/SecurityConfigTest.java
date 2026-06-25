@@ -1,23 +1,35 @@
 package com.guingujig.yeolmumarket.global.security;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.guingujig.yeolmumarket.YeolmuMarketApplication;
+import com.guingujig.yeolmumarket.domain.auth.repository.ActiveRefreshTokenRepository;
+import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.entity.UserRole;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,6 +39,9 @@ import org.springframework.web.bind.annotation.RestController;
 @AutoConfigureMockMvc
 @Transactional
 class SecurityConfigTest {
+
+  @MockitoBean private ActiveRefreshTokenRepository activeRefreshTokenRepository;
+  @MockitoBean private RevokedAccessTokenRepository revokedAccessTokenRepository;
 
   private final MockMvc mockMvc;
   private final UserRepository userRepository;
@@ -161,6 +176,151 @@ class SecurityConfigTest {
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+  }
+
+  @Test
+  void 로그아웃에_성공하면_200과_loggedOut_true를_반환하고_블랙리스트에_등록한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String accessToken = jwtTokenProvider.issueAccessToken(user);
+    String expectedHash = jwtTokenProvider.hashToken(accessToken);
+
+    mockMvc
+        .perform(
+            post("/api/auth/logout").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.loggedOut").value(true));
+
+    verify(revokedAccessTokenRepository).add(eq(expectedHash), any(Duration.class));
+    verify(activeRefreshTokenRepository).deleteByUserId(user.getId());
+  }
+
+  @Test
+  void 로그아웃_후_같은_토큰으로_재호출하면_401_REVOKED_TOKEN으로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String accessToken = jwtTokenProvider.issueAccessToken(user);
+    String expectedHash = jwtTokenProvider.hashToken(accessToken);
+
+    // add 호출 시 exists도 true를 반환하도록 인과 관계를 명시적으로 모사한다.
+    doAnswer(
+            invocation -> {
+              when(revokedAccessTokenRepository.exists(expectedHash)).thenReturn(true);
+              return null;
+            })
+        .when(revokedAccessTokenRepository)
+        .add(eq(expectedHash), any(Duration.class));
+
+    mockMvc
+        .perform(
+            post("/api/auth/logout").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.loggedOut").value(true));
+
+    mockMvc
+        .perform(
+            post("/api/auth/logout").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REVOKED_TOKEN"));
+  }
+
+  @Test
+  void 로그아웃_후_refresh_token으로_재발급하면_401_REVOKED_TOKEN으로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String accessToken = jwtTokenProvider.issueAccessToken(user);
+    String refreshToken = jwtTokenProvider.issueRefreshToken(user);
+
+    // deleteByUserId 호출이 실제로 rotate 실패를 유발하는 인과 관계를 명시적으로 모사한다.
+    doAnswer(
+            invocation -> {
+              when(activeRefreshTokenRepository.rotate(
+                      eq(user.getId()), anyString(), anyString(), any(Duration.class)))
+                  .thenReturn(false);
+              return null;
+            })
+        .when(activeRefreshTokenRepository)
+        .deleteByUserId(user.getId());
+
+    mockMvc
+        .perform(
+            post("/api/auth/logout").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.loggedOut").value(true));
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "refreshToken": "%s"
+                    }
+                    """
+                        .formatted(refreshToken)))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REVOKED_TOKEN"));
+  }
+
+  @Test
+  void 보호_API는_블랙리스트에_등록된_JWT면_401_REVOKED_TOKEN으로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String accessToken = jwtTokenProvider.issueAccessToken(user);
+    when(revokedAccessTokenRepository.exists(jwtTokenProvider.hashToken(accessToken)))
+        .thenReturn(true);
+
+    mockMvc
+        .perform(
+            get("/test/security/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REVOKED_TOKEN"));
+  }
+
+  @Test
+  void Redis_장애_시_JWT가_있는_요청은_503_REDIS_UNAVAILABLE로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String accessToken = jwtTokenProvider.issueAccessToken(user);
+    when(revokedAccessTokenRepository.exists(jwtTokenProvider.hashToken(accessToken)))
+        .thenThrow(new RedisConnectionFailureException("Redis unavailable"));
+
+    mockMvc
+        .perform(
+            get("/test/security/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REDIS_UNAVAILABLE"));
+  }
+
+  @Test
+  void 로그아웃_중_Redis_저장에_실패하면_503_REDIS_UNAVAILABLE로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String accessToken = jwtTokenProvider.issueAccessToken(user);
+    String expectedHash = jwtTokenProvider.hashToken(accessToken);
+    doThrow(new RedisConnectionFailureException("Redis unavailable"))
+        .when(revokedAccessTokenRepository)
+        .add(eq(expectedHash), any(Duration.class));
+
+    mockMvc
+        .perform(
+            post("/api/auth/logout").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REDIS_UNAVAILABLE"));
   }
 
   @Test
