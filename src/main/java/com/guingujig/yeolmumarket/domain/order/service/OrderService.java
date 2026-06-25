@@ -59,7 +59,7 @@ public class OrderService {
 
     product.reserve();
 
-    Order order = Order.create(buyer, product.getSeller(), product);
+    Order order = Order.create(buyer, product);
     orderRepository.save(order);
 
     return CreateOrderResponse.from(order);

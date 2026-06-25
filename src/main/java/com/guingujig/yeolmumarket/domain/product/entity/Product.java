@@ -110,8 +110,15 @@ public class Product extends BaseTimeEntity {
     return status == ProductStatus.RESERVED;
   }
 
-  /** ON_SALE 상태의 상품을 RESERVED로 전이한다. 호출 전에 ON_SALE 여부를 반드시 검증해야 한다. */
+  /**
+   * ON_SALE 상태의 상품을 RESERVED로 전이한다.
+   *
+   * <p>ON_SALE이 아닌 상태에서 호출하면 {@link IllegalStateException}을 던져 잘못된 전이를 차단한다.
+   */
   public void reserve() {
+    if (this.status != ProductStatus.ON_SALE) {
+      throw new IllegalStateException("ON_SALE 상태의 상품만 예약할 수 있습니다.");
+    }
     this.status = ProductStatus.RESERVED;
   }
 
