@@ -37,6 +37,7 @@ public enum ErrorCode {
   ORDER_ACCESS_DENIED(HttpStatus.FORBIDDEN, "주문에 대한 권한이 없습니다."),
   INVALID_ORDER_STATUS(HttpStatus.CONFLICT, "현재 주문 상태에서 수행할 수 없는 작업입니다."),
   ORDER_ALREADY_EXISTS(HttpStatus.CONFLICT, "동일 상품에 이미 유효한 주문이 존재합니다."),
+  PRODUCT_INVALID_STATUS(HttpStatus.CONFLICT, "현재 상품 상태에서 수행할 수 없는 작업입니다."),
   CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, "채팅방을 찾을 수 없습니다."),
   CHAT_ROOM_ACCESS_DENIED(HttpStatus.FORBIDDEN, "채팅방 참여자가 아닙니다."),
   CANNOT_CHAT_OWN_PRODUCT(HttpStatus.BAD_REQUEST, "자신의 상품에는 채팅방을 만들 수 없습니다."),
