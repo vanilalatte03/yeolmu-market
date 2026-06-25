@@ -78,11 +78,13 @@ public class OrderService {
   /**
    * 주문 구매자가 CREATED 상태의 주문을 취소하고 예약된 상품을 ON_SALE로 되돌린다.
    *
-   * <p>주문 상태 변경과 상품 상태 변경을 하나의 트랜잭션에서 처리한다.
+   * <p>주문 상태 변경과 상품 상태 변경을 하나의 트랜잭션에서 처리한다. flush를 명시적으로 호출해 Product.@Version 낙관적 락 충돌을 서비스 내에서
+   * 포착하고 INVALID_ORDER_STATUS로 변환한다. canceledAt은 flush 후 DB가 확정한 modifiedAt 값이므로, flush 없이 읽으면 커밋 전
+   * 값이 반환된다.
    *
    * @throws BusinessException ORDER_NOT_FOUND - 주문이 존재하지 않는 경우
    * @throws BusinessException ORDER_ACCESS_DENIED - 구매자가 아닌 사용자가 취소하는 경우
-   * @throws BusinessException INVALID_ORDER_STATUS - CREATED가 아닌 주문을 취소하는 경우
+   * @throws BusinessException INVALID_ORDER_STATUS - CREATED가 아닌 주문을 취소하는 경우, 또는 동시 취소 경합 시
    */
   @Transactional
   public CancelOrderResponse cancelOrder(Long requesterId, Long orderId) {
@@ -97,7 +99,12 @@ public class OrderService {
 
     order.cancel();
     order.getProduct().cancelReservation();
-    orderRepository.flush();
+
+    try {
+      orderRepository.flush();
+    } catch (ObjectOptimisticLockingFailureException e) {
+      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+    }
 
     return CancelOrderResponse.from(order);
   }
