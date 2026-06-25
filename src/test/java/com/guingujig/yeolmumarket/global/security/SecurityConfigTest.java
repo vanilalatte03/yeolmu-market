@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
@@ -283,6 +284,23 @@ class SecurityConfigTest {
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("REVOKED_TOKEN"));
+  }
+
+  @Test
+  void Redis_장애_시_JWT가_있는_요청은_503_REDIS_UNAVAILABLE로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String accessToken = jwtTokenProvider.issueAccessToken(user);
+    when(revokedAccessTokenRepository.exists(jwtTokenProvider.hashToken(accessToken)))
+        .thenThrow(new RedisConnectionFailureException("Redis unavailable"));
+
+    mockMvc
+        .perform(
+            get("/test/security/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REDIS_UNAVAILABLE"));
   }
 
   @Test
