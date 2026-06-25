@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
+import com.guingujig.yeolmumarket.domain.chat.entity.ChatMessage;
 import com.guingujig.yeolmumarket.domain.chat.entity.ChatRoom;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatMessageRepository;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatRoomRepository;
@@ -207,6 +208,115 @@ class ChatWebSocketIntegrationTest {
     assertThat(session.isConnected()).isTrue();
   }
 
+  @Test
+  void 참여자는_SEND로_메시지를_저장하고_구독자에게_발행한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    ChatRoom chatRoom = saveChatRoom(seller, buyer);
+    StompSession session = connectWithToken(buyer);
+    MessageFrameHandler messageHandler = new MessageFrameHandler();
+    subscribeToChatRoom(session, chatRoom.getId(), messageHandler);
+
+    session.send("/pub/chat-rooms/" + chatRoom.getId() + "/message", "{\"content\":\"거래 가능할까요?\"}");
+
+    String payload = messageHandler.pollPayload();
+    assertThat(payload).contains("\"roomId\":" + chatRoom.getId());
+    assertThat(payload).contains("\"senderId\":" + buyer.getId());
+    assertThat(payload).contains("\"senderNickname\":\"열무구매자\"");
+    assertThat(payload).contains("\"content\":\"거래 가능할까요?\"");
+    assertThat(payload).contains("\"createdAt\":");
+    List<ChatMessage> savedMessages = chatMessageRepository.findAll();
+    assertThat(savedMessages).hasSize(1);
+    ChatMessage savedMessage = savedMessages.getFirst();
+    assertThat(savedMessage.getChatRoom().getId()).isEqualTo(chatRoom.getId());
+    assertThat(savedMessage.getSender().getId()).isEqualTo(buyer.getId());
+    assertThat(savedMessage.getContent()).isEqualTo("거래 가능할까요?");
+    ChatRoom updatedRoom = chatRoomRepository.findById(chatRoom.getId()).orElseThrow();
+    assertThat(updatedRoom.getLastMessageAt()).isEqualTo(savedMessage.getCreatedAt());
+  }
+
+  @Test
+  void 빈_메시지_SEND는_user_error_queue로_실패하고_저장_발행하지_않는다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    ChatRoom chatRoom = saveChatRoom(seller, buyer);
+    StompSession session = connectWithToken(buyer);
+    ErrorQueueFrameHandler errorHandler = new ErrorQueueFrameHandler();
+    MessageFrameHandler messageHandler = new MessageFrameHandler();
+    subscribeToErrorQueue(session, buyer, errorHandler);
+    subscribeToChatRoom(session, chatRoom.getId(), messageHandler);
+
+    session.send("/pub/chat-rooms/" + chatRoom.getId() + "/message", "{\"content\":\"   \"}");
+
+    String errorPayload = errorHandler.pollPayload();
+    assertThat(errorPayload).contains("\"code\":\"VALIDATION_FAILED\"");
+    assertThat(errorPayload).contains("\"roomId\":" + chatRoom.getId());
+    assertThat(messageHandler.pollPayload(SUBSCRIPTION_PROBE_INTERVAL)).isNull();
+    assertThat(chatMessageRepository.findAll()).isEmpty();
+    assertThat(session.isConnected()).isTrue();
+  }
+
+  @Test
+  void 빈_body_SEND는_user_error_queue로_실패하고_저장_발행하지_않는다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    ChatRoom chatRoom = saveChatRoom(seller, buyer);
+    StompSession session = connectWithToken(buyer);
+    ErrorQueueFrameHandler errorHandler = new ErrorQueueFrameHandler();
+    MessageFrameHandler messageHandler = new MessageFrameHandler();
+    subscribeToErrorQueue(session, buyer, errorHandler);
+    subscribeToChatRoom(session, chatRoom.getId(), messageHandler);
+
+    session.send("/pub/chat-rooms/" + chatRoom.getId() + "/message", "");
+
+    String errorPayload = errorHandler.pollPayload();
+    assertThat(errorPayload).contains("\"code\":\"VALIDATION_FAILED\"");
+    assertThat(errorPayload).contains("\"roomId\":" + chatRoom.getId());
+    assertThat(messageHandler.pollPayload(SUBSCRIPTION_PROBE_INTERVAL)).isNull();
+    assertThat(chatMessageRepository.findAll()).isEmpty();
+    assertThat(session.isConnected()).isTrue();
+  }
+
+  @Test
+  void 없는_채팅방_SEND는_user_error_queue로_실패하고_연결을_유지한다() throws Exception {
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    StompSession session = connectWithToken(buyer);
+    ErrorQueueFrameHandler errorHandler = new ErrorQueueFrameHandler();
+    subscribeToErrorQueue(session, buyer, errorHandler);
+
+    session.send("/pub/chat-rooms/999/message", "{\"content\":\"거래 가능할까요?\"}");
+
+    String errorPayload = errorHandler.pollPayload();
+    assertThat(errorPayload).contains("\"code\":\"CHAT_ROOM_NOT_FOUND\"");
+    assertThat(errorPayload).contains("\"roomId\":999");
+    assertThat(chatMessageRepository.findAll()).isEmpty();
+    assertThat(session.isConnected()).isTrue();
+  }
+
+  @Test
+  void 참여자가_아닌_SEND는_user_error_queue로_실패하고_저장_발행하지_않는다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User otherUser = saveUser("other@example.com", "열무구경꾼");
+    ChatRoom chatRoom = saveChatRoom(seller, buyer);
+    StompSession buyerSession = connectWithToken(buyer);
+    StompSession otherSession = connectWithToken(otherUser);
+    MessageFrameHandler messageHandler = new MessageFrameHandler();
+    ErrorQueueFrameHandler errorHandler = new ErrorQueueFrameHandler();
+    subscribeToChatRoom(buyerSession, chatRoom.getId(), messageHandler);
+    subscribeToErrorQueue(otherSession, otherUser, errorHandler);
+
+    otherSession.send(
+        "/pub/chat-rooms/" + chatRoom.getId() + "/message", "{\"content\":\"거래 가능할까요?\"}");
+
+    String errorPayload = errorHandler.pollPayload();
+    assertThat(errorPayload).contains("\"code\":\"CHAT_ROOM_ACCESS_DENIED\"");
+    assertThat(errorPayload).contains("\"roomId\":" + chatRoom.getId());
+    assertThat(messageHandler.pollPayload(SUBSCRIPTION_PROBE_INTERVAL)).isNull();
+    assertThat(chatMessageRepository.findAll()).isEmpty();
+    assertThat(otherSession.isConnected()).isTrue();
+  }
+
   private StompSession connectWithToken(User user) throws Exception {
     StompHeaders headers = new StompHeaders();
     headers.add(HttpHeaders.AUTHORIZATION, "Bearer " + jwtTokenProvider.issueAccessToken(user));
@@ -270,6 +380,31 @@ class ChatWebSocketIntegrationTest {
           .isNull();
     }
     assertThat(false).as("user error queue subscription should receive probe").isTrue();
+  }
+
+  private void subscribeToChatRoom(
+      StompSession session, Long roomId, MessageFrameHandler messageHandler)
+      throws InterruptedException {
+    String destination = "/sub/chat-rooms/" + roomId;
+    session.subscribe(destination, messageHandler);
+    waitForChatRoomSubscriptionReady(destination, messageHandler);
+  }
+
+  private void waitForChatRoomSubscriptionReady(
+      String destination, MessageFrameHandler messageHandler) throws InterruptedException {
+    String probePayload = "__subscription_probe__:" + UUID.randomUUID();
+    long deadline = System.nanoTime() + TIMEOUT.toNanos();
+    while (System.nanoTime() < deadline) {
+      messagingTemplate.convertAndSend(destination, probePayload);
+      String payload = messageHandler.pollPayload(SUBSCRIPTION_PROBE_INTERVAL);
+      if (probePayload.equals(payload)) {
+        return;
+      }
+      assertThat(payload)
+          .as("unexpected chat room subscription payload during subscription probe")
+          .isNull();
+    }
+    assertThat(false).as("chat room subscription should receive probe").isTrue();
   }
 
   private String issueExpiredAccessToken(User user) {
@@ -348,5 +483,28 @@ class ChatWebSocketIntegrationTest {
 
     @Override
     public void handleFrame(StompHeaders headers, Object payload) {}
+  }
+
+  private static class MessageFrameHandler implements StompFrameHandler {
+
+    private final BlockingQueue<String> payloads = new LinkedBlockingQueue<>();
+
+    @Override
+    public Type getPayloadType(StompHeaders headers) {
+      return String.class;
+    }
+
+    @Override
+    public void handleFrame(StompHeaders headers, Object payload) {
+      payloads.add((String) payload);
+    }
+
+    String pollPayload() throws InterruptedException {
+      return pollPayload(TIMEOUT);
+    }
+
+    String pollPayload(Duration timeout) throws InterruptedException {
+      return payloads.poll(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    }
   }
 }

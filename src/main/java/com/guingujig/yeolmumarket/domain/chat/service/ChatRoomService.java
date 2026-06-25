@@ -1,5 +1,6 @@
 package com.guingujig.yeolmumarket.domain.chat.service;
 
+import com.guingujig.yeolmumarket.domain.chat.dto.ChatMessageResponse;
 import com.guingujig.yeolmumarket.domain.chat.dto.ChatMessagesResponse;
 import com.guingujig.yeolmumarket.domain.chat.dto.ChatRoomListItemResponse;
 import com.guingujig.yeolmumarket.domain.chat.dto.CreateChatRoomResponse;
@@ -109,6 +110,26 @@ public class ChatRoomService {
     return ChatMessagesResponse.of(pageMessages, hasNext);
   }
 
+  /**
+   * 채팅방 참여자의 메시지를 저장하고, 같은 트랜잭션에서 채팅방의 마지막 대화 시각을 갱신한다.
+   *
+   * <p>메시지 발행은 트랜잭션 성공 이후 호출자가 수행한다.
+   */
+  @Transactional
+  public ChatMessageResponse sendMessage(Long senderId, Long roomId, String content) {
+    ChatRoom chatRoom =
+        chatRoomRepository
+            .findWithParticipantsByIdForUpdate(roomId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+    chatRoomAuthorizationService.validateParticipant(chatRoom, senderId);
+
+    User sender = resolveParticipant(chatRoom, senderId);
+    ChatMessage message =
+        chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, sender, content));
+    chatRoom.updateLastMessageAt(message.getCreatedAt());
+    return ChatMessageResponse.from(message);
+  }
+
   private ChatRoom findOrCreateChatRoom(Product product, User buyer, User seller) {
     return chatRoomRepository
         .findByProductAndBuyerAndSeller(product, buyer, seller)
@@ -129,6 +150,13 @@ public class ChatRoomService {
     return product.getDeletedAt() == null
         && product.getStatus() != ProductStatus.DELETED
         && !product.isHidden();
+  }
+
+  private User resolveParticipant(ChatRoom chatRoom, Long userId) {
+    if (chatRoom.getBuyer().getId().equals(userId)) {
+      return chatRoom.getBuyer();
+    }
+    return chatRoom.getSeller();
   }
 
   private void validatePagination(int page, int size) {

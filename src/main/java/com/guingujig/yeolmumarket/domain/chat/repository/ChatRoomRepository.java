@@ -3,11 +3,13 @@ package com.guingujig.yeolmumarket.domain.chat.repository;
 import com.guingujig.yeolmumarket.domain.chat.entity.ChatRoom;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
+import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -18,6 +20,16 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
 
   @EntityGraph(attributePaths = {"buyer", "seller"})
   Optional<ChatRoom> findWithParticipantsById(Long id);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @EntityGraph(attributePaths = {"buyer", "seller"})
+  @Query(
+      """
+      select chatRoom
+      from ChatRoom chatRoom
+      where chatRoom.id = :id
+      """)
+  Optional<ChatRoom> findWithParticipantsByIdForUpdate(@Param("id") Long id);
 
   @EntityGraph(attributePaths = {"product", "buyer", "seller"})
   @Query(
