@@ -79,7 +79,11 @@ public class SearchService {
     if (keyword == null || keyword.isBlank()) {
       return null;
     }
-    return keyword.trim();
+    return escapeLikeKeyword(keyword.trim());
+  }
+
+  private String escapeLikeKeyword(String keyword) {
+    return keyword.replace("!", "!!").replace("%", "!%").replace("_", "!_");
   }
 
   private Sort resolveSort(String sort) {

@@ -69,6 +69,36 @@ class SearchServiceTest {
   }
 
   @Test
+  void 퍼센트_키워드는_LIKE_와일드카드가_아닌_문자로_검색한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    saveProduct(seller, "정가 50% 할인", "새 상품입니다.", 10000);
+    saveProduct(seller, "일반 상품", "할인 안내", 20000);
+
+    PageResponse<SearchProductResponse> response =
+        searchService.searchProducts(request("%", null, null, ProductStatus.ON_SALE));
+
+    assertThat(response.content())
+        .extracting(SearchProductResponse::title)
+        .containsExactly("정가 50% 할인");
+    assertThat(response.totalElements()).isEqualTo(1);
+  }
+
+  @Test
+  void 언더스코어_키워드는_LIKE_와일드카드가_아닌_문자로_검색한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    saveProduct(seller, "model_a 키보드", "깨끗합니다.", 10000);
+    saveProduct(seller, "model-a 마우스", "깨끗합니다.", 20000);
+
+    PageResponse<SearchProductResponse> response =
+        searchService.searchProducts(request("_", null, null, ProductStatus.ON_SALE));
+
+    assertThat(response.content())
+        .extracting(SearchProductResponse::title)
+        .containsExactly("model_a 키보드");
+    assertThat(response.totalElements()).isEqualTo(1);
+  }
+
+  @Test
   void 가격_범위로_상품을_검색한다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     saveProduct(seller, "저가 상품", "설명", 10000);

@@ -52,8 +52,8 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
         and product.status = :status
         and (
           :keyword is null
-          or lower(product.title) like lower(concat(concat('%', :keyword), '%'))
-          or lower(product.description) like lower(concat(concat('%', :keyword), '%'))
+          or lower(product.title) like lower(concat(concat('%', :keyword), '%')) escape '!'
+          or lower(product.description) like lower(concat(concat('%', :keyword), '%')) escape '!'
         )
         and (:minPrice is null or product.price >= :minPrice)
         and (:maxPrice is null or product.price <= :maxPrice)
