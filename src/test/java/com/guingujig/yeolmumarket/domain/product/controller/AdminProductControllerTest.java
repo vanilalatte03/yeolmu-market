@@ -15,6 +15,7 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.entity.UserRole;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -40,6 +41,8 @@ class AdminProductControllerTest {
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
 
+  private static final LocalDateTime DELETED_AT = LocalDateTime.of(2026, 6, 24, 10, 0);
+
   @Autowired
   AdminProductControllerTest(
       MockMvc mockMvc,
@@ -52,6 +55,73 @@ class AdminProductControllerTest {
     this.productRepository = productRepository;
     this.passwordEncoder = passwordEncoder;
     this.jwtTokenProvider = jwtTokenProvider;
+  }
+
+  @Test
+  void 관리자는_숨김_상품_목록을_조회할_수_있다() throws Exception {
+    User admin = saveAdmin("admin@example.com", "열무관리자");
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product hiddenProduct = saveHiddenProduct(seller, "아이패드 미니 6", 450000);
+    saveProduct(seller, "공개 상품", 20000);
+    saveDeletedHiddenProduct(seller, "삭제 숨김 상품", 30000);
+
+    mockMvc
+        .perform(
+            get("/api/admin/products/hidden")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken(admin))
+                .param("page", "0")
+                .param("size", "10"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.content", hasSize(1)))
+        .andExpect(jsonPath("$.data.content[0].productId").value(hiddenProduct.getId()))
+        .andExpect(jsonPath("$.data.content[0].title").value("아이패드 미니 6"))
+        .andExpect(jsonPath("$.data.content[0].status").value("ON_SALE"))
+        .andExpect(jsonPath("$.data.content[0].hidden").value(true))
+        .andExpect(jsonPath("$.data.content[0].sellerNickname").value("열무판매자"))
+        .andExpect(jsonPath("$.data.content[0].updatedAt").exists())
+        .andExpect(jsonPath("$.data.page").value(0))
+        .andExpect(jsonPath("$.data.size").value(10))
+        .andExpect(jsonPath("$.data.totalElements").value(1))
+        .andExpect(jsonPath("$.data.totalPages").value(1))
+        .andExpect(jsonPath("$.data.hasNext").value(false));
+  }
+
+  @Test
+  void 일반_사용자는_숨김_상품_목록을_조회할_수_없다() throws Exception {
+    User user = saveUser("user@example.com", "열무사용자");
+
+    mockMvc
+        .perform(
+            get("/api/admin/products/hidden").header(HttpHeaders.AUTHORIZATION, bearerToken(user)))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+  }
+
+  @Test
+  void 인증_없이_숨김_상품_목록을_조회하면_401로_응답한다() throws Exception {
+    mockMvc
+        .perform(get("/api/admin/products/hidden"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+  }
+
+  @Test
+  void 숨김_상품_목록의_페이지_조건이_잘못되면_400으로_응답한다() throws Exception {
+    User admin = saveAdmin("admin@example.com", "열무관리자");
+
+    mockMvc
+        .perform(
+            get("/api/admin/products/hidden")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken(admin))
+                .param("page", "-1")
+                .param("size", "10"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_PAGINATION"));
   }
 
   @Test
@@ -239,6 +309,13 @@ class AdminProductControllerTest {
   private Product saveHiddenProduct(User seller, String title, Integer price) {
     Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
     product.changeHidden(true);
+    return productRepository.saveAndFlush(product);
+  }
+
+  private Product saveDeletedHiddenProduct(User seller, String title, Integer price) {
+    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    product.changeHidden(true);
+    product.delete(DELETED_AT);
     return productRepository.saveAndFlush(product);
   }
 

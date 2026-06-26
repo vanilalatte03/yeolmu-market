@@ -3,6 +3,7 @@ package com.guingujig.yeolmumarket.domain.product.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.guingujig.yeolmumarket.domain.product.dto.AdminHiddenProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.DeleteProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusResponse;
@@ -15,6 +16,8 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.response.PageResponse;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,6 +34,8 @@ class ProductServiceTest {
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
 
+  private static final LocalDateTime DELETED_AT = LocalDateTime.of(2026, 6, 24, 10, 0);
+
   @Autowired
   ProductServiceTest(
       ProductService productService,
@@ -41,6 +46,36 @@ class ProductServiceTest {
     this.productRepository = productRepository;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
+  }
+
+  @Test
+  void 숨김_상품_목록은_숨김_상품만_반환하고_삭제된_상품은_제외한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product hiddenProduct = saveHiddenProduct(seller, "숨김 상품", 20000);
+    saveProduct(seller, "공개 상품", 30000);
+    saveDeletedHiddenProduct(seller, "삭제 숨김 상품", 40000);
+
+    PageResponse<AdminHiddenProductResponse> response = productService.getHiddenProducts(0, 10);
+
+    assertThat(response.content()).hasSize(1);
+    AdminHiddenProductResponse item = response.content().getFirst();
+    assertThat(item.productId()).isEqualTo(hiddenProduct.getId());
+    assertThat(item.title()).isEqualTo("숨김 상품");
+    assertThat(item.status()).isEqualTo(ProductStatus.ON_SALE);
+    assertThat(item.hidden()).isTrue();
+    assertThat(item.sellerNickname()).isEqualTo("열무판매자");
+    assertThat(item.updatedAt()).isNotNull();
+    assertThat(response.totalElements()).isEqualTo(1);
+    assertThat(response.hasNext()).isFalse();
+  }
+
+  @Test
+  void 숨김_상품_목록의_페이지_조건이_잘못되면_실패한다() {
+    assertThatThrownBy(() -> productService.getHiddenProducts(0, 0))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_PAGINATION));
   }
 
   @BeforeEach
@@ -207,6 +242,19 @@ class ProductServiceTest {
 
   private Product saveProduct(User seller, String title, Integer price) {
     Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    return productRepository.saveAndFlush(product);
+  }
+
+  private Product saveHiddenProduct(User seller, String title, Integer price) {
+    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    product.changeHidden(true);
+    return productRepository.saveAndFlush(product);
+  }
+
+  private Product saveDeletedHiddenProduct(User seller, String title, Integer price) {
+    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    product.changeHidden(true);
+    product.delete(DELETED_AT);
     return productRepository.saveAndFlush(product);
   }
 
