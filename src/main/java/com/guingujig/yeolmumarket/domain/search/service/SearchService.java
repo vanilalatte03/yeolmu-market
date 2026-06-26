@@ -9,6 +9,9 @@ import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -20,13 +23,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class SearchService {
 
   private static final int MAX_PAGE_SIZE = 100;
+  private static final Logger log = LoggerFactory.getLogger(SearchService.class);
 
   private final ProductRepository productRepository;
+  private final PopularKeywordService popularKeywordService;
 
   /**
    * 공개 상품을 키워드, 가격 범위, 상품 상태 조건으로 검색한다.
    *
-   * <p>P0 검색은 DB 조회만 수행하며 Redis 검색 캐시나 인기 검색어 집계는 갱신하지 않는다.
+   * <p>유효한 키워드는 Redis 인기 검색어 집계에 반영한다. Redis 집계 실패는 검색 결과 반환을 막지 않는다.
    */
   @Transactional(readOnly = true)
   public PageResponse<SearchProductResponse> searchProducts(SearchProductRequest request) {
@@ -35,6 +40,8 @@ public class SearchService {
 
     ProductStatus status = resolveStatus(request.status());
     validatePublicSearchStatus(status);
+    Sort sort = resolveSort(request.sort());
+    recordSearchKeywordSafely(request.keyword());
 
     Page<Product> products =
         productRepository.searchPublicProducts(
@@ -42,9 +49,17 @@ public class SearchService {
             request.minPrice(),
             request.maxPrice(),
             status,
-            PageRequest.of(request.page(), request.size(), resolveSort(request.sort())));
+            PageRequest.of(request.page(), request.size(), sort));
 
     return PageResponse.from(products.map(SearchProductResponse::from));
+  }
+
+  private void recordSearchKeywordSafely(String keyword) {
+    try {
+      popularKeywordService.recordSearchKeyword(keyword);
+    } catch (DataAccessException exception) {
+      log.warn("인기 검색어 집계에 실패했습니다.", exception);
+    }
   }
 
   private void validatePagination(int page, int size) {

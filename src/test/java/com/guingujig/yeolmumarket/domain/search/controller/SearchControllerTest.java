@@ -3,6 +3,7 @@ package com.guingujig.yeolmumarket.domain.search.controller;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -10,12 +11,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.search.dto.PopularKeyword;
+import com.guingujig.yeolmumarket.domain.search.repository.PopularKeywordRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -27,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 class SearchControllerTest {
 
   @MockitoBean private RevokedAccessTokenRepository revokedAccessTokenRepository;
+  @MockitoBean private PopularKeywordRepository popularKeywordRepository;
 
   private final MockMvc mockMvc;
   private final UserRepository userRepository;
@@ -102,6 +108,44 @@ class SearchControllerTest {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("INVALID_ENUM_VALUE"));
+  }
+
+  @Test
+  void 비회원이_인기_검색어_조회에_성공하면_rank와_검색횟수를_반환한다() throws Exception {
+    when(popularKeywordRepository.findTopKeywords(2))
+        .thenReturn(List.of(new PopularKeyword("아이패드", 3), new PopularKeyword("맥북", 2)));
+
+    mockMvc
+        .perform(get("/api/search/popular-keywords").param("limit", "2"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.keywords", hasSize(2)))
+        .andExpect(jsonPath("$.data.keywords[0].rank").value(1))
+        .andExpect(jsonPath("$.data.keywords[0].keyword").value("아이패드"))
+        .andExpect(jsonPath("$.data.keywords[0].searchCount").value(3))
+        .andExpect(jsonPath("$.data.keywords[1].rank").value(2));
+  }
+
+  @Test
+  void 인기_검색어_limit_범위가_잘못되면_400_VALIDATION_FAILED로_응답한다() throws Exception {
+    mockMvc
+        .perform(get("/api/search/popular-keywords").param("limit", "51"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void 인기_검색어_Redis_조회가_실패하면_503_REDIS_UNAVAILABLE로_응답한다() throws Exception {
+    when(popularKeywordRepository.findTopKeywords(10))
+        .thenThrow(new DataAccessResourceFailureException("redis unavailable"));
+
+    mockMvc
+        .perform(get("/api/search/popular-keywords"))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REDIS_UNAVAILABLE"));
   }
 
   private User saveUser(String email, String nickname) {
