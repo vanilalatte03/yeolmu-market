@@ -11,6 +11,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -37,4 +38,11 @@ public class Wish {
   @ManyToOne(fetch = FetchType.LAZY)
   @JoinColumn(name = "product_id", nullable = false)
   private Product product;
+
+  public static Wish create(User user, Product product) {
+    Wish wish = new Wish();
+    wish.user = Objects.requireNonNull(user, "user는 필수입니다.");
+    wish.product = Objects.requireNonNull(product, "product는 필수입니다.");
+    return wish;
+  }
 }
