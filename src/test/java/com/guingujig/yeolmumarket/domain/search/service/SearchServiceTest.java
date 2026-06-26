@@ -2,12 +2,16 @@ package com.guingujig.yeolmumarket.domain.search.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductRequest;
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductResponse;
+import com.guingujig.yeolmumarket.domain.search.repository.PopularKeywordRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
@@ -19,11 +23,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @SpringBootTest
 class SearchServiceTest {
+
+  @MockitoBean private PopularKeywordRepository popularKeywordRepository;
 
   private final SearchService searchService;
   private final ProductRepository productRepository;
@@ -81,6 +89,45 @@ class SearchServiceTest {
         .extracting(SearchProductResponse::title)
         .containsExactly("정가 50% 할인");
     assertThat(response.totalElements()).isEqualTo(1);
+  }
+
+  @Test
+  void 키워드_검색시_집계용_키워드는_trim만_적용하고_LIKE_escape는_적용하지_않는다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    saveProduct(seller, "정가 50% 할인", "새 상품입니다.", 10000);
+
+    PageResponse<SearchProductResponse> response =
+        searchService.searchProducts(request("  50%  ", null, null, ProductStatus.ON_SALE));
+
+    assertThat(response.content())
+        .extracting(SearchProductResponse::title)
+        .containsExactly("정가 50% 할인");
+    verify(popularKeywordRepository).incrementSearchCount("50%");
+  }
+
+  @Test
+  void 빈_키워드는_인기_검색어로_집계하지_않는다() {
+    searchService.searchProducts(request("   ", null, null, ProductStatus.ON_SALE));
+
+    verify(popularKeywordRepository, never())
+        .incrementSearchCount(org.mockito.ArgumentMatchers.any());
+  }
+
+  @Test
+  void Redis_집계가_실패해도_상품_검색_결과를_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    saveProduct(seller, "아이패드 미니 6세대", "생활기스 조금 있습니다.", 430000);
+    doThrow(new RedisConnectionFailureException("redis unavailable"))
+        .when(popularKeywordRepository)
+        .incrementSearchCount("아이패드");
+
+    PageResponse<SearchProductResponse> response =
+        searchService.searchProducts(request("아이패드", null, null, ProductStatus.ON_SALE));
+
+    assertThat(response.content())
+        .extracting(SearchProductResponse::title)
+        .containsExactly("아이패드 미니 6세대");
+    verify(popularKeywordRepository).incrementSearchCount("아이패드");
   }
 
   @Test
