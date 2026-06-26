@@ -11,6 +11,7 @@ import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
@@ -19,6 +20,7 @@ import com.guingujig.yeolmumarket.global.response.PageResponse;
 import jakarta.persistence.EntityManager;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -36,6 +38,7 @@ public class OrderService {
   private final ProductRepository productRepository;
   private final UserRepository userRepository;
   private final EntityManager entityManager;
+  private final ApplicationEventPublisher eventPublisher;
 
   /**
    * 로그인한 구매자가 판매 중인 상품을 주문한다.
@@ -83,6 +86,7 @@ public class OrderService {
     Order order = Order.create(buyer, product);
     orderRepository.save(order);
 
+    publishProductSearchCacheEviction();
     return CreateOrderResponse.from(order);
   }
 
@@ -117,6 +121,7 @@ public class OrderService {
     }
     entityManager.refresh(order);
 
+    publishProductSearchCacheEviction();
     return CancelOrderResponse.from(order);
   }
 
@@ -182,5 +187,9 @@ public class OrderService {
     if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
       throw new BusinessException(ErrorCode.INVALID_PAGINATION);
     }
+  }
+
+  private void publishProductSearchCacheEviction() {
+    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
   }
 }

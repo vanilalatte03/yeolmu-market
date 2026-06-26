@@ -14,6 +14,7 @@ import com.guingujig.yeolmumarket.domain.product.dto.UserProductListItemResponse
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
@@ -23,6 +24,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -38,6 +40,7 @@ public class ProductService {
 
   private final ProductRepository productRepository;
   private final UserRepository userRepository;
+  private final ApplicationEventPublisher eventPublisher;
 
   /**
    * 인증된 회원을 판매자로 지정해 상품을 등록한다.
@@ -54,6 +57,7 @@ public class ProductService {
     Product product =
         Product.create(seller, request.title(), request.description(), request.price());
     Product savedProduct = productRepository.save(product);
+    publishProductSearchCacheEviction();
     return CreateProductResponse.from(savedProduct);
   }
 
@@ -144,6 +148,7 @@ public class ProductService {
 
     product.updateInfo(request.title(), request.description(), request.price());
     productRepository.flush();
+    publishProductSearchCacheEviction();
     return UpdateProductResponse.from(product);
   }
 
@@ -159,6 +164,7 @@ public class ProductService {
     validateDeletable(product);
 
     product.delete(LocalDateTime.now(ZoneOffset.UTC));
+    publishProductSearchCacheEviction();
     return DeleteProductResponse.success();
   }
 
@@ -173,6 +179,7 @@ public class ProductService {
     Product product = getExistingProduct(productId);
 
     product.changeHidden(request.hidden());
+    publishProductSearchCacheEviction();
     return UpdateProductHiddenStatusResponse.from(product);
   }
 
@@ -276,5 +283,9 @@ public class ProductService {
 
   private Sort resolveAdminHiddenProductSort() {
     return Sort.by(Sort.Order.desc("modifiedAt"), Sort.Order.desc("id"));
+  }
+
+  private void publishProductSearchCacheEviction() {
+    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
   }
 }
