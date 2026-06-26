@@ -63,6 +63,7 @@ JWT 폐기와 refresh token 회전 정책은 `docs/adr/007-jwt-refresh-token-rot
 - `GET /api/users/{userId}`
 - `GET /api/users/{userId}/products`
 - `GET /api/search/products`
+- `GET /api/search/v2/products`
 - `GET /api/search/popular-keywords`
 - `GET /api/categories`
 - `GET /api/categories/{categoryId}/products`
@@ -142,6 +143,7 @@ JWT 폐기와 refresh token 회전 정책은 `docs/adr/007-jwt-refresh-token-rot
 | P0 | 상품 | 특정 유저의 판매 상품 목록 | `GET` | `/api/users/{userId}/products` |
 | P0 | 상품 | 내 판매 상품 목록 | `GET` | `/api/users/me/products` |
 | P0 | 검색 | 상품 검색 | `GET` | `/api/search/products` |
+| P0 | 검색 | 상품 검색 v2 | `GET` | `/api/search/v2/products` |
 | P0 | 관리자 | 상품 숨김 상태 변경 | `PATCH` | `/api/admin/products/{productId}/hidden` |
 | P0 | 관리자 | 숨긴 상품 조회 | `GET` | `/api/admin/products/hidden` |
 | P0 | 검색 | 인기 검색어 조회 | `GET` | `/api/search/popular-keywords` |
@@ -1283,6 +1285,31 @@ P0에서는 `categoryId` 검색 조건을 사용하지 않고, `thumbnailUrl`은
 | `VALIDATION_FAILED`  | 400 | 가격 범위 오류 |
 | `INVALID_PAGINATION` | 400 | 페이지 번호 또는 크기 오류 |
 | `INVALID_ENUM_VALUE` | 400 | 존재하지 않거나 공개 검색에서 허용하지 않는 상품 상태 |
+
+### 상품 검색 v2
+
+기존 상품 검색과 같은 요청/응답 계약을 유지하면서 정규화된 검색 조건별 in-memory cache를 적용한다.
+인기 검색어 집계는 캐시 대상이 아니며, 캐시 hit 상황에서도 검색 요청마다 실행된다.
+상품 등록, 수정, 삭제, 숨김 상태 변경, 주문 생성, 주문 취소로 상품 검색 결과가 달라지면 v2 검색 캐시는 무효화된다.
+v2는 Redis CacheManager 전환 전 로컬 캐시 실험/대체 구현이며, TTL과 maximumSize는 애플리케이션 설정으로 관리한다.
+
+- Method: `GET`
+- Path: `/api/search/v2/products`
+- 인증: 불필요
+- HTTP Status: `200 OK`
+- Cache: Caffeine local cache, key는 `keyword` trim/blank 처리, 기본 `status/page/size/sort`, 가격 범위, 정렬 조건을 반영한 정규화 검색 조건
+
+#### Query Parameters
+
+`GET /api/search/products`와 동일하다.
+
+#### Response Data
+
+`GET /api/search/products`와 동일하다.
+
+#### Errors
+
+`GET /api/search/products`와 동일하다.
 
 ### 인기 검색어 조회
 
