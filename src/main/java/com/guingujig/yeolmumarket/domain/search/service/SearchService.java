@@ -40,6 +40,7 @@ public class SearchService {
 
     ProductStatus status = resolveStatus(request.status());
     validatePublicSearchStatus(status);
+    Sort sort = resolveSort(request.sort());
     recordSearchKeywordSafely(request.keyword());
 
     Page<Product> products =
@@ -48,7 +49,7 @@ public class SearchService {
             request.minPrice(),
             request.maxPrice(),
             status,
-            PageRequest.of(request.page(), request.size(), resolveSort(request.sort())));
+            PageRequest.of(request.page(), request.size(), sort));
 
     return PageResponse.from(products.map(SearchProductResponse::from));
   }
