@@ -38,6 +38,21 @@ public class SearchController {
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
+  @GetMapping("/v2/products")
+  public ResponseEntity<ApiResponse<PageResponse<SearchProductResponse>>> searchProductsV2(
+      @RequestParam(required = false) String keyword,
+      @RequestParam(required = false) Integer minPrice,
+      @RequestParam(required = false) Integer maxPrice,
+      @RequestParam(defaultValue = "ON_SALE") ProductStatus status,
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "10") int size,
+      @RequestParam(defaultValue = "latest") String sort) {
+    SearchProductRequest request =
+        new SearchProductRequest(keyword, minPrice, maxPrice, status, page, size, sort);
+    PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
   @GetMapping("/popular-keywords")
   public ResponseEntity<ApiResponse<PopularKeywordsResponse>> getPopularKeywords(
       @RequestParam(required = false) Integer limit) {
