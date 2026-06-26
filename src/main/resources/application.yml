@@ -28,4 +28,3 @@ yeolmu:
     search:
       products-v2:
         ttl: 5m
-        maximum-size: 1000

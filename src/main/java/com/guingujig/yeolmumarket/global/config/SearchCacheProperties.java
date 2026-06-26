@@ -8,21 +8,17 @@ public record SearchCacheProperties(ProductsV2 productsV2) {
 
   public SearchCacheProperties {
     if (productsV2 == null) {
-      productsV2 = new ProductsV2(null, null);
+      productsV2 = new ProductsV2(null);
     }
   }
 
-  public record ProductsV2(Duration ttl, Long maximumSize) {
+  public record ProductsV2(Duration ttl) {
 
     private static final Duration DEFAULT_TTL = Duration.ofMinutes(5);
-    private static final long DEFAULT_MAXIMUM_SIZE = 1_000L;
 
     public ProductsV2 {
       if (ttl == null) {
         ttl = DEFAULT_TTL;
-      }
-      if (maximumSize == null) {
-        maximumSize = DEFAULT_MAXIMUM_SIZE;
       }
     }
   }
