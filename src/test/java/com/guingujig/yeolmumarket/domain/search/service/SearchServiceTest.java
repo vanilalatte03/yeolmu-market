@@ -22,6 +22,7 @@ import com.guingujig.yeolmumarket.domain.search.dto.SearchProductResponse;
 import com.guingujig.yeolmumarket.domain.search.repository.PopularKeywordRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.global.config.CacheConfig;
 import com.guingujig.yeolmumarket.global.config.SearchCacheProperties;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
@@ -38,11 +39,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.cache.CacheManager;
+import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.cache.RedisCache;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -512,10 +518,16 @@ class SearchServiceTest {
 
   @Test
   void Redis_기반_CacheManager가_검색_캐시_TTL과_serializer를_적용한다() {
-    assertThat(cacheManager).isInstanceOf(RedisCacheManager.class);
-    assertThat(cacheManager.getCacheNames()).containsExactly(SearchCacheNames.PRODUCT_SEARCH_V2);
+    RedisCacheManager redisCacheManager =
+        (RedisCacheManager)
+            new CacheConfig()
+                .cacheManager(
+                    org.mockito.Mockito.mock(RedisConnectionFactory.class), searchCacheProperties);
+    redisCacheManager.afterPropertiesSet();
+    assertThat(redisCacheManager.getCacheNames())
+        .containsExactly(SearchCacheNames.PRODUCT_SEARCH_V2);
 
-    RedisCache cache = (RedisCache) cacheManager.getCache(SearchCacheNames.PRODUCT_SEARCH_V2);
+    RedisCache cache = (RedisCache) redisCacheManager.getCache(SearchCacheNames.PRODUCT_SEARCH_V2);
     assertThat(cache).isNotNull();
     RedisCacheConfiguration configuration = cache.getCacheConfiguration();
 
@@ -548,6 +560,16 @@ class SearchServiceTest {
     Object deserialized = configuration.getValueSerializationPair().read(valueBuffer);
 
     assertThat(deserialized).isEqualTo(pageResponse);
+  }
+
+  @TestConfiguration
+  static class TestCacheConfig {
+
+    @Bean
+    @Primary
+    CacheManager testCacheManager() {
+      return new ConcurrentMapCacheManager(SearchCacheNames.PRODUCT_SEARCH_V2);
+    }
   }
 
   private SearchProductRequest request(
