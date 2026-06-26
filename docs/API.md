@@ -1278,10 +1278,11 @@ P0에서는 `categoryId` 검색 조건을 사용하지 않고, `thumbnailUrl`은
 
 #### Errors
 
-| 코드 | HTTP | 발생 조건 |
-| --- | --- | --- |
-| `VALIDATION_FAILED` | 400 | 가격 범위 오류 |
+| 코드                   | HTTP | 발생 조건 |
+|----------------------| --- | --- |
+| `VALIDATION_FAILED`  | 400 | 가격 범위 오류 |
 | `INVALID_PAGINATION` | 400 | 페이지 번호 또는 크기 오류 |
+| `INVALID_ENUM_VALUE` | 400 | 존재하지 않거나 공개 검색에서 허용하지 않는 상품 상태 |
 
 ### 인기 검색어 조회
 
