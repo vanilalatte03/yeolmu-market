@@ -3,7 +3,10 @@ package com.guingujig.yeolmumarket.domain.order.service;
 import com.guingujig.yeolmumarket.domain.order.dto.CancelOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.CreateOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.GetOrderResponse;
+import com.guingujig.yeolmumarket.domain.order.dto.MyOrderListItemResponse;
+import com.guingujig.yeolmumarket.domain.order.dto.MySaleListItemResponse;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
+import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
@@ -12,9 +15,13 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.response.PageResponse;
 import jakarta.persistence.EntityManager;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class OrderService {
+
+  private static final int MAX_PAGE_SIZE = 100;
 
   private final OrderRepository orderRepository;
   private final ProductRepository productRepository;
@@ -112,6 +121,42 @@ public class OrderService {
   }
 
   /**
+   * 로그인 사용자가 구매자로 참여한 주문 목록을 페이지 단위로 조회한다.
+   *
+   * <p>status가 null이면 모든 주문 상태를 조회하고, 값이 있으면 해당 상태만 필터링한다.
+   */
+  @Transactional(readOnly = true)
+  public PageResponse<MyOrderListItemResponse> getMyOrders(
+      Long buyerId, int page, int size, OrderStatus status) {
+    validatePagination(page, size);
+    PageRequest pageable =
+        PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt", "id"));
+    Page<Order> orders =
+        status == null
+            ? orderRepository.findByBuyerId(buyerId, pageable)
+            : orderRepository.findByBuyerIdAndOrderStatus(buyerId, status, pageable);
+    return PageResponse.from(orders.map(MyOrderListItemResponse::from));
+  }
+
+  /**
+   * 로그인 사용자가 판매자로 참여한 주문 목록을 페이지 단위로 조회한다.
+   *
+   * <p>status가 null이면 모든 주문 상태를 조회하고, 값이 있으면 해당 상태만 필터링한다.
+   */
+  @Transactional(readOnly = true)
+  public PageResponse<MySaleListItemResponse> getMySales(
+      Long sellerId, int page, int size, OrderStatus status) {
+    validatePagination(page, size);
+    PageRequest pageable =
+        PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt", "id"));
+    Page<Order> orders =
+        status == null
+            ? orderRepository.findBySellerId(sellerId, pageable)
+            : orderRepository.findBySellerIdAndOrderStatus(sellerId, status, pageable);
+    return PageResponse.from(orders.map(MySaleListItemResponse::from));
+  }
+
+  /**
    * 주문 구매자 또는 판매자가 주문 상세 정보를 조회한다.
    *
    * @throws BusinessException ORDER_NOT_FOUND - 주문이 존재하지 않는 경우
@@ -131,5 +176,11 @@ public class OrderService {
     }
 
     return GetOrderResponse.from(order);
+  }
+
+  private void validatePagination(int page, int size) {
+    if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
+      throw new BusinessException(ErrorCode.INVALID_PAGINATION);
+    }
   }
 }
