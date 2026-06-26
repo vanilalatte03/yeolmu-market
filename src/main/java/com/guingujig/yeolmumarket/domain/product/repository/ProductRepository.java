@@ -43,6 +43,10 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
   Page<Product> findBySellerIdAndStatus(Long sellerId, ProductStatus status, Pageable pageable);
 
   @EntityGraph(attributePaths = "seller")
+  Page<Product> findByHiddenTrueAndDeletedAtIsNullAndStatusNot(
+      ProductStatus status, Pageable pageable);
+
+  @EntityGraph(attributePaths = "seller")
   @Query(
       """
       select product
