@@ -17,11 +17,15 @@ import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.domain.wish.dto.ProductWishSummary;
+import com.guingujig.yeolmumarket.domain.wish.service.ProductWishSummaryService;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -40,6 +44,7 @@ public class ProductService {
 
   private final ProductRepository productRepository;
   private final UserRepository userRepository;
+  private final ProductWishSummaryService productWishSummaryService;
   private final ApplicationEventPublisher eventPublisher;
 
   /**
@@ -68,18 +73,25 @@ public class ProductService {
    */
   @Transactional(readOnly = true)
   public PageResponse<ProductListItemResponse> getProducts(
-      int page, int size, ProductStatus status, String sort) {
+      int page, int size, ProductStatus status, String sort, Long authenticatedUserId) {
     validatePagination(page, size);
     ProductStatus queryStatus = resolveStatus(status);
     validatePublicListStatus(queryStatus);
 
-    Page<ProductListItemResponse> products =
-        productRepository
-            .findByHiddenFalseAndDeletedAtIsNullAndStatus(
-                queryStatus, PageRequest.of(page, size, resolveSort(sort)))
-            .map(ProductListItemResponse::from);
+    Page<Product> products =
+        productRepository.findByHiddenFalseAndDeletedAtIsNullAndStatus(
+            queryStatus, PageRequest.of(page, size, resolveSort(sort)));
+    List<Long> productIds = products.getContent().stream().map(Product::getId).toList();
+    Map<Long, ProductWishSummary> wishSummaries =
+        productWishSummaryService.getSummaries(productIds, authenticatedUserId);
 
-    return PageResponse.from(products);
+    return PageResponse.from(
+        products.map(
+            product ->
+                ProductListItemResponse.from(
+                    product,
+                    wishSummaries.getOrDefault(
+                        product.getId(), ProductWishSummary.empty(product.getId())))));
   }
 
   /**
@@ -88,13 +100,15 @@ public class ProductService {
    * <p>존재하지 않거나, 숨김 처리되었거나, 삭제된 상품은 모두 {@code PRODUCT_NOT_FOUND}로 응답한다.
    */
   @Transactional(readOnly = true)
-  public ProductDetailResponse getProduct(Long productId) {
+  public ProductDetailResponse getProduct(Long productId, Long authenticatedUserId) {
     Product product =
         productRepository
             .findByIdAndHiddenFalseAndDeletedAtIsNullAndStatusNot(productId, ProductStatus.DELETED)
             .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+    ProductWishSummary wishSummary =
+        productWishSummaryService.getSummary(productId, authenticatedUserId);
 
-    return ProductDetailResponse.from(product);
+    return ProductDetailResponse.from(product, wishSummary);
   }
 
   /**

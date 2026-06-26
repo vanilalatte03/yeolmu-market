@@ -17,6 +17,8 @@ import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.domain.wish.entity.Wish;
+import com.guingujig.yeolmumarket.domain.wish.repository.WishRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
@@ -41,6 +43,7 @@ class ProductControllerTest {
   private final MockMvc mockMvc;
   private final UserRepository userRepository;
   private final ProductRepository productRepository;
+  private final WishRepository wishRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
 
@@ -49,11 +52,13 @@ class ProductControllerTest {
       MockMvc mockMvc,
       UserRepository userRepository,
       ProductRepository productRepository,
+      WishRepository wishRepository,
       PasswordEncoder passwordEncoder,
       JwtTokenProvider jwtTokenProvider) {
     this.mockMvc = mockMvc;
     this.userRepository = userRepository;
     this.productRepository = productRepository;
+    this.wishRepository = wishRepository;
     this.passwordEncoder = passwordEncoder;
     this.jwtTokenProvider = jwtTokenProvider;
   }
@@ -76,6 +81,8 @@ class ProductControllerTest {
         .andExpect(jsonPath("$.data.content[0].status").value("ON_SALE"))
         .andExpect(jsonPath("$.data.content[0].thumbnailUrl").value(nullValue()))
         .andExpect(jsonPath("$.data.content[0].sellerNickname").value("열무판매자"))
+        .andExpect(jsonPath("$.data.content[0].wishCount").value(0))
+        .andExpect(jsonPath("$.data.content[0].wished").value(false))
         .andExpect(jsonPath("$.data.content[0].createdAt", matchesPattern(".*(Z|\\+00:00)$")))
         .andExpect(jsonPath("$.data.content[1].productId").value(firstProduct.getId()))
         .andExpect(jsonPath("$.data.page").value(0))
@@ -83,6 +90,34 @@ class ProductControllerTest {
         .andExpect(jsonPath("$.data.totalElements").value(2))
         .andExpect(jsonPath("$.data.totalPages").value(1))
         .andExpect(jsonPath("$.data.hasNext").value(false));
+  }
+
+  @Test
+  void 상품_목록_로그인_조회는_상품별_찜_수와_사용자_찜_여부를_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User viewer = saveUser("viewer@example.com", "조회자");
+    User other = saveUser("other@example.com", "다른사용자");
+    Product firstProduct = saveProduct(seller, "아이패드 미니 6", 450000);
+    Product secondProduct = saveProduct(seller, "맥북 에어", 900000);
+    saveWish(viewer, secondProduct);
+    saveWish(other, secondProduct);
+    saveWish(other, firstProduct);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(viewer);
+
+    mockMvc
+        .perform(
+            get("/api/products")
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .param("page", "0")
+                .param("size", "10"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content", hasSize(2)))
+        .andExpect(jsonPath("$.data.content[0].productId").value(secondProduct.getId()))
+        .andExpect(jsonPath("$.data.content[0].wishCount").value(2))
+        .andExpect(jsonPath("$.data.content[0].wished").value(true))
+        .andExpect(jsonPath("$.data.content[1].productId").value(firstProduct.getId()))
+        .andExpect(jsonPath("$.data.content[1].wishCount").value(1))
+        .andExpect(jsonPath("$.data.content[1].wished").value(false));
   }
 
   @Test
@@ -148,10 +183,30 @@ class ProductControllerTest {
         .andExpect(jsonPath("$.data.updatedAt", matchesPattern(".*(Z|\\+00:00)$")))
         .andExpect(jsonPath("$.data.category").doesNotExist())
         .andExpect(jsonPath("$.data.images").doesNotExist())
-        .andExpect(jsonPath("$.data.wishCount").doesNotExist())
-        .andExpect(jsonPath("$.data.wished").doesNotExist())
+        .andExpect(jsonPath("$.data.wishCount").value(0))
+        .andExpect(jsonPath("$.data.wished").value(false))
         .andExpect(jsonPath("$.data.viewCount").doesNotExist())
         .andExpect(jsonPath("$.data.seller.averageRating").doesNotExist());
+  }
+
+  @Test
+  void 상품_상세_로그인_조회는_찜_수와_사용자_찜_여부를_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User viewer = saveUser("viewer@example.com", "조회자");
+    User other = saveUser("other@example.com", "다른사용자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    saveWish(viewer, product);
+    saveWish(other, product);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(viewer);
+
+    mockMvc
+        .perform(
+            get("/api/products/{productId}", product.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.productId").value(product.getId()))
+        .andExpect(jsonPath("$.data.wishCount").value(2))
+        .andExpect(jsonPath("$.data.wished").value(true));
   }
 
   @Test
@@ -438,6 +493,10 @@ class ProductControllerTest {
 
   private User saveUser(String email, String nickname) {
     return userRepository.save(new User(email, passwordEncoder.encode("Password123!"), nickname));
+  }
+
+  private void saveWish(User user, Product product) {
+    wishRepository.saveAndFlush(Wish.create(user, product));
   }
 
   private Product saveProduct(User seller, String title, Integer price) {
