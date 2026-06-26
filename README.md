@@ -18,4 +18,14 @@
 
 ## 개발
 
-빌드·실행·테스트 명령, 기술 스택, 패키지 구조, 커밋·코드 컨벤션은 [AGENTS.md](AGENTS.md)를 정본으로 본다.
+[AGENTS.md](AGENTS.md)는 에이전트 작업 라우터다. 빌드·실행·테스트 명령과 필수 운영 게이트는 AGENTS.md를 보고, 세부 정본은 `docs/*` 문서를 따른다.
+
+### 환경 셋업
+
+클론 후 1회 `git config core.hooksPath .githooks`를 실행한다. pre-commit에서 Spotless 포맷 검사가 동작한다.
+
+### 스킬
+
+- 원본은 `.agents/skills/<이름>/SKILL.md`, Claude Code용 복사본은 `.claude/skills/<이름>/SKILL.md`에 둔다.
+- 복사·검증은 `scripts/sync-claude-skills.ps1`, `scripts/check-skill-sync.ps1`, CI가 담당한다.
+- 현재 공유 스킬은 `review`, `pr-writer`. 세부 트리거·출력 형식은 각 `SKILL.md`를 따른다.

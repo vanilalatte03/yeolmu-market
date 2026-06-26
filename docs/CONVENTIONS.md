@@ -103,6 +103,23 @@ public class OrderController {
 - **테스트 메서드명은 한글로 작성**한다. 예: `주문을_생성하면_재고가_차감된다()`
 - 새 Service/Controller에는 핵심 경로 테스트를 작성한다.
 
+## 시간 처리
+
+- 서버/DB/JWT 시간 값은 UTC 기준으로 다룬다.
+- Entity의 `LocalDateTime`은 DB `DATETIME`에 저장된 UTC 시각으로 해석한다.
+- JWT/TTL/만료 계산은 `Instant`, epoch seconds, `Duration`을 사용한다.
+- 테스트 fixture에서 정렬·만료·시간 비교용 값은 고정 시각을 사용한다.
+- 현재 시각이 정말 필요한 코드나 테스트는 UTC 기준을 명시한다.
+
+```java
+// ❌ 테스트 결과가 실행 시각에 흔들림
+ReflectionTestUtils.setField(room, "lastMessageAt", LocalDateTime.now());
+
+// ✅ 비교 기준을 고정
+LocalDateTime baseTime = LocalDateTime.of(2026, 6, 24, 10, 0);
+ReflectionTestUtils.setField(room, "lastMessageAt", baseTime);
+```
+
 ## Javadoc
 
 사람이 읽고 리뷰하기 쉽도록, "왜"가 필요한 곳에만 단다. 모든 메서드에 기계적으로 붙이지 않는다.
@@ -136,3 +153,11 @@ public Order createOrder(Long userId, CreateOrderRequest request) { ... }
 
 필요성이 명확하지 않으면 단순한 Spring Boot + JPA + DB 구조 안에서 해결한다.
 다음은 신중하게만 제안한다: MSA 전환, Kafka 도입, Redis 분산락, CQRS/Event Sourcing, 복잡한 DDD 강제, 운영급 모니터링 구축.
+
+## 커밋
+
+- 커밋은 리뷰 가능한 의미 단위로 작게 나눈다. 기능 구현, 테스트 추가, 문서 수정, 리팩토링은 가능하면 분리한다.
+- 커밋 메시지는 Conventional Commits 형식을 따른다: `type: subject`
+- 허용 type은 `feat`, `fix`, `refactor`, `docs`, `test`, `chore` 중 하나다.
+- subject는 한국어 한 줄로 간결하게 작성하고, 구현 내용이 바로 드러나게 현재형으로 쓴다.
+- WIP, 임시 커밋, 서로 다른 목적이 섞인 대형 커밋은 남기지 않는다.
