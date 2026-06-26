@@ -1288,16 +1288,16 @@ P0에서는 `categoryId` 검색 조건을 사용하지 않고, `thumbnailUrl`은
 
 ### 상품 검색 v2
 
-기존 상품 검색과 같은 요청/응답 계약을 유지하면서 정규화된 검색 조건별 in-memory cache를 적용한다.
+기존 상품 검색과 같은 요청/응답 계약을 유지하면서 정규화된 검색 조건별 Redis cache를 적용한다.
 인기 검색어 집계는 캐시 대상이 아니며, 캐시 hit 상황에서도 검색 요청마다 실행된다.
 상품 등록, 수정, 삭제, 숨김 상태 변경, 주문 생성, 주문 취소로 상품 검색 결과가 달라지면 v2 검색 캐시는 무효화된다.
-v2는 Redis CacheManager 전환 전 로컬 캐시 실험/대체 구현이며, TTL과 maximumSize는 애플리케이션 설정으로 관리한다.
+v2 검색 결과 캐시는 Redis `CacheManager`로 관리하며, TTL은 애플리케이션 설정으로 관리한다.
 
 - Method: `GET`
 - Path: `/api/search/v2/products`
 - 인증: 불필요
 - HTTP Status: `200 OK`
-- Cache: Caffeine local cache, key는 `keyword` trim/blank 처리, 기본 `status/page/size/sort`, 가격 범위, 정렬 조건을 반영한 정규화 검색 조건
+- Cache: Redis cache, key는 `keyword` trim/blank 처리, 기본 `status/page/size/sort`, 가격 범위, 정렬 조건을 반영한 정규화 검색 조건
 
 #### Query Parameters
 
