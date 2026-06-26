@@ -1,8 +1,10 @@
 package com.guingujig.yeolmumarket.domain.search.controller;
 
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import com.guingujig.yeolmumarket.domain.search.dto.PopularKeywordsResponse;
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductRequest;
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductResponse;
+import com.guingujig.yeolmumarket.domain.search.service.PopularKeywordService;
 import com.guingujig.yeolmumarket.domain.search.service.SearchService;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class SearchController {
 
   private final SearchService searchService;
+  private final PopularKeywordService popularKeywordService;
 
   @GetMapping("/products")
   public ResponseEntity<ApiResponse<PageResponse<SearchProductResponse>>> searchProducts(
@@ -32,6 +35,13 @@ public class SearchController {
     SearchProductRequest request =
         new SearchProductRequest(keyword, minPrice, maxPrice, status, page, size, sort);
     PageResponse<SearchProductResponse> response = searchService.searchProducts(request);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
+  @GetMapping("/popular-keywords")
+  public ResponseEntity<ApiResponse<PopularKeywordsResponse>> getPopularKeywords(
+      @RequestParam(required = false) Integer limit) {
+    PopularKeywordsResponse response = popularKeywordService.getPopularKeywords(limit);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 }
