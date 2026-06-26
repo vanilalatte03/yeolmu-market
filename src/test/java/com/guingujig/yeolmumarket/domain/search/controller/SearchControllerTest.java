@@ -84,6 +84,38 @@ class SearchControllerTest {
   }
 
   @Test
+  void 비회원이_v2_상품_검색에_성공하면_v1과_동일한_공통_페이지_응답을_반환한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", "생활기스 조금 있습니다.", 430000);
+    saveProduct(seller, "맥북 에어", "깨끗합니다.", 900000);
+
+    mockMvc
+        .perform(
+            get("/api/search/v2/products")
+                .param("keyword", "아이패드")
+                .param("minPrice", "400000")
+                .param("maxPrice", "500000")
+                .param("page", "0")
+                .param("size", "10"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.content", hasSize(1)))
+        .andExpect(jsonPath("$.data.content[0].productId").value(product.getId()))
+        .andExpect(jsonPath("$.data.content[0].title").value("아이패드 미니 6세대"))
+        .andExpect(jsonPath("$.data.content[0].price").value(430000))
+        .andExpect(jsonPath("$.data.content[0].status").value("ON_SALE"))
+        .andExpect(jsonPath("$.data.content[0].thumbnailUrl").value(nullValue()))
+        .andExpect(jsonPath("$.data.content[0].sellerNickname").value("열무판매자"))
+        .andExpect(jsonPath("$.data.content[0].createdAt", matchesPattern(".*(Z|\\+00:00)$")))
+        .andExpect(jsonPath("$.data.page").value(0))
+        .andExpect(jsonPath("$.data.size").value(10))
+        .andExpect(jsonPath("$.data.totalElements").value(1))
+        .andExpect(jsonPath("$.data.totalPages").value(1))
+        .andExpect(jsonPath("$.data.hasNext").value(false));
+  }
+
+  @Test
   void 잘못된_가격_범위는_400_VALIDATION_FAILED로_응답한다() throws Exception {
     mockMvc
         .perform(get("/api/search/products").param("minPrice", "5000").param("maxPrice", "1000"))

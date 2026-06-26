@@ -1,20 +1,12 @@
 package com.guingujig.yeolmumarket.domain.search.service;
 
-import com.guingujig.yeolmumarket.domain.product.entity.Product;
-import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
-import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductRequest;
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductResponse;
-import com.guingujig.yeolmumarket.global.exception.BusinessException;
-import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,10 +14,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class SearchService {
 
-  private static final int MAX_PAGE_SIZE = 100;
   private static final Logger log = LoggerFactory.getLogger(SearchService.class);
 
-  private final ProductRepository productRepository;
+  private final SearchProductQueryService searchProductQueryService;
+  private final CachedSearchProductQueryService cachedSearchProductQueryService;
   private final PopularKeywordService popularKeywordService;
 
   /**
@@ -35,23 +27,21 @@ public class SearchService {
    */
   @Transactional(readOnly = true)
   public PageResponse<SearchProductResponse> searchProducts(SearchProductRequest request) {
-    validatePagination(request.page(), request.size());
-    validatePriceRange(request.minPrice(), request.maxPrice());
-
-    ProductStatus status = resolveStatus(request.status());
-    validatePublicSearchStatus(status);
-    Sort sort = resolveSort(request.sort());
+    SearchProductCondition condition = SearchProductCondition.from(request);
     recordSearchKeywordSafely(request.keyword());
+    return searchProductQueryService.search(condition);
+  }
 
-    Page<Product> products =
-        productRepository.searchPublicProducts(
-            normalizeKeyword(request.keyword()),
-            request.minPrice(),
-            request.maxPrice(),
-            status,
-            PageRequest.of(request.page(), request.size(), sort));
-
-    return PageResponse.from(products.map(SearchProductResponse::from));
+  /**
+   * v1과 같은 검색 계약을 유지하면서 정규화된 검색 조건별로 로컬 캐시를 사용한다.
+   *
+   * <p>인기 검색어 집계는 캐시 대상 메서드 밖에서 먼저 수행해 캐시 hit 상황에서도 요청마다 반영한다.
+   */
+  @Transactional(readOnly = true)
+  public PageResponse<SearchProductResponse> searchProductsV2(SearchProductRequest request) {
+    SearchProductCondition condition = SearchProductCondition.from(request);
+    recordSearchKeywordSafely(request.keyword());
+    return cachedSearchProductQueryService.search(condition);
   }
 
   private void recordSearchKeywordSafely(String keyword) {
@@ -60,55 +50,5 @@ public class SearchService {
     } catch (DataAccessException exception) {
       log.warn("인기 검색어 집계에 실패했습니다.", exception);
     }
-  }
-
-  private void validatePagination(int page, int size) {
-    if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
-      throw new BusinessException(ErrorCode.INVALID_PAGINATION);
-    }
-  }
-
-  private void validatePriceRange(Integer minPrice, Integer maxPrice) {
-    if ((minPrice != null && minPrice < 0) || (maxPrice != null && maxPrice < 0)) {
-      throw new BusinessException(ErrorCode.VALIDATION_FAILED, "가격은 0 이상이어야 합니다.");
-    }
-    if (minPrice != null && maxPrice != null && minPrice > maxPrice) {
-      throw new BusinessException(ErrorCode.VALIDATION_FAILED, "최소 가격은 최대 가격보다 클 수 없습니다.");
-    }
-  }
-
-  private ProductStatus resolveStatus(ProductStatus status) {
-    if (status == null) {
-      return ProductStatus.ON_SALE;
-    }
-    return status;
-  }
-
-  private void validatePublicSearchStatus(ProductStatus status) {
-    if (status == ProductStatus.DELETED) {
-      throw new BusinessException(ErrorCode.INVALID_ENUM_VALUE);
-    }
-  }
-
-  private String normalizeKeyword(String keyword) {
-    if (keyword == null || keyword.isBlank()) {
-      return null;
-    }
-    return escapeLikeKeyword(keyword.trim());
-  }
-
-  private String escapeLikeKeyword(String keyword) {
-    return keyword.replace("!", "!!").replace("%", "!%").replace("_", "!_");
-  }
-
-  private Sort resolveSort(String sort) {
-    if (sort == null || sort.isBlank() || sort.equals("latest")) {
-      return Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
-    }
-    return switch (sort) {
-      case "priceAsc" -> Sort.by(Sort.Order.asc("price"), Sort.Order.desc("id"));
-      case "priceDesc" -> Sort.by(Sort.Order.desc("price"), Sort.Order.desc("id"));
-      default -> throw new BusinessException(ErrorCode.VALIDATION_FAILED, "지원하지 않는 정렬 조건입니다.");
-    };
   }
 }
