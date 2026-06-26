@@ -1318,6 +1318,7 @@ P0에서는 `categoryId` 검색 조건을 사용하지 않고, `thumbnailUrl`은
 | 코드 | HTTP | 발생 조건 |
 | --- | --- | --- |
 | `VALIDATION_FAILED` | 400 | `limit` 범위 오류 |
+| `REDIS_UNAVAILABLE` | 503 | Redis 조회 실패 |
 
 ## 주문 API
 
