@@ -20,3 +20,10 @@ jwt:
   secret: test-jwt-secret-must-be-over-32-bytes
   access-token-validity-seconds: 3600
   refresh-token-validity-seconds: 1209600
+
+yeolmu:
+  cache:
+    search:
+      products-v2:
+        ttl: 5m
+        maximum-size: 1000

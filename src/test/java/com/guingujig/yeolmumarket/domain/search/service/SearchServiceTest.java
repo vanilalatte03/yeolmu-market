@@ -4,25 +4,39 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.guingujig.yeolmumarket.domain.order.dto.CreateOrderResponse;
+import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
+import com.guingujig.yeolmumarket.domain.order.service.OrderService;
+import com.guingujig.yeolmumarket.domain.product.dto.CreateProductRequest;
+import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusRequest;
+import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.product.service.ProductService;
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductRequest;
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductResponse;
 import com.guingujig.yeolmumarket.domain.search.repository.PopularKeywordRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.global.config.SearchCacheProperties;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.caffeine.CaffeineCache;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -34,29 +48,46 @@ class SearchServiceTest {
   @MockitoBean private PopularKeywordRepository popularKeywordRepository;
 
   private final SearchService searchService;
+  private final ProductService productService;
+  private final OrderService orderService;
   private final ProductRepository productRepository;
+  private final OrderRepository orderRepository;
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
+  private final CacheManager cacheManager;
+  private final SearchCacheProperties searchCacheProperties;
 
   @Autowired
   SearchServiceTest(
       SearchService searchService,
+      ProductService productService,
+      OrderService orderService,
       ProductRepository productRepository,
+      OrderRepository orderRepository,
       UserRepository userRepository,
-      PasswordEncoder passwordEncoder) {
+      PasswordEncoder passwordEncoder,
+      CacheManager cacheManager,
+      SearchCacheProperties searchCacheProperties) {
     this.searchService = searchService;
+    this.productService = productService;
+    this.orderService = orderService;
     this.productRepository = productRepository;
+    this.orderRepository = orderRepository;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
+    this.cacheManager = cacheManager;
+    this.searchCacheProperties = searchCacheProperties;
   }
 
   @BeforeEach
   void setUp() {
     deleteAll();
+    clearSearchCache();
   }
 
   @AfterEach
   void tearDown() {
+    clearSearchCache();
     deleteAll();
   }
 
@@ -253,14 +284,247 @@ class SearchServiceTest {
                 assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_ENUM_VALUE));
   }
 
+  @Test
+  void v2_상품_검색은_v1과_동일한_결과를_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    saveProduct(seller, "아이패드 미니 6세대", "생활기스 조금 있습니다.", 430000);
+    saveProduct(seller, "무선 키보드", "아이패드 호환 모델입니다.", 50000);
+    saveProduct(seller, "맥북 에어", "깨끗합니다.", 900000);
+    SearchProductRequest request =
+        new SearchProductRequest("아이패드", 10000, 500000, ProductStatus.ON_SALE, 0, 10, "priceAsc");
+
+    PageResponse<SearchProductResponse> v1Response = searchService.searchProducts(request);
+    PageResponse<SearchProductResponse> v2Response = searchService.searchProductsV2(request);
+
+    assertThat(v2Response).isEqualTo(v1Response);
+  }
+
+  @Test
+  void v2_동일_검색_조건은_반복_조회시_캐시_결과를_사용한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    saveProduct(seller, "아이패드 미니 6세대", "설명", 430000);
+    SearchProductRequest request = request("아이패드", null, null, ProductStatus.ON_SALE);
+
+    PageResponse<SearchProductResponse> firstResponse = searchService.searchProductsV2(request);
+    saveProduct(seller, "아이패드 프로", "설명", 900000);
+    PageResponse<SearchProductResponse> secondResponse = searchService.searchProductsV2(request);
+
+    assertThat(firstResponse.content())
+        .extracting(SearchProductResponse::title)
+        .containsExactly("아이패드 미니 6세대");
+    assertThat(secondResponse).isEqualTo(firstResponse);
+  }
+
+  @Test
+  void v2_캐시_hit_상황에서도_인기_검색어는_요청마다_집계한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    saveProduct(seller, "아이패드 미니 6세대", "설명", 430000);
+    SearchProductRequest request = request("아이패드", null, null, ProductStatus.ON_SALE);
+
+    searchService.searchProductsV2(request);
+    searchService.searchProductsV2(request);
+
+    verify(popularKeywordRepository, times(2)).incrementSearchCount("아이패드");
+  }
+
+  @Test
+  void v2_키워드_trim과_기본값이_반영된_정규화_캐시_key를_사용한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    saveProduct(seller, "아이패드 미니 6세대", "설명", 430000);
+
+    PageResponse<SearchProductResponse> firstResponse =
+        searchService.searchProductsV2(
+            new SearchProductRequest("  아이패드  ", null, null, null, 0, 10, null));
+    saveProduct(seller, "아이패드 프로", "설명", 900000);
+    PageResponse<SearchProductResponse> secondResponse =
+        searchService.searchProductsV2(
+            new SearchProductRequest("아이패드", null, null, ProductStatus.ON_SALE, 0, 10, "latest"));
+
+    assertThat(secondResponse).isEqualTo(firstResponse);
+  }
+
+  @Test
+  void v2_blank_키워드는_null_키워드와_같은_캐시_key를_사용한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    saveProduct(seller, "아이패드 미니 6세대", "설명", 430000);
+
+    PageResponse<SearchProductResponse> firstResponse =
+        searchService.searchProductsV2(
+            new SearchProductRequest("   ", null, null, ProductStatus.ON_SALE, 0, 10, "latest"));
+    saveProduct(seller, "맥북 에어", "설명", 900000);
+    PageResponse<SearchProductResponse> secondResponse =
+        searchService.searchProductsV2(
+            new SearchProductRequest(null, null, null, ProductStatus.ON_SALE, 0, 10, "latest"));
+
+    assertThat(secondResponse).isEqualTo(firstResponse);
+  }
+
+  @Test
+  void v2_검색_조건이_다르면_서로_다른_캐시_key를_사용한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    saveProduct(seller, "저가 상품", "설명", 10000);
+    SearchProductRequest latestRequest =
+        new SearchProductRequest(null, null, null, ProductStatus.ON_SALE, 0, 10, "latest");
+
+    searchService.searchProductsV2(latestRequest);
+    saveProduct(seller, "고가 상품", "설명", 900000);
+    saveProductWithStatus(seller, "예약 상품", "설명", 50000, ProductStatus.RESERVED);
+    PageResponse<SearchProductResponse> differentSortResponse =
+        searchService.searchProductsV2(
+            new SearchProductRequest(null, null, null, ProductStatus.ON_SALE, 0, 10, "priceDesc"));
+    PageResponse<SearchProductResponse> differentPriceResponse =
+        searchService.searchProductsV2(
+            new SearchProductRequest(null, 500000, null, ProductStatus.ON_SALE, 0, 10, "latest"));
+    PageResponse<SearchProductResponse> differentStatusResponse =
+        searchService.searchProductsV2(
+            new SearchProductRequest(null, null, null, ProductStatus.RESERVED, 0, 10, "latest"));
+    PageResponse<SearchProductResponse> differentPageResponse =
+        searchService.searchProductsV2(
+            new SearchProductRequest(null, null, null, ProductStatus.ON_SALE, 1, 1, "latest"));
+
+    assertThat(differentSortResponse.content())
+        .extracting(SearchProductResponse::title)
+        .containsExactly("고가 상품", "저가 상품");
+    assertThat(differentPriceResponse.content())
+        .extracting(SearchProductResponse::title)
+        .containsExactly("고가 상품");
+    assertThat(differentStatusResponse.content())
+        .extracting(SearchProductResponse::title)
+        .containsExactly("예약 상품");
+    assertThat(differentPageResponse.page()).isEqualTo(1);
+    assertThat(differentPageResponse.size()).isEqualTo(1);
+    assertThat(differentPageResponse.totalElements()).isEqualTo(2);
+  }
+
+  @Test
+  void 상품_등록_후_v2_검색_캐시가_무효화되어_새_상품이_반영된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    saveProduct(seller, "기존 상품", "설명", 10000);
+    SearchProductRequest request = request(null, null, null, ProductStatus.ON_SALE);
+
+    searchService.searchProductsV2(request);
+    productService.createProduct(seller.getId(), new CreateProductRequest("새 상품", "설명", 20000));
+    PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
+
+    assertThat(response.content())
+        .extracting(SearchProductResponse::title)
+        .containsExactly("새 상품", "기존 상품");
+  }
+
+  @Test
+  void 상품_수정_후_v2_검색_캐시가_무효화되어_변경값이_반영된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "변경 전 상품", "설명", 10000);
+    SearchProductRequest request = request(null, null, null, ProductStatus.ON_SALE);
+
+    searchService.searchProductsV2(request);
+    productService.updateProduct(
+        seller.getId(), product.getId(), new UpdateProductRequest("변경 후 상품", "수정 설명", 20000));
+    PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
+
+    assertThat(response.content())
+        .extracting(SearchProductResponse::title)
+        .containsExactly("변경 후 상품");
+    assertThat(response.content()).extracting(SearchProductResponse::price).containsExactly(20000);
+  }
+
+  @Test
+  void 상품_삭제_후_v2_검색_캐시가_무효화되어_검색에서_제외된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "삭제 대상 상품", "설명", 10000);
+    SearchProductRequest request = request(null, null, null, ProductStatus.ON_SALE);
+
+    searchService.searchProductsV2(request);
+    productService.deleteProduct(seller.getId(), product.getId());
+    PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
+
+    assertThat(response.content()).isEmpty();
+  }
+
+  @Test
+  void 상품_숨김_변경_후_v2_검색_캐시가_무효화되어_검색에서_제외된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "숨김 대상 상품", "설명", 10000);
+    SearchProductRequest request = request(null, null, null, ProductStatus.ON_SALE);
+
+    searchService.searchProductsV2(request);
+    productService.updateProductHiddenStatus(
+        product.getId(), new UpdateProductHiddenStatusRequest(true));
+    PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
+
+    assertThat(response.content()).isEmpty();
+  }
+
+  @Test
+  void 주문_생성_후_v2_검색_캐시가_무효화되어_예약_상태가_반영된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "예약 대상 상품", "설명", 10000);
+    SearchProductRequest onSaleRequest = request(null, null, null, ProductStatus.ON_SALE);
+
+    searchService.searchProductsV2(onSaleRequest);
+    orderService.createOrder(buyer.getId(), product.getId());
+    PageResponse<SearchProductResponse> onSaleResponse =
+        searchService.searchProductsV2(onSaleRequest);
+    PageResponse<SearchProductResponse> reservedResponse =
+        searchService.searchProductsV2(request(null, null, null, ProductStatus.RESERVED));
+
+    assertThat(onSaleResponse.content()).isEmpty();
+    assertThat(reservedResponse.content())
+        .extracting(SearchProductResponse::status)
+        .containsExactly(ProductStatus.RESERVED);
+  }
+
+  @Test
+  void 주문_취소_후_v2_검색_캐시가_무효화되어_판매중_상태가_반영된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "예약 취소 상품", "설명", 10000);
+    CreateOrderResponse createdOrder = orderService.createOrder(buyer.getId(), product.getId());
+    SearchProductRequest onSaleRequest = request(null, null, null, ProductStatus.ON_SALE);
+
+    searchService.searchProductsV2(onSaleRequest);
+    orderService.cancelOrder(buyer.getId(), createdOrder.orderId());
+    PageResponse<SearchProductResponse> response = searchService.searchProductsV2(onSaleRequest);
+
+    assertThat(response.content())
+        .extracting(SearchProductResponse::title)
+        .containsExactly("예약 취소 상품");
+  }
+
+  @Test
+  void Caffeine_캐시_TTL과_maximumSize는_설정값으로_적용된다() {
+    CaffeineCache cache = (CaffeineCache) cacheManager.getCache(SearchCacheNames.PRODUCT_SEARCH_V2);
+    assertThat(cache).isNotNull();
+    Cache<Object, Object> nativeCache = cache.getNativeCache();
+
+    assertThat(searchCacheProperties.productsV2().ttl()).isEqualTo(Duration.ofMinutes(5));
+    assertThat(searchCacheProperties.productsV2().maximumSize()).isEqualTo(1000L);
+    assertThat(nativeCache.policy().expireAfterWrite()).isPresent();
+    assertThat(
+            nativeCache.policy().expireAfterWrite().orElseThrow().getExpiresAfter(TimeUnit.SECONDS))
+        .isEqualTo(300L);
+    assertThat(nativeCache.policy().eviction()).isPresent();
+    assertThat(nativeCache.policy().eviction().orElseThrow().getMaximum()).isEqualTo(1000L);
+  }
+
   private SearchProductRequest request(
       String keyword, Integer minPrice, Integer maxPrice, ProductStatus status) {
     return new SearchProductRequest(keyword, minPrice, maxPrice, status, 0, 10, "latest");
   }
 
   private void deleteAll() {
+    orderRepository.deleteAll();
     productRepository.deleteAll();
     userRepository.deleteAll();
+  }
+
+  private void clearSearchCache() {
+    org.springframework.cache.Cache cache =
+        cacheManager.getCache(SearchCacheNames.PRODUCT_SEARCH_V2);
+    if (cache != null) {
+      cache.clear();
+    }
   }
 
   private User saveUser(String email, String nickname) {
