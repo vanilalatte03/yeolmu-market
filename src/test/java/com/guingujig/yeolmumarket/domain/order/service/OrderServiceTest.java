@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.guingujig.yeolmumarket.domain.order.dto.CancelOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.CreateOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.GetOrderResponse;
+import com.guingujig.yeolmumarket.domain.order.dto.MyOrderListItemResponse;
+import com.guingujig.yeolmumarket.domain.order.dto.MySaleListItemResponse;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
@@ -16,6 +18,8 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.response.PageResponse;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -461,6 +465,195 @@ class OrderServiceTest {
     }
   }
 
+  @Test
+  void 구매자가_내_구매_주문_목록_조회에_성공한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    saveOrder(buyer, product);
+
+    PageResponse<MyOrderListItemResponse> response =
+        orderService.getMyOrders(buyer.getId(), 0, 10, null);
+
+    assertThat(response.content()).hasSize(1);
+    MyOrderListItemResponse item = response.content().get(0);
+    assertThat(item.productId()).isEqualTo(product.getId());
+    assertThat(item.productTitle()).isEqualTo("아이패드 미니 6세대");
+    assertThat(item.price()).isEqualTo(430000);
+    assertThat(item.sellerNickname()).isEqualTo("열무판매자");
+    assertThat(item.status()).isEqualTo(OrderStatus.CREATED);
+    assertThat(item.createdAt()).isNotNull();
+    assertThat(response.totalElements()).isEqualTo(1);
+  }
+
+  @Test
+  void 구매_주문_목록은_다른_사용자의_주문을_포함하지_않는다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User other = saveUser("other@example.com", "타인");
+    Product product1 = saveProduct(seller, "상품A", 100000);
+    Product product2 = saveProduct(seller, "상품B", 200000);
+    saveOrder(buyer, product1);
+    saveOrder(other, product2);
+
+    PageResponse<MyOrderListItemResponse> response =
+        orderService.getMyOrders(buyer.getId(), 0, 10, null);
+
+    assertThat(response.content()).hasSize(1);
+    assertThat(response.content().get(0).productTitle()).isEqualTo("상품A");
+  }
+
+  @Test
+  void 구매_주문_목록_status_필터_조회에_성공한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product1 = saveProduct(seller, "상품A", 100000);
+    Product product2 = saveProduct(seller, "상품B", 200000);
+    Order order1 = saveOrder(buyer, product1);
+    saveOrder(buyer, product2);
+    ReflectionTestUtils.setField(order1, "orderStatus", OrderStatus.CANCELED);
+    orderRepository.saveAndFlush(order1);
+
+    PageResponse<MyOrderListItemResponse> response =
+        orderService.getMyOrders(buyer.getId(), 0, 10, OrderStatus.CANCELED);
+
+    assertThat(response.content()).hasSize(1);
+    assertThat(response.content().get(0).status()).isEqualTo(OrderStatus.CANCELED);
+  }
+
+  @Test
+  void 판매자가_내_판매_주문_목록_조회에_성공한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    saveOrder(buyer, product);
+
+    PageResponse<MySaleListItemResponse> response =
+        orderService.getMySales(seller.getId(), 0, 10, null);
+
+    assertThat(response.content()).hasSize(1);
+    MySaleListItemResponse item = response.content().get(0);
+    assertThat(item.productId()).isEqualTo(product.getId());
+    assertThat(item.productTitle()).isEqualTo("아이패드 미니 6세대");
+    assertThat(item.price()).isEqualTo(430000);
+    assertThat(item.buyerNickname()).isEqualTo("열무구매자");
+    assertThat(item.status()).isEqualTo(OrderStatus.CREATED);
+    assertThat(item.createdAt()).isNotNull();
+    assertThat(response.totalElements()).isEqualTo(1);
+  }
+
+  @Test
+  void 판매_주문_목록은_다른_판매자의_주문을_포함하지_않는다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User otherSeller = saveUser("other@example.com", "타인판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product1 = saveProduct(seller, "내상품", 100000);
+    Product product2 = saveProduct(otherSeller, "타인상품", 200000);
+    saveOrder(buyer, product1);
+    saveOrder(buyer, product2);
+
+    PageResponse<MySaleListItemResponse> response =
+        orderService.getMySales(seller.getId(), 0, 10, null);
+
+    assertThat(response.content()).hasSize(1);
+    assertThat(response.content().get(0).productTitle()).isEqualTo("내상품");
+  }
+
+  @Test
+  void 판매_주문_목록_status_필터_조회에_성공한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product1 = saveProduct(seller, "상품A", 100000);
+    Product product2 = saveProduct(seller, "상품B", 200000);
+    Order order1 = saveOrder(buyer, product1);
+    saveOrder(buyer, product2);
+    ReflectionTestUtils.setField(order1, "orderStatus", OrderStatus.CANCELED);
+    orderRepository.saveAndFlush(order1);
+
+    PageResponse<MySaleListItemResponse> response =
+        orderService.getMySales(seller.getId(), 0, 10, OrderStatus.CANCELED);
+
+    assertThat(response.content()).hasSize(1);
+    assertThat(response.content().get(0).status()).isEqualTo(OrderStatus.CANCELED);
+  }
+
+  @Test
+  void 주문이_없으면_빈_페이지를_반환한다() {
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+
+    PageResponse<MyOrderListItemResponse> orders =
+        orderService.getMyOrders(buyer.getId(), 0, 10, null);
+    PageResponse<MySaleListItemResponse> sales =
+        orderService.getMySales(buyer.getId(), 0, 10, null);
+
+    assertThat(orders.content()).isEmpty();
+    assertThat(orders.totalElements()).isZero();
+    assertThat(sales.content()).isEmpty();
+    assertThat(sales.totalElements()).isZero();
+  }
+
+  @Test
+  void 구매_목록_응답의_가격이_orderPrice_스냅샷을_사용한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    saveOrder(buyer, product);
+
+    Product saved = productRepository.findById(product.getId()).orElseThrow();
+    saved.updateInfo(null, null, 500000);
+    productRepository.saveAndFlush(saved);
+
+    PageResponse<MyOrderListItemResponse> response =
+        orderService.getMyOrders(buyer.getId(), 0, 10, null);
+
+    assertThat(response.content().get(0).price()).isEqualTo(430000);
+  }
+
+  @Test
+  void 구매_주문_목록이_createdAt_DESC_id_DESC로_정렬된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product1 = saveProduct(seller, "상품A", 100000);
+    Product product2 = saveProduct(seller, "상품B", 200000);
+    Product product3 = saveProduct(seller, "상품C", 300000);
+    Order order1 = saveOrder(buyer, product1);
+    Order order2 = saveOrder(buyer, product2);
+    Order order3 = saveOrder(buyer, product3);
+
+    LocalDateTime base = LocalDateTime.of(2026, 6, 24, 10, 0);
+    ReflectionTestUtils.setField(order1, "createdAt", base);
+    ReflectionTestUtils.setField(order2, "createdAt", base.plusHours(1));
+    ReflectionTestUtils.setField(order3, "createdAt", base.plusHours(2));
+    orderRepository.saveAllAndFlush(List.of(order1, order2, order3));
+
+    PageResponse<MyOrderListItemResponse> response =
+        orderService.getMyOrders(buyer.getId(), 0, 10, null);
+
+    List<Long> orderedIds =
+        response.content().stream().map(MyOrderListItemResponse::orderId).toList();
+    assertThat(orderedIds).containsExactly(order3.getId(), order2.getId(), order1.getId());
+  }
+
+  @Test
+  void 구매_주문_목록_잘못된_페이지_요청은_INVALID_PAGINATION을_반환한다() {
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+
+    assertThatThrownBy(() -> orderService.getMyOrders(buyer.getId(), -1, 10, null))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_PAGINATION));
+
+    assertThatThrownBy(() -> orderService.getMyOrders(buyer.getId(), 0, 0, null))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_PAGINATION));
+
+    assertThatThrownBy(() -> orderService.getMyOrders(buyer.getId(), 0, 101, null))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_PAGINATION));
+  }
+
   private void deleteAll() {
     orderRepository.deleteAll();
     productRepository.deleteAll();
@@ -486,5 +679,11 @@ class OrderServiceTest {
     Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
     ReflectionTestUtils.setField(product, "status", status);
     return productRepository.saveAndFlush(product);
+  }
+
+  private Order saveOrder(User buyer, Product product) {
+    product.reserve();
+    productRepository.save(product);
+    return orderRepository.save(Order.create(buyer, product));
   }
 }
