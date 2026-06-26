@@ -368,13 +368,20 @@ class SearchServiceTest {
 
     searchService.searchProductsV2(latestRequest);
     saveProduct(seller, "고가 상품", "설명", 900000);
+    saveProduct(seller, "중간 상품", "설명", 20000);
     saveProductWithStatus(seller, "예약 상품", "설명", 50000, ProductStatus.RESERVED);
+    PageResponse<SearchProductResponse> differentKeywordResponse =
+        searchService.searchProductsV2(
+            new SearchProductRequest("고가", null, null, ProductStatus.ON_SALE, 0, 10, "latest"));
     PageResponse<SearchProductResponse> differentSortResponse =
         searchService.searchProductsV2(
             new SearchProductRequest(null, null, null, ProductStatus.ON_SALE, 0, 10, "priceDesc"));
-    PageResponse<SearchProductResponse> differentPriceResponse =
+    PageResponse<SearchProductResponse> differentMinPriceResponse =
         searchService.searchProductsV2(
             new SearchProductRequest(null, 500000, null, ProductStatus.ON_SALE, 0, 10, "latest"));
+    PageResponse<SearchProductResponse> differentMaxPriceResponse =
+        searchService.searchProductsV2(
+            new SearchProductRequest(null, null, 500000, ProductStatus.ON_SALE, 0, 10, "latest"));
     PageResponse<SearchProductResponse> differentStatusResponse =
         searchService.searchProductsV2(
             new SearchProductRequest(null, null, null, ProductStatus.RESERVED, 0, 10, "latest"));
@@ -382,18 +389,24 @@ class SearchServiceTest {
         searchService.searchProductsV2(
             new SearchProductRequest(null, null, null, ProductStatus.ON_SALE, 1, 1, "latest"));
 
-    assertThat(differentSortResponse.content())
-        .extracting(SearchProductResponse::title)
-        .containsExactly("고가 상품", "저가 상품");
-    assertThat(differentPriceResponse.content())
+    assertThat(differentKeywordResponse.content())
         .extracting(SearchProductResponse::title)
         .containsExactly("고가 상품");
+    assertThat(differentSortResponse.content())
+        .extracting(SearchProductResponse::title)
+        .containsExactly("고가 상품", "중간 상품", "저가 상품");
+    assertThat(differentMinPriceResponse.content())
+        .extracting(SearchProductResponse::title)
+        .containsExactly("고가 상품");
+    assertThat(differentMaxPriceResponse.content())
+        .extracting(SearchProductResponse::title)
+        .containsExactly("중간 상품", "저가 상품");
     assertThat(differentStatusResponse.content())
         .extracting(SearchProductResponse::title)
         .containsExactly("예약 상품");
     assertThat(differentPageResponse.page()).isEqualTo(1);
     assertThat(differentPageResponse.size()).isEqualTo(1);
-    assertThat(differentPageResponse.totalElements()).isEqualTo(2);
+    assertThat(differentPageResponse.totalElements()).isEqualTo(3);
   }
 
   @Test
