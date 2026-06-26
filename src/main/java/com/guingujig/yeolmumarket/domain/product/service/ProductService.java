@@ -1,5 +1,6 @@
 package com.guingujig.yeolmumarket.domain.product.service;
 
+import com.guingujig.yeolmumarket.domain.product.dto.AdminHiddenProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.CreateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.CreateProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.DeleteProductResponse;
@@ -175,6 +176,22 @@ public class ProductService {
     return UpdateProductHiddenStatusResponse.from(product);
   }
 
+  /**
+   * 관리자가 숨김 처리된 상품 목록을 조회한다.
+   *
+   * <p>삭제된 상품은 운영 관리 목록에서도 제외한다.
+   */
+  @Transactional(readOnly = true)
+  public PageResponse<AdminHiddenProductResponse> getHiddenProducts(int page, int size) {
+    validatePagination(page, size);
+
+    Page<Product> products =
+        productRepository.findByHiddenTrueAndDeletedAtIsNullAndStatusNot(
+            ProductStatus.DELETED, PageRequest.of(page, size, resolveAdminHiddenProductSort()));
+
+    return PageResponse.from(products.map(AdminHiddenProductResponse::from));
+  }
+
   private Product getExistingProduct(Long productId) {
     return productRepository
         .findWithSellerById(productId)
@@ -255,5 +272,9 @@ public class ProductService {
       case "priceDesc" -> Sort.by(Sort.Order.desc("price"), Sort.Order.desc("id"));
       default -> throw new BusinessException(ErrorCode.VALIDATION_FAILED, "지원하지 않는 정렬 조건입니다.");
     };
+  }
+
+  private Sort resolveAdminHiddenProductSort() {
+    return Sort.by(Sort.Order.desc("modifiedAt"), Sort.Order.desc("id"));
   }
 }
