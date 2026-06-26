@@ -9,6 +9,7 @@ import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -35,7 +36,7 @@ public class PopularKeywordService {
 
   public PopularKeywordsResponse getPopularKeywords(Integer limit) {
     int resolvedLimit = resolveLimit(limit);
-    List<PopularKeyword> popularKeywords = popularKeywordRepository.findTopKeywords(resolvedLimit);
+    List<PopularKeyword> popularKeywords = findTopKeywords(resolvedLimit);
 
     List<PopularKeywordItemResponse> responses = new ArrayList<>();
     for (int index = 0; index < popularKeywords.size(); index++) {
@@ -45,6 +46,14 @@ public class PopularKeywordService {
               index + 1, popularKeyword.keyword(), popularKeyword.searchCount()));
     }
     return new PopularKeywordsResponse(responses);
+  }
+
+  private List<PopularKeyword> findTopKeywords(int limit) {
+    try {
+      return popularKeywordRepository.findTopKeywords(limit);
+    } catch (DataAccessException exception) {
+      throw new BusinessException(ErrorCode.REDIS_UNAVAILABLE);
+    }
   }
 
   private int resolveLimit(Integer limit) {

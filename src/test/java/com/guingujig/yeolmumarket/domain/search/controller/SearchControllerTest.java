@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -133,6 +134,18 @@ class SearchControllerTest {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void 인기_검색어_Redis_조회가_실패하면_503_REDIS_UNAVAILABLE로_응답한다() throws Exception {
+    when(popularKeywordRepository.findTopKeywords(10))
+        .thenThrow(new DataAccessResourceFailureException("redis unavailable"));
+
+    mockMvc
+        .perform(get("/api/search/popular-keywords"))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REDIS_UNAVAILABLE"));
   }
 
   private User saveUser(String email, String nickname) {

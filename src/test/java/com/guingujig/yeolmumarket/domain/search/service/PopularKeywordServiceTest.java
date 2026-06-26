@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 @ExtendWith(MockitoExtension.class)
 class PopularKeywordServiceTest {
@@ -64,5 +65,17 @@ class PopularKeywordServiceTest {
             BusinessException.class,
             exception ->
                 assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+  }
+
+  @Test
+  void Redis_조회가_실패하면_REDIS_UNAVAILABLE로_실패한다() {
+    when(popularKeywordRepository.findTopKeywords(10))
+        .thenThrow(new DataAccessResourceFailureException("redis unavailable"));
+
+    assertThatThrownBy(() -> popularKeywordService.getPopularKeywords(null))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.REDIS_UNAVAILABLE));
   }
 }
