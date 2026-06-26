@@ -7,7 +7,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-import com.github.benmanes.caffeine.cache.Cache;
 import com.guingujig.yeolmumarket.domain.order.dto.CreateOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.order.service.OrderService;
@@ -27,17 +26,23 @@ import com.guingujig.yeolmumarket.global.config.SearchCacheProperties;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.concurrent.TimeUnit;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.cache.CacheManager;
-import org.springframework.cache.caffeine.CaffeineCache;
 import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.data.redis.cache.RedisCache;
+import org.springframework.data.redis.cache.RedisCacheConfiguration;
+import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -506,19 +511,43 @@ class SearchServiceTest {
   }
 
   @Test
-  void Caffeine_캐시_TTL과_maximumSize는_설정값으로_적용된다() {
-    CaffeineCache cache = (CaffeineCache) cacheManager.getCache(SearchCacheNames.PRODUCT_SEARCH_V2);
+  void Redis_기반_CacheManager가_검색_캐시_TTL과_serializer를_적용한다() {
+    assertThat(cacheManager).isInstanceOf(RedisCacheManager.class);
+    assertThat(cacheManager.getCacheNames()).containsExactly(SearchCacheNames.PRODUCT_SEARCH_V2);
+
+    RedisCache cache = (RedisCache) cacheManager.getCache(SearchCacheNames.PRODUCT_SEARCH_V2);
     assertThat(cache).isNotNull();
-    Cache<Object, Object> nativeCache = cache.getNativeCache();
+    RedisCacheConfiguration configuration = cache.getCacheConfiguration();
 
     assertThat(searchCacheProperties.productsV2().ttl()).isEqualTo(Duration.ofMinutes(5));
-    assertThat(searchCacheProperties.productsV2().maximumSize()).isEqualTo(1000L);
-    assertThat(nativeCache.policy().expireAfterWrite()).isPresent();
-    assertThat(
-            nativeCache.policy().expireAfterWrite().orElseThrow().getExpiresAfter(TimeUnit.SECONDS))
-        .isEqualTo(300L);
-    assertThat(nativeCache.policy().eviction()).isPresent();
-    assertThat(nativeCache.policy().eviction().orElseThrow().getMaximum()).isEqualTo(1000L);
+    assertThat(configuration.getTtlFunction().getTimeToLive("key", "value"))
+        .isEqualTo(Duration.ofMinutes(5));
+    assertThat(configuration.getKeyPrefixFor(SearchCacheNames.PRODUCT_SEARCH_V2))
+        .isEqualTo("cache:search:products:v2::");
+
+    byte[] keyBytes = toBytes(configuration.getKeySerializationPair().write("search-key"));
+    assertThat(new String(keyBytes, StandardCharsets.UTF_8)).isEqualTo("search-key");
+
+    PageResponse<SearchProductResponse> pageResponse =
+        new PageResponse<>(
+            List.of(
+                new SearchProductResponse(
+                    1L,
+                    "아이패드",
+                    430000,
+                    ProductStatus.ON_SALE,
+                    null,
+                    "열무판매자",
+                    OffsetDateTime.of(2026, 6, 26, 0, 0, 0, 0, ZoneOffset.UTC))),
+            0,
+            10,
+            1,
+            1,
+            false);
+    ByteBuffer valueBuffer = configuration.getValueSerializationPair().write(pageResponse);
+    Object deserialized = configuration.getValueSerializationPair().read(valueBuffer);
+
+    assertThat(deserialized).isEqualTo(pageResponse);
   }
 
   private SearchProductRequest request(
@@ -536,7 +565,7 @@ class SearchServiceTest {
     org.springframework.cache.Cache cache =
         cacheManager.getCache(SearchCacheNames.PRODUCT_SEARCH_V2);
     if (cache != null) {
-      cache.clear();
+      cache.invalidate();
     }
   }
 
@@ -567,5 +596,11 @@ class SearchServiceTest {
     Product product = Product.create(seller, title, description, price);
     ReflectionTestUtils.setField(product, "deletedAt", LocalDateTime.of(2026, 6, 24, 0, 0));
     return productRepository.saveAndFlush(product);
+  }
+
+  private byte[] toBytes(ByteBuffer byteBuffer) {
+    byte[] bytes = new byte[byteBuffer.remaining()];
+    byteBuffer.get(bytes);
+    return bytes;
   }
 }
