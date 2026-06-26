@@ -1,0 +1,500 @@
+### P0 REST API 흐름
+### 로컬 앱이 http://localhost:8080 에 떠 있는 상태에서 위에서 아래 순서로 실행한다.
+### 37-38번 요청은 관리자 access token이 필요하므로 관리자 계정이 없으면 건너뛴다.
+### 이 파일은 JetBrains HTTP Client 응답 핸들러를 사용한다.
+### WebSocket/STOMP와 실제 동시 주문 검증은 docs/P0_TEST_SCENARIOS.md에 정리되어 있다.
+
+@baseUrl = http://localhost:8080
+@runId = {{$timestamp}}
+@password = Password123!
+
+### 01. 판매자 회원가입
+# @name signupSeller
+POST {{baseUrl}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "email": "seller-{{runId}}@example.com",
+  "password": "{{password}}",
+  "nickname": "열무판매자"
+}
+
+> {%
+client.test("판매자 회원가입은 201을 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("sellerId", response.body.data.userId);
+%}
+
+### 02. 구매자1 회원가입
+# @name signupBuyer1
+POST {{baseUrl}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "email": "buyer1-{{runId}}@example.com",
+  "password": "{{password}}",
+  "nickname": "열무구매자1"
+}
+
+> {%
+client.test("구매자1 회원가입은 201을 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("buyer1Id", response.body.data.userId);
+%}
+
+### 03. 구매자2 회원가입
+# @name signupBuyer2
+POST {{baseUrl}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "email": "buyer2-{{runId}}@example.com",
+  "password": "{{password}}",
+  "nickname": "열무구매자2"
+}
+
+> {%
+client.test("구매자2 회원가입은 201을 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("buyer2Id", response.body.data.userId);
+%}
+
+### 04. 판매자 로그인
+# @name loginSeller
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "seller-{{runId}}@example.com",
+  "password": "{{password}}"
+}
+
+> {%
+client.test("판매자 로그인은 토큰을 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(!!response.body.data.accessToken, "access token이 없습니다.");
+  client.assert(!!response.body.data.refreshToken, "refresh token이 없습니다.");
+});
+client.global.set("sellerAccessToken", response.body.data.accessToken);
+client.global.set("sellerRefreshToken", response.body.data.refreshToken);
+client.global.set("sellerId", response.body.data.user.userId);
+%}
+
+### 05. 구매자1 로그인
+# @name loginBuyer1
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "buyer1-{{runId}}@example.com",
+  "password": "{{password}}"
+}
+
+> {%
+client.test("구매자1 로그인은 토큰을 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(!!response.body.data.accessToken, "access token이 없습니다.");
+});
+client.global.set("buyer1AccessToken", response.body.data.accessToken);
+client.global.set("buyer1RefreshToken", response.body.data.refreshToken);
+client.global.set("buyer1Id", response.body.data.user.userId);
+%}
+
+### 06. 구매자2 로그인
+# @name loginBuyer2
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "buyer2-{{runId}}@example.com",
+  "password": "{{password}}"
+}
+
+> {%
+client.test("구매자2 로그인은 토큰을 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(!!response.body.data.accessToken, "access token이 없습니다.");
+});
+client.global.set("buyer2AccessToken", response.body.data.accessToken);
+client.global.set("buyer2RefreshToken", response.body.data.refreshToken);
+client.global.set("buyer2Id", response.body.data.user.userId);
+%}
+
+### 07. 판매자 공개 프로필 조회
+GET {{baseUrl}}/api/users/{{sellerId}}
+
+> {%
+client.test("공개 프로필은 토큰 없이 조회할 수 있다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.userId == client.global.get("sellerId"), "판매자 ID가 예상과 다릅니다.");
+});
+%}
+
+### 08. 구매자1 닉네임 수정
+PUT {{baseUrl}}/api/users/me
+Authorization: Bearer {{buyer1AccessToken}}
+Content-Type: application/json
+
+{
+  "nickname": "열무구매자1수정"
+}
+
+> {%
+client.test("구매자1은 자신의 프로필을 수정할 수 있다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+});
+%}
+
+### 09. 판매자 상품 등록
+# @name createProduct
+POST {{baseUrl}}/api/products
+Authorization: Bearer {{sellerAccessToken}}
+Content-Type: application/json
+
+{
+  "title": "아이패드 미니 6세대 {{runId}}",
+  "description": "생활기스 조금 있는 중고 상품입니다.",
+  "price": 430000
+}
+
+> {%
+client.test("상품 등록은 판매 중 상품을 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+  client.assert(response.body.data.status === "ON_SALE", "ON_SALE을 기대했습니다.");
+});
+client.global.set("productId", response.body.data.productId);
+%}
+
+### 10. 공개 상품 목록 조회
+GET {{baseUrl}}/api/products?page=0&size=10&status=ON_SALE&sort=latest
+
+> {%
+client.test("공개 상품 목록을 조회할 수 있다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+});
+%}
+
+### 11. 공개 상품 상세 조회
+GET {{baseUrl}}/api/products/{{productId}}
+
+> {%
+client.test("공개 상품 상세를 조회할 수 있다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.productId == client.global.get("productId"), "상품 ID가 예상과 다릅니다.");
+});
+%}
+
+### 12. 판매자 본인 상품 수정
+PUT {{baseUrl}}/api/products/{{productId}}
+Authorization: Bearer {{sellerAccessToken}}
+Content-Type: application/json
+
+{
+  "price": 420000,
+  "description": "가격 조정했습니다. 생활기스 조금 있습니다."
+}
+
+> {%
+client.test("판매자는 본인 상품을 수정할 수 있다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+});
+%}
+
+### 13. 구매자는 판매자 상품을 수정할 수 없음
+PUT {{baseUrl}}/api/products/{{productId}}
+Authorization: Bearer {{buyer1AccessToken}}
+Content-Type: application/json
+
+{
+  "price": 410000
+}
+
+> {%
+client.test("구매자는 판매자 상품을 수정할 수 없다", function () {
+  client.assert(response.status === 403, "403을 기대했습니다.");
+});
+%}
+
+### 14. 상품 검색
+GET {{baseUrl}}/api/search/products?keyword=아이패드&minPrice=100000&maxPrice=500000&status=ON_SALE&page=0&size=10&sort=latest
+
+> {%
+client.test("상품 검색은 200을 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+});
+%}
+
+### 15. 상품 검색 v2 첫 호출
+GET {{baseUrl}}/api/search/v2/products?keyword=아이패드&minPrice=100000&maxPrice=500000&status=ON_SALE&page=0&size=10&sort=latest
+
+> {%
+client.test("상품 검색 v2 첫 호출은 200을 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+});
+%}
+
+### 16. 상품 검색 v2 반복 호출 - 응답 시간은 수동 비교
+GET {{baseUrl}}/api/search/v2/products?keyword=아이패드&minPrice=100000&maxPrice=500000&status=ON_SALE&page=0&size=10&sort=latest
+
+> {%
+client.test("상품 검색 v2 반복 호출은 200을 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+});
+%}
+
+### 17. 인기 검색어 조회
+GET {{baseUrl}}/api/search/popular-keywords?limit=10
+
+> {%
+client.test("인기 검색어 조회는 200을 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+});
+%}
+
+### 18. 구매자1 채팅방 생성
+# @name createChatRoom
+POST {{baseUrl}}/api/products/{{productId}}/chat-rooms
+Authorization: Bearer {{buyer1AccessToken}}
+
+> {%
+client.test("구매자는 채팅방을 생성할 수 있다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("roomId", response.body.data.roomId);
+%}
+
+### 19. 구매자1 같은 채팅방 재생성 - room id는 같아야 함
+POST {{baseUrl}}/api/products/{{productId}}/chat-rooms
+Authorization: Bearer {{buyer1AccessToken}}
+
+> {%
+client.test("같은 상품/구매자/판매자 조합은 하나의 채팅방을 유지한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+  client.assert(response.body.data.roomId == client.global.get("roomId"), "같은 room id를 기대했습니다.");
+});
+%}
+
+### 20. 구매자1 채팅방 목록 조회
+GET {{baseUrl}}/api/chat-rooms?page=0&size=10
+Authorization: Bearer {{buyer1AccessToken}}
+
+> {%
+client.test("구매자 채팅방 목록은 200을 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+});
+%}
+
+### 21. STOMP 전송 전 이전 채팅 메시지 조회
+GET {{baseUrl}}/api/chat-rooms/{{roomId}}/messages?size=30
+Authorization: Bearer {{buyer1AccessToken}}
+
+> {%
+client.test("이전 메시지 조회는 200을 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+});
+%}
+
+### 22. 판매자는 본인 상품을 주문할 수 없음
+POST {{baseUrl}}/api/products/{{productId}}/orders
+Authorization: Bearer {{sellerAccessToken}}
+
+> {%
+client.test("판매자는 본인 상품을 주문할 수 없다", function () {
+  client.assert(response.status === 400, "400을 기대했습니다.");
+});
+%}
+
+### 23. 구매자1 주문 생성
+# @name createOrder
+POST {{baseUrl}}/api/products/{{productId}}/orders
+Authorization: Bearer {{buyer1AccessToken}}
+
+> {%
+client.test("구매자1은 상품을 주문할 수 있다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+  client.assert(response.body.data.status === "CREATED", "CREATED 주문을 기대했습니다.");
+});
+client.global.set("orderId", response.body.data.orderId);
+%}
+
+### 24. 구매자2는 이미 예약된 상품을 주문할 수 없음
+POST {{baseUrl}}/api/products/{{productId}}/orders
+Authorization: Bearer {{buyer2AccessToken}}
+
+> {%
+client.test("예약된 상품은 두 번째 주문을 거부한다", function () {
+  client.assert(response.status === 409, "409를 기대했습니다.");
+});
+%}
+
+### 25. 주문 후 상품 상세 - RESERVED여야 함
+GET {{baseUrl}}/api/products/{{productId}}
+
+> {%
+client.test("주문된 상품은 RESERVED가 된다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.status === "RESERVED", "RESERVED를 기대했습니다.");
+});
+%}
+
+### 26. 구매자1 주문 상세 조회
+GET {{baseUrl}}/api/orders/{{orderId}}
+Authorization: Bearer {{buyer1AccessToken}}
+
+> {%
+client.test("구매자는 본인 주문 상세를 조회할 수 있다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+});
+%}
+
+### 27. 구매자2는 주문 상세를 조회할 수 없음
+GET {{baseUrl}}/api/orders/{{orderId}}
+Authorization: Bearer {{buyer2AccessToken}}
+
+> {%
+client.test("비참여자는 주문 상세를 조회할 수 없다", function () {
+  client.assert(response.status === 403, "403을 기대했습니다.");
+});
+%}
+
+### 28. 구매자1 구매 주문 목록
+GET {{baseUrl}}/api/users/me/orders?page=0&size=10&status=CREATED
+Authorization: Bearer {{buyer1AccessToken}}
+
+> {%
+client.test("구매 주문 목록은 200을 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+});
+%}
+
+### 29. 판매자 판매 주문 목록
+GET {{baseUrl}}/api/users/me/sales?page=0&size=10&status=CREATED
+Authorization: Bearer {{sellerAccessToken}}
+
+> {%
+client.test("판매 주문 목록은 200을 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+});
+%}
+
+### 30. 구매자1 주문 취소
+POST {{baseUrl}}/api/orders/{{orderId}}/cancel
+Authorization: Bearer {{buyer1AccessToken}}
+
+> {%
+client.test("구매자는 본인 주문을 취소할 수 있다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.status === "CANCELED", "CANCELED를 기대했습니다.");
+  client.assert(response.body.data.productStatus === "ON_SALE", "상품 ON_SALE을 기대했습니다.");
+});
+%}
+
+### 31. 취소 후 상품 상세 - ON_SALE이어야 함
+GET {{baseUrl}}/api/products/{{productId}}
+
+> {%
+client.test("취소된 주문은 상품을 ON_SALE로 되돌린다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.status === "ON_SALE", "ON_SALE을 기대했습니다.");
+});
+%}
+
+### 32. 구매자1 토큰 재발급
+POST {{baseUrl}}/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{buyer1RefreshToken}}"
+}
+
+> {%
+client.test("토큰 재발급은 토큰을 회전한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(!!response.body.data.accessToken, "재발급된 access token이 없습니다.");
+  client.assert(!!response.body.data.refreshToken, "재발급된 refresh token이 없습니다.");
+});
+client.global.set("buyer1OldAccessToken", client.global.get("buyer1AccessToken"));
+client.global.set("buyer1OldRefreshToken", client.global.get("buyer1RefreshToken"));
+client.global.set("buyer1AccessToken", response.body.data.accessToken);
+client.global.set("buyer1RefreshToken", response.body.data.refreshToken);
+%}
+
+### 33. 이전 refresh token은 폐기됨
+POST {{baseUrl}}/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{buyer1OldRefreshToken}}"
+}
+
+> {%
+client.test("회전 후 이전 refresh token은 거부된다", function () {
+  client.assert(response.status === 401, "401을 기대했습니다.");
+});
+%}
+
+### 34. 구매자1 로그아웃
+POST {{baseUrl}}/api/auth/logout
+Authorization: Bearer {{buyer1AccessToken}}
+
+> {%
+client.test("로그아웃은 200을 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.loggedOut === true, "loggedOut true를 기대했습니다.");
+});
+client.global.set("buyer1LoggedOutAccessToken", client.global.get("buyer1AccessToken"));
+%}
+
+### 35. 로그아웃된 access token은 보호 API에 접근할 수 없음
+GET {{baseUrl}}/api/chat-rooms?page=0&size=10
+Authorization: Bearer {{buyer1LoggedOutAccessToken}}
+
+> {%
+client.test("폐기된 access token은 거부된다", function () {
+  client.assert(response.status === 401, "401을 기대했습니다.");
+});
+%}
+
+### 36. 검증 실패 예시
+POST {{baseUrl}}/api/products
+Authorization: Bearer {{sellerAccessToken}}
+Content-Type: application/json
+
+{
+  "title": " ",
+  "description": "가격 검증 실패",
+  "price": 0
+}
+
+> {%
+client.test("잘못된 상품 요청은 400을 반환한다", function () {
+  client.assert(response.status === 400, "400을 기대했습니다.");
+});
+%}
+
+### 37. 관리자 상품 숨김 처리 - 실행 전 adminAccessToken 설정 필요
+@adminAccessToken = 관리자_access_token_입력
+PATCH {{baseUrl}}/api/admin/products/{{productId}}/hidden
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{
+  "hidden": true
+}
+
+### 38. 숨김 상품 목록 조회 - 실행 전 adminAccessToken 설정 필요
+GET {{baseUrl}}/api/admin/products/hidden?page=0&size=10
+Authorization: Bearer {{adminAccessToken}}
+
+### 39. 판매자 본인 상품 삭제
+DELETE {{baseUrl}}/api/products/{{productId}}
+Authorization: Bearer {{sellerAccessToken}}
+
+> {%
+client.test("판매자는 주문 취소 후 본인 상품을 삭제할 수 있다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+});
+%}
