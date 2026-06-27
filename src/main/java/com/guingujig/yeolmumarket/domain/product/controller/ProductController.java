@@ -36,19 +36,21 @@ public class ProductController {
 
   @GetMapping
   public ResponseEntity<ApiResponse<PageResponse<ProductListItemResponse>>> getProducts(
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "10") int size,
       @RequestParam(defaultValue = "ON_SALE") ProductStatus status,
       @RequestParam(defaultValue = "latest") String sort) {
     PageResponse<ProductListItemResponse> response =
-        productService.getProducts(page, size, status, sort);
+        productService.getProducts(page, size, status, sort, resolveUserId(authenticatedUser));
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
   @GetMapping("/{productId}")
   public ResponseEntity<ApiResponse<ProductDetailResponse>> getProduct(
-      @PathVariable Long productId) {
-    ProductDetailResponse response = productService.getProduct(productId);
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long productId) {
+    ProductDetailResponse response =
+        productService.getProduct(productId, resolveUserId(authenticatedUser));
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
@@ -77,5 +79,9 @@ public class ProductController {
     DeleteProductResponse response =
         productService.deleteProduct(authenticatedUser.userId(), productId);
     return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
+  private Long resolveUserId(AuthenticatedUser authenticatedUser) {
+    return authenticatedUser == null ? null : authenticatedUser.userId();
   }
 }

@@ -3,8 +3,13 @@ package com.guingujig.yeolmumarket.domain.wish.repository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.wish.entity.Wish;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface WishRepository extends JpaRepository<Wish, Long> {
 
@@ -13,4 +18,29 @@ public interface WishRepository extends JpaRepository<Wish, Long> {
   Optional<Wish> findByUserAndProduct(User user, Product product);
 
   long countByProductId(Long productId);
+
+  @Query(
+      """
+      select wish.product.id as productId, count(wish.id) as wishCount
+      from Wish wish
+      where wish.product.id in :productIds
+      group by wish.product.id
+      """)
+  List<ProductWishCount> countByProductIds(@Param("productIds") Collection<Long> productIds);
+
+  @Query(
+      """
+      select wish.product.id
+      from Wish wish
+      where wish.user.id = :userId
+        and wish.product.id in :productIds
+      """)
+  Set<Long> findWishedProductIdsByUserId(
+      @Param("userId") Long userId, @Param("productIds") Collection<Long> productIds);
+
+  interface ProductWishCount {
+    Long getProductId();
+
+    long getWishCount();
+  }
 }

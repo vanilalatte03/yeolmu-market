@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.guingujig.yeolmumarket.domain.product.dto.AdminHiddenProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.DeleteProductResponse;
+import com.guingujig.yeolmumarket.domain.product.dto.ProductDetailResponse;
+import com.guingujig.yeolmumarket.domain.product.dto.ProductListItemResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductRequest;
@@ -14,6 +16,8 @@ import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.domain.wish.entity.Wish;
+import com.guingujig.yeolmumarket.domain.wish.repository.WishRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
@@ -32,6 +36,7 @@ class ProductServiceTest {
   private final ProductService productService;
   private final ProductRepository productRepository;
   private final UserRepository userRepository;
+  private final WishRepository wishRepository;
   private final PasswordEncoder passwordEncoder;
 
   private static final LocalDateTime DELETED_AT = LocalDateTime.of(2026, 6, 24, 10, 0);
@@ -41,10 +46,12 @@ class ProductServiceTest {
       ProductService productService,
       ProductRepository productRepository,
       UserRepository userRepository,
+      WishRepository wishRepository,
       PasswordEncoder passwordEncoder) {
     this.productService = productService;
     this.productRepository = productRepository;
     this.userRepository = userRepository;
+    this.wishRepository = wishRepository;
     this.passwordEncoder = passwordEncoder;
   }
 
@@ -86,6 +93,74 @@ class ProductServiceTest {
   @AfterEach
   void tearDown() {
     deleteAll();
+  }
+
+  @Test
+  void 상품_목록_비회원_조회는_찜_필드를_기본값으로_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+
+    PageResponse<ProductListItemResponse> response =
+        productService.getProducts(0, 10, ProductStatus.ON_SALE, "latest", null);
+
+    assertThat(response.content()).hasSize(1);
+    ProductListItemResponse item = response.content().getFirst();
+    assertThat(item.productId()).isEqualTo(product.getId());
+    assertThat(item.wishCount()).isZero();
+    assertThat(item.wished()).isFalse();
+  }
+
+  @Test
+  void 상품_목록_로그인_조회는_상품별_찜_수와_사용자_찜_여부를_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User viewer = saveUser("viewer@example.com", "조회자");
+    User other = saveUser("other@example.com", "다른사용자");
+    Product firstProduct = saveProduct(seller, "아이패드 미니 6", 450000);
+    Product secondProduct = saveProduct(seller, "맥북 에어", 900000);
+    saveWish(viewer, secondProduct);
+    saveWish(other, secondProduct);
+    saveWish(other, firstProduct);
+
+    PageResponse<ProductListItemResponse> response =
+        productService.getProducts(0, 10, ProductStatus.ON_SALE, "latest", viewer.getId());
+
+    assertThat(response.content()).hasSize(2);
+    ProductListItemResponse firstItem = response.content().getFirst();
+    ProductListItemResponse secondItem = response.content().get(1);
+    assertThat(firstItem.productId()).isEqualTo(secondProduct.getId());
+    assertThat(firstItem.wishCount()).isEqualTo(2);
+    assertThat(firstItem.wished()).isTrue();
+    assertThat(secondItem.productId()).isEqualTo(firstProduct.getId());
+    assertThat(secondItem.wishCount()).isEqualTo(1);
+    assertThat(secondItem.wished()).isFalse();
+  }
+
+  @Test
+  void 상품_상세_비회원_조회는_찜_필드를_기본값으로_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+
+    ProductDetailResponse response = productService.getProduct(product.getId(), null);
+
+    assertThat(response.productId()).isEqualTo(product.getId());
+    assertThat(response.wishCount()).isZero();
+    assertThat(response.wished()).isFalse();
+  }
+
+  @Test
+  void 상품_상세_로그인_조회는_사용자_찜_여부를_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User viewer = saveUser("viewer@example.com", "조회자");
+    User other = saveUser("other@example.com", "다른사용자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    saveWish(viewer, product);
+    saveWish(other, product);
+
+    ProductDetailResponse response = productService.getProduct(product.getId(), viewer.getId());
+
+    assertThat(response.productId()).isEqualTo(product.getId());
+    assertThat(response.wishCount()).isEqualTo(2);
+    assertThat(response.wished()).isTrue();
   }
 
   @Test
@@ -232,6 +307,7 @@ class ProductServiceTest {
   }
 
   private void deleteAll() {
+    wishRepository.deleteAll();
     productRepository.deleteAll();
     userRepository.deleteAll();
   }
@@ -243,6 +319,10 @@ class ProductServiceTest {
   private Product saveProduct(User seller, String title, Integer price) {
     Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
     return productRepository.saveAndFlush(product);
+  }
+
+  private void saveWish(User user, Product product) {
+    wishRepository.saveAndFlush(Wish.create(user, product));
   }
 
   private Product saveHiddenProduct(User seller, String title, Integer price) {
