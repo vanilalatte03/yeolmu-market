@@ -12,6 +12,7 @@ import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,8 +41,12 @@ public class CategoryService {
   public CreateCategoryResponse createCategory(CreateCategoryRequest request) {
     validateNameDoesNotExist(request.name());
 
-    Category category = categoryRepository.save(Category.create(request.name()));
-    return CreateCategoryResponse.from(category);
+    try {
+      Category category = categoryRepository.saveAndFlush(Category.create(request.name()));
+      return CreateCategoryResponse.from(category);
+    } catch (DataIntegrityViolationException exception) {
+      throw new BusinessException(ErrorCode.CATEGORY_NAME_ALREADY_EXISTS);
+    }
   }
 
   /**
@@ -55,8 +60,12 @@ public class CategoryService {
     Category category = getCategory(categoryId);
     validateNameDoesNotExistForOtherCategory(request.name(), categoryId);
 
-    category.updateName(request.name());
-    categoryRepository.flush();
+    try {
+      category.updateName(request.name());
+      categoryRepository.flush();
+    } catch (DataIntegrityViolationException exception) {
+      throw new BusinessException(ErrorCode.CATEGORY_NAME_ALREADY_EXISTS);
+    }
     return UpdateCategoryResponse.from(category);
   }
 
