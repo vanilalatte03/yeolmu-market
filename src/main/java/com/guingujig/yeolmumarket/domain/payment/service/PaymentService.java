@@ -5,7 +5,9 @@ import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.payment.dto.CreatePaymentRequest;
 import com.guingujig.yeolmumarket.domain.payment.dto.MockPaymentResult;
+import com.guingujig.yeolmumarket.domain.payment.dto.PaymentDetailResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentResponse;
+import com.guingujig.yeolmumarket.domain.payment.dto.PaymentStatusResponse;
 import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
 import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
@@ -106,4 +108,30 @@ public class PaymentService {
   }
 
   public record ProcessPaymentResult(PaymentResponse response, boolean created) {}
+
+  @Transactional(readOnly = true)
+  public PaymentStatusResponse getPaymentStatus(Long userId, Long paymentId) {
+    Payment payment = fetchWithAuthCheck(userId, paymentId);
+    return PaymentStatusResponse.from(payment);
+  }
+
+  @Transactional(readOnly = true)
+  public PaymentDetailResponse getPaymentDetail(Long userId, Long paymentId) {
+    Payment payment = fetchWithAuthCheck(userId, paymentId);
+    return PaymentDetailResponse.from(payment);
+  }
+
+  private Payment fetchWithAuthCheck(Long userId, Long paymentId) {
+    Payment payment =
+        paymentRepository
+            .findWithOrderAndUsersById(paymentId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+
+    Long buyerId = payment.getOrder().getBuyer().getId();
+    Long sellerId = payment.getOrder().getSeller().getId();
+    if (!Objects.equals(buyerId, userId) && !Objects.equals(sellerId, userId)) {
+      throw new BusinessException(ErrorCode.PAYMENT_ACCESS_DENIED);
+    }
+    return payment;
+  }
 }
