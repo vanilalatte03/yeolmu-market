@@ -280,6 +280,27 @@ class PaymentControllerTest {
   }
 
   @Test
+  void Idempotency_Key가_100자를_초과하면_400으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+    String longKey = "a".repeat(101);
+
+    mockMvc
+        .perform(
+            post("/api/orders/{orderId}/payment", order.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .header("Idempotency-Key", longKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"method\":\"MOCK_CARD\",\"result\":\"PAID\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
   void 잘못된_method_값으로_결제하면_400으로_응답한다() throws Exception {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
