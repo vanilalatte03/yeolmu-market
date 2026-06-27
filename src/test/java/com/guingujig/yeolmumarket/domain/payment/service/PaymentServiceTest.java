@@ -21,6 +21,12 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -399,6 +405,72 @@ class PaymentServiceTest {
     assertThat(replay.created()).isFalse();
     assertThat(replay.response().paymentId()).isEqualTo(first.response().paymentId());
     assertThat(replay.response().status()).isEqualTo(PaymentStatus.FAILED);
+    assertThat(paymentRepository.count()).isEqualTo(1);
+  }
+
+  @Test
+  void 서로_다른_주문에_같은_멱등키로_동시_결제하면_하나만_성공하고_나머지는_PAYMENT_ALREADY_EXISTS가_발생한다()
+      throws InterruptedException {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer1 = saveUser("buyer1@example.com", "구매자1");
+    User buyer2 = saveUser("buyer2@example.com", "구매자2");
+    Product product1 = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Product product2 = saveProduct(seller, "맥북 프로", 2000000);
+    Order order1 = saveOrder(buyer1, product1);
+    Order order2 = saveOrder(buyer2, product2);
+    String sharedKey = "concurrent-idem-key";
+
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch doneLatch = new CountDownLatch(2);
+    AtomicInteger successCount = new AtomicInteger(0);
+    CopyOnWriteArrayList<Throwable> failures = new CopyOnWriteArrayList<>();
+
+    executor.submit(
+        () -> {
+          try {
+            startLatch.await();
+            paymentService.processPayment(
+                buyer1.getId(),
+                order1.getId(),
+                sharedKey,
+                new CreatePaymentRequest(PaymentMethod.MOCK_CARD, MockPaymentResult.PAID));
+            successCount.incrementAndGet();
+          } catch (Exception e) {
+            failures.add(e);
+          } finally {
+            doneLatch.countDown();
+          }
+        });
+
+    executor.submit(
+        () -> {
+          try {
+            startLatch.await();
+            paymentService.processPayment(
+                buyer2.getId(),
+                order2.getId(),
+                sharedKey,
+                new CreatePaymentRequest(PaymentMethod.MOCK_CARD, MockPaymentResult.PAID));
+            successCount.incrementAndGet();
+          } catch (Exception e) {
+            failures.add(e);
+          } finally {
+            doneLatch.countDown();
+          }
+        });
+
+    startLatch.countDown();
+    boolean allDone = doneLatch.await(10, TimeUnit.SECONDS);
+    executor.shutdownNow();
+    executor.awaitTermination(5, TimeUnit.SECONDS);
+
+    assertThat(allDone).as("모든 결제 스레드가 10초 내에 완료되어야 합니다").isTrue();
+    assertThat(successCount.get()).isEqualTo(1);
+    assertThat(failures).hasSize(1);
+    assertThat(failures.get(0)).isInstanceOf(BusinessException.class);
+    assertThat(((BusinessException) failures.get(0)).getErrorCode())
+        .isEqualTo(ErrorCode.PAYMENT_ALREADY_EXISTS);
     assertThat(paymentRepository.count()).isEqualTo(1);
   }
 
