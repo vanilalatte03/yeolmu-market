@@ -17,6 +17,7 @@ import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -92,7 +93,18 @@ public class PaymentService {
       eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
     }
 
-    paymentRepository.save(payment);
+    try {
+      paymentRepository.saveAndFlush(payment);
+    } catch (DataIntegrityViolationException e) {
+      Payment conflicting =
+          paymentRepository
+              .findByOrder_Id(orderId)
+              .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_ALREADY_EXISTS));
+      if (conflicting.getIdempotencyKey().equals(idempotencyKey)) {
+        return new ProcessPaymentResult(PaymentResponse.from(conflicting), false);
+      }
+      throw new BusinessException(ErrorCode.PAYMENT_ALREADY_EXISTS);
+    }
     return new ProcessPaymentResult(PaymentResponse.from(payment), true);
   }
 
