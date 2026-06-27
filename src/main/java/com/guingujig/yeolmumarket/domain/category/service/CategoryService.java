@@ -1,4 +1,4 @@
-가package com.guingujig.yeolmumarket.domain.category.service;
+package com.guingujig.yeolmumarket.domain.category.service;
 
 import com.guingujig.yeolmumarket.domain.category.dto.CreateCategoryRequest;
 import com.guingujig.yeolmumarket.domain.category.dto.CreateCategoryResponse;
