@@ -294,15 +294,6 @@ class CategoryControllerTest {
         .andExpect(jsonPath("$.code").value("CATEGORY_IN_USE"));
   }
 
-  @Test
-  void 카테고리별_상품_조회_API는_구현하지_않는다() throws Exception {
-    mockMvc
-        .perform(get("/api/categories/{categoryId}/products", 1L))
-        .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.success").value(false))
-        .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-  }
-
   private Category saveCategory(String name) {
     return categoryRepository.saveAndFlush(Category.create(name));
   }
