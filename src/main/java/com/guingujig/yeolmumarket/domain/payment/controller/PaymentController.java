@@ -1,7 +1,9 @@
 package com.guingujig.yeolmumarket.domain.payment.controller;
 
 import com.guingujig.yeolmumarket.domain.payment.dto.CreatePaymentRequest;
+import com.guingujig.yeolmumarket.domain.payment.dto.PaymentDetailResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentResponse;
+import com.guingujig.yeolmumarket.domain.payment.dto.PaymentStatusResponse;
 import com.guingujig.yeolmumarket.domain.payment.service.PaymentService;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import com.guingujig.yeolmumarket.global.security.AuthenticatedUser;
@@ -12,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -38,5 +41,21 @@ public class PaymentController {
       return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(result.response()));
     }
     return ResponseEntity.ok(ApiResponse.success(result.response()));
+  }
+
+  @GetMapping("/api/payments/{paymentId}/status")
+  public ResponseEntity<ApiResponse<PaymentStatusResponse>> getPaymentStatus(
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long paymentId) {
+    PaymentStatusResponse response =
+        paymentService.getPaymentStatus(authenticatedUser.userId(), paymentId);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
+  @GetMapping("/api/payments/{paymentId}")
+  public ResponseEntity<ApiResponse<PaymentDetailResponse>> getPaymentDetail(
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long paymentId) {
+    PaymentDetailResponse response =
+        paymentService.getPaymentDetail(authenticatedUser.userId(), paymentId);
+    return ResponseEntity.ok(ApiResponse.success(response));
   }
 }

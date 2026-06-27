@@ -8,7 +8,9 @@ import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.payment.dto.CreatePaymentRequest;
 import com.guingujig.yeolmumarket.domain.payment.dto.MockPaymentResult;
+import com.guingujig.yeolmumarket.domain.payment.dto.PaymentDetailResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentResponse;
+import com.guingujig.yeolmumarket.domain.payment.dto.PaymentStatusResponse;
 import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
 import com.guingujig.yeolmumarket.domain.payment.entity.PaymentMethod;
 import com.guingujig.yeolmumarket.domain.payment.entity.PaymentStatus;
@@ -21,6 +23,8 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -472,6 +476,135 @@ class PaymentServiceTest {
     assertThat(((BusinessException) failures.get(0)).getErrorCode())
         .isEqualTo(ErrorCode.PAYMENT_ALREADY_EXISTS);
     assertThat(paymentRepository.count()).isEqualTo(1);
+  }
+
+  @Test
+  void 구매자가_결제_상태를_조회하면_PaymentStatusResponse를_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment =
+        paymentRepository.saveAndFlush(
+            Payment.createPaid(
+                order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
+
+    PaymentStatusResponse response =
+        paymentService.getPaymentStatus(buyer.getId(), payment.getId());
+
+    assertThat(response.paymentId()).isEqualTo(payment.getId());
+    assertThat(response.orderId()).isEqualTo(order.getId());
+    assertThat(response.status()).isEqualTo(PaymentStatus.PAID);
+    assertThat(response.amount()).isEqualTo(430000);
+    assertThat(response.paidAt()).isNotNull();
+  }
+
+  @Test
+  void 판매자가_결제_상태를_조회하면_PaymentStatusResponse를_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment =
+        paymentRepository.saveAndFlush(
+            Payment.createPaid(
+                order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
+
+    PaymentStatusResponse response =
+        paymentService.getPaymentStatus(seller.getId(), payment.getId());
+
+    assertThat(response.status()).isEqualTo(PaymentStatus.PAID);
+  }
+
+  @Test
+  void 구매자가_결제_상세를_조회하면_PaymentDetailResponse를_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment =
+        paymentRepository.saveAndFlush(
+            Payment.createPaid(
+                order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
+
+    PaymentDetailResponse response =
+        paymentService.getPaymentDetail(buyer.getId(), payment.getId());
+
+    assertThat(response.paymentId()).isEqualTo(payment.getId());
+    assertThat(response.orderId()).isEqualTo(order.getId());
+    assertThat(response.amount()).isEqualTo(430000);
+    assertThat(response.method()).isEqualTo(PaymentMethod.MOCK_CARD);
+    assertThat(response.status()).isEqualTo(PaymentStatus.PAID);
+    assertThat(response.paidAt()).isNotNull();
+    assertThat(response.canceledAt()).isNull();
+  }
+
+  @Test
+  void FAILED_결제_상세_조회시_status가_FAILED이고_paidAt과_canceledAt이_null이다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment =
+        paymentRepository.saveAndFlush(
+            Payment.createFailed(
+                order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
+
+    PaymentDetailResponse response =
+        paymentService.getPaymentDetail(buyer.getId(), payment.getId());
+
+    assertThat(response.status()).isEqualTo(PaymentStatus.FAILED);
+    assertThat(response.paidAt()).isNull();
+    assertThat(response.canceledAt()).isNull();
+  }
+
+  @Test
+  void 존재하지_않는_결제_조회시_PAYMENT_NOT_FOUND가_발생한다() {
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+
+    assertThatThrownBy(() -> paymentService.getPaymentStatus(buyer.getId(), Long.MAX_VALUE))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_NOT_FOUND));
+  }
+
+  @Test
+  void 주문_참여자가_아닌_사용자_결제_조회시_PAYMENT_ACCESS_DENIED가_발생한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User other = saveUser("other@example.com", "타인");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment =
+        paymentRepository.saveAndFlush(
+            Payment.createPaid(
+                order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
+
+    assertThatThrownBy(() -> paymentService.getPaymentStatus(other.getId(), payment.getId()))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_ACCESS_DENIED));
+  }
+
+  @Test
+  void 결제_상태_조회_후_결제_주문_상품_상태가_변경되지_않는다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment =
+        paymentRepository.saveAndFlush(
+            Payment.createPaid(
+                order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
+
+    paymentService.getPaymentStatus(buyer.getId(), payment.getId());
+
+    Payment reloadedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+    Order reloadedOrder = orderRepository.findById(order.getId()).orElseThrow();
+    Product reloadedProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(reloadedPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
+    assertThat(reloadedOrder.getOrderStatus()).isEqualTo(OrderStatus.CREATED);
+    assertThat(reloadedProduct.getStatus()).isEqualTo(ProductStatus.RESERVED);
   }
 
   @Test
