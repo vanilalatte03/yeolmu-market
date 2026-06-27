@@ -172,8 +172,7 @@ class PaymentServiceTest {
             new CreatePaymentRequest(PaymentMethod.MOCK_CARD, MockPaymentResult.PAID));
 
     assertThat(result.response().amount()).isEqualTo(430000);
-    Payment savedPayment =
-        paymentRepository.findByOrder_Id(order.getId()).orElseThrow();
+    Payment savedPayment = paymentRepository.findByOrder_Id(order.getId()).orElseThrow();
     assertThat(savedPayment.getAmount()).isEqualTo(430000);
   }
 

@@ -78,8 +78,7 @@ public class PaymentService {
       throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
     }
 
-    MockPaymentResult result =
-        request.result() != null ? request.result() : MockPaymentResult.PAID;
+    MockPaymentResult result = request.result() != null ? request.result() : MockPaymentResult.PAID;
     LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
 
     Payment payment;
