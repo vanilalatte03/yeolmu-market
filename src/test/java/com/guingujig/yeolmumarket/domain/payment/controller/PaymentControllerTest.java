@@ -1,6 +1,7 @@
 package com.guingujig.yeolmumarket.domain.payment.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -534,6 +535,109 @@ class PaymentControllerTest {
     assertThat(reloadedProduct.getStatus()).isEqualTo(ProductStatus.RESERVED);
   }
 
+  @Test
+  void 구매자가_body_없이_PAID_결제를_취소하면_200과_취소_결과를_반환한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment = savePaidPayment(order, "idem-key-001");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            post("/api/payments/{paymentId}/cancel", payment.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.*", hasSize(6)))
+        .andExpect(jsonPath("$.data.paymentId").value(payment.getId()))
+        .andExpect(jsonPath("$.data.orderId").value(order.getId()))
+        .andExpect(jsonPath("$.data.status").value("REFUNDED"))
+        .andExpect(jsonPath("$.data.orderStatus").value("REFUNDED"))
+        .andExpect(jsonPath("$.data.productStatus").value("ON_SALE"))
+        .andExpect(jsonPath("$.data.canceledAt", matchesPattern(".*(Z|\\+00:00)$")))
+        .andExpect(jsonPath("$.data.reason").doesNotExist())
+        .andExpect(jsonPath("$.data.cancelReason").doesNotExist())
+        .andExpect(jsonPath("$.data.amount").doesNotExist())
+        .andExpect(jsonPath("$.data.method").doesNotExist())
+        .andExpect(jsonPath("$.data.paidAt").doesNotExist())
+        .andExpect(jsonPath("$.data.failedAt").doesNotExist());
+
+    Payment reloadedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+    Order reloadedOrder = orderRepository.findById(order.getId()).orElseThrow();
+    Product reloadedProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(reloadedPayment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
+    assertThat(reloadedOrder.getOrderStatus()).isEqualTo(OrderStatus.REFUNDED);
+    assertThat(reloadedProduct.getStatus()).isEqualTo(ProductStatus.ON_SALE);
+  }
+
+  @Test
+  void 구매자가_빈_JSON_body로_PENDING_결제를_취소하면_200과_취소_결과를_반환한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment = savePendingPayment(order, "idem-key-001");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            post("/api/payments/{paymentId}/cancel", payment.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.*", hasSize(6)))
+        .andExpect(jsonPath("$.data.paymentId").value(payment.getId()))
+        .andExpect(jsonPath("$.data.orderId").value(order.getId()))
+        .andExpect(jsonPath("$.data.status").value("CANCELED"))
+        .andExpect(jsonPath("$.data.orderStatus").value("CANCELED"))
+        .andExpect(jsonPath("$.data.productStatus").value("ON_SALE"))
+        .andExpect(jsonPath("$.data.canceledAt", matchesPattern(".*(Z|\\+00:00)$")));
+
+    Payment reloadedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+    Order reloadedOrder = orderRepository.findById(order.getId()).orElseThrow();
+    Product reloadedProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(reloadedPayment.getStatus()).isEqualTo(PaymentStatus.CANCELED);
+    assertThat(reloadedOrder.getOrderStatus()).isEqualTo(OrderStatus.CANCELED);
+    assertThat(reloadedProduct.getStatus()).isEqualTo(ProductStatus.ON_SALE);
+  }
+
+  @Test
+  void 구매자가_reason을_담아_결제를_취소해도_응답에는_사유가_노출되지_않는다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment = savePaidPayment(order, "idem-key-001");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            post("/api/payments/{paymentId}/cancel", payment.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"  단순 변심  \"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.*", hasSize(6)))
+        .andExpect(jsonPath("$.data.reason").doesNotExist())
+        .andExpect(jsonPath("$.data.cancelReason").doesNotExist());
+
+    Payment reloadedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+    assertThat(reloadedPayment.getCancelReason()).isEqualTo("단순 변심");
+  }
+
+  @Test
+  void 인증되지_않은_사용자가_결제_취소하면_401로_응답한다() throws Exception {
+    mockMvc
+        .perform(post("/api/payments/{paymentId}/cancel", 1L))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+  }
+
   private User saveUser(String email, String nickname) {
     return userRepository.save(new User(email, passwordEncoder.encode("Password123!"), nickname));
   }
@@ -546,5 +650,22 @@ class PaymentControllerTest {
     product.reserve();
     productRepository.save(product);
     return orderRepository.save(Order.create(buyer, product));
+  }
+
+  private Payment savePendingPayment(Order order, String idempotencyKey) {
+    Payment payment =
+        Payment.createPaid(
+            order, PaymentMethod.MOCK_CARD, idempotencyKey, LocalDateTime.now(ZoneOffset.UTC));
+    ReflectionTestUtils.setField(payment, "status", PaymentStatus.PENDING);
+    ReflectionTestUtils.setField(payment, "paidAt", null);
+    return paymentRepository.saveAndFlush(payment);
+  }
+
+  private Payment savePaidPayment(Order order, String idempotencyKey) {
+    order.markAsPaid();
+    orderRepository.saveAndFlush(order);
+    return paymentRepository.saveAndFlush(
+        Payment.createPaid(
+            order, PaymentMethod.MOCK_CARD, idempotencyKey, LocalDateTime.now(ZoneOffset.UTC)));
   }
 }
