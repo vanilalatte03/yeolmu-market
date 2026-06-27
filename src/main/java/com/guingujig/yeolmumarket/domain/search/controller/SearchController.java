@@ -8,8 +8,10 @@ import com.guingujig.yeolmumarket.domain.search.service.PopularKeywordService;
 import com.guingujig.yeolmumarket.domain.search.service.SearchService;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
+import com.guingujig.yeolmumarket.global.security.AuthenticatedUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -25,6 +27,7 @@ public class SearchController {
 
   @GetMapping("/products")
   public ResponseEntity<ApiResponse<PageResponse<SearchProductResponse>>> searchProducts(
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
       @RequestParam(required = false) String keyword,
       @RequestParam(required = false) Integer minPrice,
       @RequestParam(required = false) Integer maxPrice,
@@ -34,12 +37,14 @@ public class SearchController {
       @RequestParam(defaultValue = "latest") String sort) {
     SearchProductRequest request =
         new SearchProductRequest(keyword, minPrice, maxPrice, status, page, size, sort);
-    PageResponse<SearchProductResponse> response = searchService.searchProducts(request);
+    PageResponse<SearchProductResponse> response =
+        searchService.searchProducts(request, resolveUserId(authenticatedUser));
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
   @GetMapping("/v2/products")
   public ResponseEntity<ApiResponse<PageResponse<SearchProductResponse>>> searchProductsV2(
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
       @RequestParam(required = false) String keyword,
       @RequestParam(required = false) Integer minPrice,
       @RequestParam(required = false) Integer maxPrice,
@@ -49,7 +54,8 @@ public class SearchController {
       @RequestParam(defaultValue = "latest") String sort) {
     SearchProductRequest request =
         new SearchProductRequest(keyword, minPrice, maxPrice, status, page, size, sort);
-    PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
+    PageResponse<SearchProductResponse> response =
+        searchService.searchProductsV2(request, resolveUserId(authenticatedUser));
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
@@ -58,5 +64,9 @@ public class SearchController {
       @RequestParam(required = false) Integer limit) {
     PopularKeywordsResponse response = popularKeywordService.getPopularKeywords(limit);
     return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
+  private Long resolveUserId(AuthenticatedUser authenticatedUser) {
+    return authenticatedUser == null ? null : authenticatedUser.userId();
   }
 }

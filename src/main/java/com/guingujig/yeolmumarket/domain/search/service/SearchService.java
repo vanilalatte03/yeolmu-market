@@ -2,7 +2,11 @@ package com.guingujig.yeolmumarket.domain.search.service;
 
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductRequest;
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductResponse;
+import com.guingujig.yeolmumarket.domain.wish.dto.ProductWishSummary;
+import com.guingujig.yeolmumarket.domain.wish.service.ProductWishSummaryService;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +23,7 @@ public class SearchService {
   private final SearchProductQueryService searchProductQueryService;
   private final CachedSearchProductQueryService cachedSearchProductQueryService;
   private final PopularKeywordService popularKeywordService;
+  private final ProductWishSummaryService productWishSummaryService;
 
   /**
    * 공개 상품을 키워드, 가격 범위, 상품 상태 조건으로 검색한다.
@@ -27,9 +32,15 @@ public class SearchService {
    */
   @Transactional(readOnly = true)
   public PageResponse<SearchProductResponse> searchProducts(SearchProductRequest request) {
+    return searchProducts(request, null);
+  }
+
+  @Transactional(readOnly = true)
+  public PageResponse<SearchProductResponse> searchProducts(
+      SearchProductRequest request, Long authenticatedUserId) {
     SearchProductCondition condition = SearchProductCondition.from(request);
     recordSearchKeywordSafely(request.keyword());
-    return searchProductQueryService.search(condition);
+    return withWishSummaries(searchProductQueryService.search(condition), authenticatedUserId);
   }
 
   /**
@@ -39,9 +50,40 @@ public class SearchService {
    */
   @Transactional(readOnly = true)
   public PageResponse<SearchProductResponse> searchProductsV2(SearchProductRequest request) {
+    return searchProductsV2(request, null);
+  }
+
+  @Transactional(readOnly = true)
+  public PageResponse<SearchProductResponse> searchProductsV2(
+      SearchProductRequest request, Long authenticatedUserId) {
     SearchProductCondition condition = SearchProductCondition.from(request);
     recordSearchKeywordSafely(request.keyword());
-    return cachedSearchProductQueryService.search(condition);
+    return withWishSummaries(
+        cachedSearchProductQueryService.search(condition), authenticatedUserId);
+  }
+
+  private PageResponse<SearchProductResponse> withWishSummaries(
+      PageResponse<SearchProductResponse> response, Long authenticatedUserId) {
+    List<Long> productIds =
+        response.content().stream().map(SearchProductResponse::productId).toList();
+    Map<Long, ProductWishSummary> wishSummaries =
+        productWishSummaryService.getSummaries(productIds, authenticatedUserId);
+    List<SearchProductResponse> content =
+        response.content().stream()
+            .map(
+                product ->
+                    product.withWishSummary(
+                        wishSummaries.getOrDefault(
+                            product.productId(), ProductWishSummary.empty(product.productId()))))
+            .toList();
+
+    return new PageResponse<>(
+        content,
+        response.page(),
+        response.size(),
+        response.totalElements(),
+        response.totalPages(),
+        response.hasNext());
   }
 
   private void recordSearchKeywordSafely(String keyword) {
