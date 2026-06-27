@@ -102,6 +102,10 @@ public class OrderService {
    */
   @Transactional
   public CancelOrderResponse cancelOrder(Long requesterId, Long orderId) {
+    orderRepository
+        .findByIdForUpdate(orderId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+
     Order order =
         orderRepository
             .findWithDetailsById(orderId)
