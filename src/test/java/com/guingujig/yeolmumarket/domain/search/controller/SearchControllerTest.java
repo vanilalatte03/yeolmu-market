@@ -15,12 +15,16 @@ import com.guingujig.yeolmumarket.domain.search.dto.PopularKeyword;
 import com.guingujig.yeolmumarket.domain.search.repository.PopularKeywordRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.domain.wish.entity.Wish;
+import com.guingujig.yeolmumarket.domain.wish.repository.WishRepository;
+import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -37,18 +41,24 @@ class SearchControllerTest {
   private final MockMvc mockMvc;
   private final UserRepository userRepository;
   private final ProductRepository productRepository;
+  private final WishRepository wishRepository;
   private final PasswordEncoder passwordEncoder;
+  private final JwtTokenProvider jwtTokenProvider;
 
   @Autowired
   SearchControllerTest(
       MockMvc mockMvc,
       UserRepository userRepository,
       ProductRepository productRepository,
-      PasswordEncoder passwordEncoder) {
+      WishRepository wishRepository,
+      PasswordEncoder passwordEncoder,
+      JwtTokenProvider jwtTokenProvider) {
     this.mockMvc = mockMvc;
     this.userRepository = userRepository;
     this.productRepository = productRepository;
+    this.wishRepository = wishRepository;
     this.passwordEncoder = passwordEncoder;
+    this.jwtTokenProvider = jwtTokenProvider;
   }
 
   @Test
@@ -75,6 +85,8 @@ class SearchControllerTest {
         .andExpect(jsonPath("$.data.content[0].status").value("ON_SALE"))
         .andExpect(jsonPath("$.data.content[0].thumbnailUrl").value(nullValue()))
         .andExpect(jsonPath("$.data.content[0].sellerNickname").value("열무판매자"))
+        .andExpect(jsonPath("$.data.content[0].wishCount").value(0))
+        .andExpect(jsonPath("$.data.content[0].wished").value(false))
         .andExpect(jsonPath("$.data.content[0].createdAt", matchesPattern(".*(Z|\\+00:00)$")))
         .andExpect(jsonPath("$.data.page").value(0))
         .andExpect(jsonPath("$.data.size").value(10))
@@ -107,12 +119,70 @@ class SearchControllerTest {
         .andExpect(jsonPath("$.data.content[0].status").value("ON_SALE"))
         .andExpect(jsonPath("$.data.content[0].thumbnailUrl").value(nullValue()))
         .andExpect(jsonPath("$.data.content[0].sellerNickname").value("열무판매자"))
+        .andExpect(jsonPath("$.data.content[0].wishCount").value(0))
+        .andExpect(jsonPath("$.data.content[0].wished").value(false))
         .andExpect(jsonPath("$.data.content[0].createdAt", matchesPattern(".*(Z|\\+00:00)$")))
         .andExpect(jsonPath("$.data.page").value(0))
         .andExpect(jsonPath("$.data.size").value(10))
         .andExpect(jsonPath("$.data.totalElements").value(1))
         .andExpect(jsonPath("$.data.totalPages").value(1))
         .andExpect(jsonPath("$.data.hasNext").value(false));
+  }
+
+  @Test
+  void 로그인_사용자가_상품을_검색하면_상품별_찜_수와_사용자_찜_여부를_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User viewer = saveUser("viewer@example.com", "조회자");
+    User other = saveUser("other@example.com", "다른사용자");
+    Product firstProduct = saveProduct(seller, "아이패드 미니 6세대", "생활기스 조금 있습니다.", 430000);
+    Product secondProduct = saveProduct(seller, "아이패드 프로", "깨끗합니다.", 900000);
+    saveWish(viewer, firstProduct);
+    saveWish(other, firstProduct);
+    saveWish(other, secondProduct);
+
+    mockMvc
+        .perform(
+            get("/api/search/products")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken(viewer))
+                .param("keyword", "아이패드")
+                .param("page", "0")
+                .param("size", "10"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content", hasSize(2)))
+        .andExpect(jsonPath("$.data.content[0].productId").value(secondProduct.getId()))
+        .andExpect(jsonPath("$.data.content[0].wishCount").value(1))
+        .andExpect(jsonPath("$.data.content[0].wished").value(false))
+        .andExpect(jsonPath("$.data.content[1].productId").value(firstProduct.getId()))
+        .andExpect(jsonPath("$.data.content[1].wishCount").value(2))
+        .andExpect(jsonPath("$.data.content[1].wished").value(true));
+  }
+
+  @Test
+  void 로그인_사용자가_v2_상품을_검색하면_상품별_찜_수와_사용자_찜_여부를_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User viewer = saveUser("viewer@example.com", "조회자");
+    User other = saveUser("other@example.com", "다른사용자");
+    Product firstProduct = saveProduct(seller, "아이패드 미니 6세대", "생활기스 조금 있습니다.", 430000);
+    Product secondProduct = saveProduct(seller, "아이패드 프로", "깨끗합니다.", 900000);
+    saveWish(viewer, firstProduct);
+    saveWish(other, firstProduct);
+    saveWish(other, secondProduct);
+
+    mockMvc
+        .perform(
+            get("/api/search/v2/products")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken(viewer))
+                .param("keyword", "아이패드")
+                .param("page", "0")
+                .param("size", "10"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content", hasSize(2)))
+        .andExpect(jsonPath("$.data.content[0].productId").value(secondProduct.getId()))
+        .andExpect(jsonPath("$.data.content[0].wishCount").value(1))
+        .andExpect(jsonPath("$.data.content[0].wished").value(false))
+        .andExpect(jsonPath("$.data.content[1].productId").value(firstProduct.getId()))
+        .andExpect(jsonPath("$.data.content[1].wishCount").value(2))
+        .andExpect(jsonPath("$.data.content[1].wished").value(true));
   }
 
   @Test
@@ -187,5 +257,13 @@ class SearchControllerTest {
   private Product saveProduct(User seller, String title, String description, Integer price) {
     Product product = Product.create(seller, title, description, price);
     return productRepository.saveAndFlush(product);
+  }
+
+  private void saveWish(User user, Product product) {
+    wishRepository.saveAndFlush(Wish.create(user, product));
+  }
+
+  private String bearerToken(User user) {
+    return "Bearer " + jwtTokenProvider.issueAccessToken(user);
   }
 }

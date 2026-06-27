@@ -22,6 +22,8 @@ import com.guingujig.yeolmumarket.domain.search.dto.SearchProductResponse;
 import com.guingujig.yeolmumarket.domain.search.repository.PopularKeywordRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.domain.wish.entity.Wish;
+import com.guingujig.yeolmumarket.domain.wish.repository.WishRepository;
 import com.guingujig.yeolmumarket.global.config.CacheConfig;
 import com.guingujig.yeolmumarket.global.config.SearchCacheProperties;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
@@ -64,6 +66,7 @@ class SearchServiceTest {
   private final ProductRepository productRepository;
   private final OrderRepository orderRepository;
   private final UserRepository userRepository;
+  private final WishRepository wishRepository;
   private final PasswordEncoder passwordEncoder;
   private final CacheManager cacheManager;
   private final SearchCacheProperties searchCacheProperties;
@@ -76,6 +79,7 @@ class SearchServiceTest {
       ProductRepository productRepository,
       OrderRepository orderRepository,
       UserRepository userRepository,
+      WishRepository wishRepository,
       PasswordEncoder passwordEncoder,
       CacheManager cacheManager,
       SearchCacheProperties searchCacheProperties) {
@@ -85,6 +89,7 @@ class SearchServiceTest {
     this.productRepository = productRepository;
     this.orderRepository = orderRepository;
     this.userRepository = userRepository;
+    this.wishRepository = wishRepository;
     this.passwordEncoder = passwordEncoder;
     this.cacheManager = cacheManager;
     this.searchCacheProperties = searchCacheProperties;
@@ -249,6 +254,24 @@ class SearchServiceTest {
   }
 
   @Test
+  void 상품_검색은_인증_사용자_기준_찜_정보를_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User viewer = saveUser("viewer@example.com", "조회자");
+    User other = saveUser("other@example.com", "다른사용자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", "생활기스 조금 있습니다.", 430000);
+    saveWish(viewer, product);
+    saveWish(other, product);
+
+    PageResponse<SearchProductResponse> response =
+        searchService.searchProducts(
+            request("아이패드", null, null, ProductStatus.ON_SALE), viewer.getId());
+
+    assertThat(response.content()).hasSize(1);
+    assertThat(response.content().getFirst().wishCount()).isEqualTo(2);
+    assertThat(response.content().getFirst().wished()).isTrue();
+  }
+
+  @Test
   void 상태가_없으면_ON_SALE로_검색한다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     saveProduct(seller, "판매 중 상품", "설명", 10000);
@@ -324,6 +347,49 @@ class SearchServiceTest {
         .extracting(SearchProductResponse::title)
         .containsExactly("아이패드 미니 6세대");
     assertThat(secondResponse).isEqualTo(firstResponse);
+  }
+
+  @Test
+  void v2_캐시_hit_상황에서도_사용자별_찜_여부는_섞이지_않는다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User viewer = saveUser("viewer@example.com", "조회자");
+    User other = saveUser("other@example.com", "다른사용자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", "설명", 430000);
+    saveWish(viewer, product);
+    SearchProductRequest request = request("아이패드", null, null, ProductStatus.ON_SALE);
+
+    PageResponse<SearchProductResponse> viewerResponse =
+        searchService.searchProductsV2(request, viewer.getId());
+    PageResponse<SearchProductResponse> otherResponse =
+        searchService.searchProductsV2(request, other.getId());
+
+    assertThat(viewerResponse.content()).hasSize(1);
+    assertThat(viewerResponse.content().getFirst().wishCount()).isEqualTo(1);
+    assertThat(viewerResponse.content().getFirst().wished()).isTrue();
+    assertThat(otherResponse.content()).hasSize(1);
+    assertThat(otherResponse.content().getFirst().wishCount()).isEqualTo(1);
+    assertThat(otherResponse.content().getFirst().wished()).isFalse();
+  }
+
+  @Test
+  void 찜_변경_후_v2_캐시_hit_상황에서도_찜_정보는_최신_상태를_반영한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User viewer = saveUser("viewer@example.com", "조회자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", "설명", 430000);
+    SearchProductRequest request = request("아이패드", null, null, ProductStatus.ON_SALE);
+
+    PageResponse<SearchProductResponse> beforeResponse =
+        searchService.searchProductsV2(request, viewer.getId());
+    saveWish(viewer, product);
+    PageResponse<SearchProductResponse> afterResponse =
+        searchService.searchProductsV2(request, viewer.getId());
+
+    assertThat(beforeResponse.content()).hasSize(1);
+    assertThat(beforeResponse.content().getFirst().wishCount()).isZero();
+    assertThat(beforeResponse.content().getFirst().wished()).isFalse();
+    assertThat(afterResponse.content()).hasSize(1);
+    assertThat(afterResponse.content().getFirst().wishCount()).isEqualTo(1);
+    assertThat(afterResponse.content().getFirst().wished()).isTrue();
   }
 
   @Test
@@ -550,6 +616,8 @@ class SearchServiceTest {
                     ProductStatus.ON_SALE,
                     null,
                     "열무판매자",
+                    0,
+                    false,
                     OffsetDateTime.of(2026, 6, 26, 0, 0, 0, 0, ZoneOffset.UTC))),
             0,
             10,
@@ -579,6 +647,7 @@ class SearchServiceTest {
 
   private void deleteAll() {
     orderRepository.deleteAll();
+    wishRepository.deleteAll();
     productRepository.deleteAll();
     userRepository.deleteAll();
   }
@@ -598,6 +667,10 @@ class SearchServiceTest {
   private Product saveProduct(User seller, String title, String description, Integer price) {
     Product product = Product.create(seller, title, description, price);
     return productRepository.saveAndFlush(product);
+  }
+
+  private void saveWish(User user, Product product) {
+    wishRepository.saveAndFlush(Wish.create(user, product));
   }
 
   private Product saveProductWithStatus(

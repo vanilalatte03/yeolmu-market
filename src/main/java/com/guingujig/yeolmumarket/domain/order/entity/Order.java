@@ -73,6 +73,18 @@ public class Order extends BaseTimeEntity {
   }
 
   /**
+   * CREATED 상태의 주문을 PAID로 전이한다.
+   *
+   * <p>CREATED가 아닌 상태에서 호출하면 {@link BusinessException}을 던져 잘못된 전이를 차단한다.
+   */
+  public void markAsPaid() {
+    if (this.orderStatus != OrderStatus.CREATED) {
+      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+    }
+    this.orderStatus = OrderStatus.PAID;
+  }
+
+  /**
    * CREATED 상태의 주문을 CANCELED로 전이한다.
    *
    * <p>CREATED가 아닌 상태에서 호출하면 {@link BusinessException}을 던져 잘못된 전이를 차단한다.
