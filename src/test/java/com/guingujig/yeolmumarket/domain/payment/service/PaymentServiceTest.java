@@ -663,6 +663,55 @@ class PaymentServiceTest {
   }
 
   @Test
+  void 같은_결제를_동시_취소하면_하나만_성공하고_나머지는_INVALID_PAYMENT_STATUS가_발생한다() throws InterruptedException {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment = savePaidPayment(order, "idem-key-001");
+
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch doneLatch = new CountDownLatch(2);
+    AtomicInteger successCount = new AtomicInteger(0);
+    CopyOnWriteArrayList<Throwable> failures = new CopyOnWriteArrayList<>();
+
+    for (int i = 0; i < 2; i++) {
+      executor.submit(
+          () -> {
+            try {
+              startLatch.await();
+              paymentService.cancelPayment(buyer.getId(), payment.getId(), "동시 취소");
+              successCount.incrementAndGet();
+            } catch (Exception e) {
+              failures.add(e);
+            } finally {
+              doneLatch.countDown();
+            }
+          });
+    }
+
+    startLatch.countDown();
+    boolean allDone = doneLatch.await(10, TimeUnit.SECONDS);
+    executor.shutdownNow();
+    executor.awaitTermination(5, TimeUnit.SECONDS);
+
+    assertThat(allDone).as("모든 취소 스레드가 10초 내에 완료되어야 합니다").isTrue();
+    assertThat(successCount.get()).isEqualTo(1);
+    assertThat(failures).hasSize(1);
+    assertThat(failures.get(0)).isInstanceOf(BusinessException.class);
+    assertThat(((BusinessException) failures.get(0)).getErrorCode())
+        .isEqualTo(ErrorCode.INVALID_PAYMENT_STATUS);
+
+    Payment refundedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+    Order refundedOrder = orderRepository.findById(order.getId()).orElseThrow();
+    Product onSaleProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(refundedPayment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
+    assertThat(refundedOrder.getOrderStatus()).isEqualTo(OrderStatus.REFUNDED);
+    assertThat(onSaleProduct.getStatus()).isEqualTo(ProductStatus.ON_SALE);
+  }
+
+  @Test
   void 취소_사유는_trim해서_저장하고_취소_응답에는_노출하지_않는다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");

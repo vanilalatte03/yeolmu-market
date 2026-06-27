@@ -22,6 +22,7 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -132,12 +133,12 @@ public class PaymentService {
    * @throws BusinessException VALIDATION_FAILED - trim한 취소 사유가 255자를 초과하는 경우
    * @throws BusinessException PAYMENT_NOT_FOUND - 결제가 존재하지 않는 경우
    * @throws BusinessException PAYMENT_ACCESS_DENIED - 주문 구매자가 아닌 사용자의 취소 요청
-   * @throws BusinessException INVALID_PAYMENT_STATUS - 취소할 수 없는 결제 또는 주문 상태
+   * @throws BusinessException INVALID_PAYMENT_STATUS - 취소할 수 없는 결제 또는 주문 상태, 또는 동시 취소 경합
    */
   @Transactional
   public CancelPaymentResponse cancelPayment(Long buyerId, Long paymentId, String reason) {
     String normalizedReason = normalizeCancelReason(reason);
-    Payment payment = fetchWithBuyerAuthCheck(buyerId, paymentId);
+    Payment payment = fetchWithBuyerAuthCheckForUpdate(buyerId, paymentId);
     Order order = payment.getOrder();
 
     validateCancelable(payment, order);
@@ -151,6 +152,13 @@ public class PaymentService {
       order.cancelPaidPayment();
     }
     order.getProduct().cancelReservation();
+
+    try {
+      paymentRepository.flush();
+    } catch (ObjectOptimisticLockingFailureException e) {
+      throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
+    }
+
     eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
 
     return CancelPaymentResponse.from(payment);
@@ -174,6 +182,19 @@ public class PaymentService {
     Payment payment =
         paymentRepository
             .findWithOrderBuyerSellerAndProductById(paymentId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+
+    Long orderBuyerId = payment.getOrder().getBuyer().getId();
+    if (!Objects.equals(orderBuyerId, buyerId)) {
+      throw new BusinessException(ErrorCode.PAYMENT_ACCESS_DENIED);
+    }
+    return payment;
+  }
+
+  private Payment fetchWithBuyerAuthCheckForUpdate(Long buyerId, Long paymentId) {
+    Payment payment =
+        paymentRepository
+            .findWithOrderBuyerSellerAndProductByIdForUpdate(paymentId)
             .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
     Long orderBuyerId = payment.getOrder().getBuyer().getId();
