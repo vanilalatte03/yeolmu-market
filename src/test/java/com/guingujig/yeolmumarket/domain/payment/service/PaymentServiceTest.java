@@ -16,6 +16,7 @@ import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
@@ -26,10 +27,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @SpringBootTest
+@RecordApplicationEvents
 class PaymentServiceTest {
+
+  @Autowired private ApplicationEvents applicationEvents;
 
   private final PaymentService paymentService;
   private final PaymentRepository paymentRepository;
@@ -347,6 +353,23 @@ class PaymentServiceTest {
         .isInstanceOfSatisfying(
             BusinessException.class,
             e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+  }
+
+  @Test
+  void 결제_실패_시_검색_캐시_무효화_이벤트가_발행된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+
+    paymentService.processPayment(
+        buyer.getId(),
+        order.getId(),
+        "idem-key-001",
+        new CreatePaymentRequest(PaymentMethod.MOCK_CARD, MockPaymentResult.FAILED));
+
+    assertThat(applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count())
+        .isEqualTo(1);
   }
 
   @Test
