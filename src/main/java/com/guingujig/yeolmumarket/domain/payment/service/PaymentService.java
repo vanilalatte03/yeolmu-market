@@ -17,7 +17,6 @@ import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,6 +48,10 @@ public class PaymentService {
     if (idempotencyKey == null || idempotencyKey.isBlank()) {
       throw new BusinessException(ErrorCode.VALIDATION_FAILED);
     }
+
+    orderRepository
+        .findByIdForUpdate(orderId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
     Order order =
         orderRepository
@@ -93,18 +96,7 @@ public class PaymentService {
       eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
     }
 
-    try {
-      paymentRepository.saveAndFlush(payment);
-    } catch (DataIntegrityViolationException e) {
-      Payment conflicting =
-          paymentRepository
-              .findByOrder_Id(orderId)
-              .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_ALREADY_EXISTS));
-      if (conflicting.getIdempotencyKey().equals(idempotencyKey)) {
-        return new ProcessPaymentResult(PaymentResponse.from(conflicting), false);
-      }
-      throw new BusinessException(ErrorCode.PAYMENT_ALREADY_EXISTS);
-    }
+    paymentRepository.save(payment);
     return new ProcessPaymentResult(PaymentResponse.from(payment), true);
   }
 

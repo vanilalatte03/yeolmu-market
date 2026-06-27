@@ -373,6 +373,36 @@ class PaymentServiceTest {
   }
 
   @Test
+  void 첫_요청_FAILED_후_동일_멱등키로_PAID_body_재요청해도_기존_FAILED_결제를_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+
+    PaymentService.ProcessPaymentResult first =
+        paymentService.processPayment(
+            buyer.getId(),
+            order.getId(),
+            "idem-key-001",
+            new CreatePaymentRequest(PaymentMethod.MOCK_CARD, MockPaymentResult.FAILED));
+
+    assertThat(first.created()).isTrue();
+    assertThat(first.response().status()).isEqualTo(PaymentStatus.FAILED);
+
+    PaymentService.ProcessPaymentResult replay =
+        paymentService.processPayment(
+            buyer.getId(),
+            order.getId(),
+            "idem-key-001",
+            new CreatePaymentRequest(PaymentMethod.MOCK_CARD, MockPaymentResult.PAID));
+
+    assertThat(replay.created()).isFalse();
+    assertThat(replay.response().paymentId()).isEqualTo(first.response().paymentId());
+    assertThat(replay.response().status()).isEqualTo(PaymentStatus.FAILED);
+    assertThat(paymentRepository.count()).isEqualTo(1);
+  }
+
+  @Test
   void 멱등키가_blank이면_VALIDATION_FAILED가_발생한다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
