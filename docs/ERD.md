@@ -77,6 +77,7 @@ erDiagram
         BIGINT id PK "찜 ID"
         BIGINT user_id FK "유저 ID"
         BIGINT product_id FK "상품 ID"
+        DATETIME created_at "생성일"
     }
 
     chatroom {
@@ -218,6 +219,7 @@ erDiagram
 | 찜 ID | id | BIGINT | NOT NULL | PK |
 | 유저 ID | user_id | BIGINT | NOT NULL | FK: users.id |
 | 상품 ID | product_id | BIGINT | NOT NULL | FK: product.id |
+| 생성일 | created_at | DATETIME | NOT NULL | 찜한 시각, API `wishedAt` 근거 |
 
 같은 사용자는 같은 상품을 한 번만 찜할 수 있습니다.
 

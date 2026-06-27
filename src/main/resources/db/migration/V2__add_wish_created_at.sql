@@ -1,0 +1,9 @@
+ALTER TABLE wish
+    ADD COLUMN created_at DATETIME(6) NULL;
+
+UPDATE wish
+SET created_at = UTC_TIMESTAMP(6)
+WHERE created_at IS NULL;
+
+ALTER TABLE wish
+    MODIFY COLUMN created_at DATETIME(6) NOT NULL;
