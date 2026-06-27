@@ -8,6 +8,8 @@ import com.guingujig.yeolmumarket.domain.user.dto.GetUserResponse;
 import com.guingujig.yeolmumarket.domain.user.dto.UpdateUserRequest;
 import com.guingujig.yeolmumarket.domain.user.dto.UpdateUserResponse;
 import com.guingujig.yeolmumarket.domain.user.service.UserService;
+import com.guingujig.yeolmumarket.domain.wish.dto.WishListItemResponse;
+import com.guingujig.yeolmumarket.domain.wish.service.WishService;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
 import com.guingujig.yeolmumarket.global.security.AuthenticatedUser;
@@ -30,6 +32,7 @@ public class UserController {
 
   private final UserService userService;
   private final OrderService orderService;
+  private final WishService wishService;
 
   @GetMapping("/{userId}")
   public ResponseEntity<ApiResponse<GetUserResponse>> getUser(@PathVariable Long userId) {
@@ -63,6 +66,16 @@ public class UserController {
       @RequestParam(required = false) OrderStatus status) {
     PageResponse<MySaleListItemResponse> response =
         orderService.getMySales(authenticatedUser.userId(), page, size, status);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
+  @GetMapping("/me/wishes")
+  public ResponseEntity<ApiResponse<PageResponse<WishListItemResponse>>> getMyWishes(
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "10") int size) {
+    PageResponse<WishListItemResponse> response =
+        wishService.getMyWishes(authenticatedUser.userId(), page, size);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 }
