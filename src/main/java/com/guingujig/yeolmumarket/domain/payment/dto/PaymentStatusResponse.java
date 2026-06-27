@@ -6,11 +6,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
 public record PaymentStatusResponse(
-    Long paymentId,
-    Long orderId,
-    PaymentStatus status,
-    Integer amount,
-    OffsetDateTime paidAt) {
+    Long paymentId, Long orderId, PaymentStatus status, Integer amount, OffsetDateTime paidAt) {
 
   public static PaymentStatusResponse from(Payment payment) {
     return new PaymentStatusResponse(

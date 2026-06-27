@@ -45,8 +45,7 @@ public class PaymentController {
 
   @GetMapping("/api/payments/{paymentId}/status")
   public ResponseEntity<ApiResponse<PaymentStatusResponse>> getPaymentStatus(
-      @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
-      @PathVariable Long paymentId) {
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long paymentId) {
     PaymentStatusResponse response =
         paymentService.getPaymentStatus(authenticatedUser.userId(), paymentId);
     return ResponseEntity.ok(ApiResponse.success(response));
@@ -54,8 +53,7 @@ public class PaymentController {
 
   @GetMapping("/api/payments/{paymentId}")
   public ResponseEntity<ApiResponse<PaymentDetailResponse>> getPaymentDetail(
-      @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
-      @PathVariable Long paymentId) {
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long paymentId) {
     PaymentDetailResponse response =
         paymentService.getPaymentDetail(authenticatedUser.userId(), paymentId);
     return ResponseEntity.ok(ApiResponse.success(response));

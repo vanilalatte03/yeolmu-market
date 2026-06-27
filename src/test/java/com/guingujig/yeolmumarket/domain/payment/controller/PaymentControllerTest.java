@@ -1,6 +1,9 @@
 package com.guingujig.yeolmumarket.domain.payment.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -11,8 +14,10 @@ import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
 import com.guingujig.yeolmumarket.domain.payment.entity.PaymentMethod;
+import com.guingujig.yeolmumarket.domain.payment.entity.PaymentStatus;
 import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
@@ -338,6 +343,195 @@ class PaymentControllerTest {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void 구매자가_결제_상태_조회하면_200과_상태_필드만_반환된다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment =
+        paymentRepository.saveAndFlush(
+            Payment.createPaid(
+                order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            get("/api/payments/{paymentId}/status", payment.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.paymentId").value(payment.getId()))
+        .andExpect(jsonPath("$.data.orderId").value(order.getId()))
+        .andExpect(jsonPath("$.data.status").value("PAID"))
+        .andExpect(jsonPath("$.data.amount").value(430000))
+        .andExpect(jsonPath("$.data.paidAt", matchesPattern(".*(Z|\\+00:00)$")))
+        .andExpect(jsonPath("$.data.method").doesNotExist())
+        .andExpect(jsonPath("$.data.canceledAt").doesNotExist())
+        .andExpect(jsonPath("$.data.failedAt").doesNotExist());
+  }
+
+  @Test
+  void 판매자가_결제_상태_조회하면_200으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment =
+        paymentRepository.saveAndFlush(
+            Payment.createPaid(
+                order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            get("/api/payments/{paymentId}/status", payment.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("PAID"));
+  }
+
+  @Test
+  void 판매자가_결제_상세_조회하면_200으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment =
+        paymentRepository.saveAndFlush(
+            Payment.createPaid(
+                order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            get("/api/payments/{paymentId}", payment.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("PAID"));
+  }
+
+  @Test
+  void PAID_결제_상세_조회시_paidAt이_존재하고_canceledAt이_null로_포함된다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment =
+        paymentRepository.saveAndFlush(
+            Payment.createPaid(
+                order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            get("/api/payments/{paymentId}", payment.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.paymentId").value(payment.getId()))
+        .andExpect(jsonPath("$.data.orderId").value(order.getId()))
+        .andExpect(jsonPath("$.data.amount").value(430000))
+        .andExpect(jsonPath("$.data.method").value("MOCK_CARD"))
+        .andExpect(jsonPath("$.data.status").value("PAID"))
+        .andExpect(jsonPath("$.data.paidAt", matchesPattern(".*(Z|\\+00:00)$")))
+        .andExpect(jsonPath("$.data.canceledAt", nullValue()))
+        .andExpect(jsonPath("$.data.failedAt").doesNotExist());
+  }
+
+  @Test
+  void FAILED_결제_상세_조회시_status가_FAILED이고_paidAt과_canceledAt이_null이며_failedAt_키가_없다()
+      throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment =
+        paymentRepository.saveAndFlush(
+            Payment.createFailed(
+                order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            get("/api/payments/{paymentId}", payment.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("FAILED"))
+        .andExpect(jsonPath("$.data.paidAt", nullValue()))
+        .andExpect(jsonPath("$.data.canceledAt", nullValue()))
+        .andExpect(jsonPath("$.data.failedAt").doesNotExist());
+  }
+
+  @Test
+  void 주문_참여자가_아닌_사용자가_결제_상태_조회하면_403으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User other = saveUser("other@example.com", "타인");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment =
+        paymentRepository.saveAndFlush(
+            Payment.createPaid(
+                order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(other);
+
+    mockMvc
+        .perform(
+            get("/api/payments/{paymentId}/status", payment.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("PAYMENT_ACCESS_DENIED"));
+  }
+
+  @Test
+  void 존재하지_않는_결제_조회하면_404로_응답한다() throws Exception {
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            get("/api/payments/{paymentId}/status", Long.MAX_VALUE)
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("PAYMENT_NOT_FOUND"));
+  }
+
+  @Test
+  void 인증되지_않은_사용자가_결제_상태_조회하면_401로_응답한다() throws Exception {
+    mockMvc
+        .perform(get("/api/payments/{paymentId}/status", 1L))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+  }
+
+  @Test
+  void 결제_상태_조회_후_결제_주문_상품_상태가_변경되지_않는다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment =
+        paymentRepository.saveAndFlush(
+            Payment.createPaid(
+                order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
+    ReflectionTestUtils.setField(order, "orderStatus", OrderStatus.PAID);
+    orderRepository.saveAndFlush(order);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            get("/api/payments/{paymentId}/status", payment.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isOk());
+
+    Payment reloadedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+    Order reloadedOrder = orderRepository.findById(order.getId()).orElseThrow();
+    Product reloadedProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(reloadedPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
+    assertThat(reloadedOrder.getOrderStatus()).isEqualTo(OrderStatus.PAID);
+    assertThat(reloadedProduct.getStatus()).isEqualTo(ProductStatus.RESERVED);
   }
 
   private User saveUser(String email, String nickname) {
