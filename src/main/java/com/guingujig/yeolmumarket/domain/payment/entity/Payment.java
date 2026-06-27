@@ -2,6 +2,8 @@ package com.guingujig.yeolmumarket.domain.payment.entity;
 
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.global.entity.BaseTimeEntity;
+import com.guingujig.yeolmumarket.global.exception.BusinessException;
+import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -97,5 +99,36 @@ public class Payment extends BaseTimeEntity {
     payment.status = PaymentStatus.FAILED;
     payment.failedAt = Objects.requireNonNull(failedAt);
     return payment;
+  }
+
+  /**
+   * PENDING 상태의 결제를 CANCELED로 전이하고 취소 시각과 사유를 기록한다.
+   *
+   * <p>PENDING이 아닌 상태에서 호출하면 {@link BusinessException}을 던져 잘못된 전이를 차단한다.
+   */
+  public void cancelPending(LocalDateTime canceledAt, String cancelReason) {
+    if (this.status != PaymentStatus.PENDING) {
+      throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
+    }
+    this.status = PaymentStatus.CANCELED;
+    recordCancellation(canceledAt, cancelReason);
+  }
+
+  /**
+   * PAID 상태의 결제를 취소 결과인 REFUNDED로 전이하고 취소 시각과 사유를 기록한다.
+   *
+   * <p>PAID가 아닌 상태에서 호출하면 {@link BusinessException}을 던져 잘못된 전이를 차단한다.
+   */
+  public void cancelPaid(LocalDateTime canceledAt, String cancelReason) {
+    if (this.status != PaymentStatus.PAID) {
+      throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
+    }
+    this.status = PaymentStatus.REFUNDED;
+    recordCancellation(canceledAt, cancelReason);
+  }
+
+  private void recordCancellation(LocalDateTime canceledAt, String cancelReason) {
+    this.canceledAt = Objects.requireNonNull(canceledAt, "canceledAt은 필수입니다.");
+    this.cancelReason = cancelReason;
   }
 }
