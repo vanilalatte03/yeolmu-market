@@ -16,7 +16,9 @@ import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusRe
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductResponse;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductImage;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import com.guingujig.yeolmumarket.domain.product.repository.ProductImageRepository;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
@@ -40,6 +42,7 @@ class ProductServiceTest {
 
   private final ProductService productService;
   private final ProductRepository productRepository;
+  private final ProductImageRepository productImageRepository;
   private final CategoryRepository categoryRepository;
   private final UserRepository userRepository;
   private final WishRepository wishRepository;
@@ -51,12 +54,14 @@ class ProductServiceTest {
   ProductServiceTest(
       ProductService productService,
       ProductRepository productRepository,
+      ProductImageRepository productImageRepository,
       CategoryRepository categoryRepository,
       UserRepository userRepository,
       WishRepository wishRepository,
       PasswordEncoder passwordEncoder) {
     this.productService = productService;
     this.productRepository = productRepository;
+    this.productImageRepository = productImageRepository;
     this.categoryRepository = categoryRepository;
     this.userRepository = userRepository;
     this.wishRepository = wishRepository;
@@ -119,6 +124,21 @@ class ProductServiceTest {
   }
 
   @Test
+  void 상품_목록은_대표_이미지를_thumbnailUrl로_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    saveProductImage(
+        product, "/uploads/products/%d/thumbnail.png".formatted(product.getId()), true);
+
+    PageResponse<ProductListItemResponse> response =
+        productService.getProducts(0, 10, ProductStatus.ON_SALE, "latest", null);
+
+    assertThat(response.content()).hasSize(1);
+    assertThat(response.content().getFirst().thumbnailUrl())
+        .isEqualTo("/uploads/products/%d/thumbnail.png".formatted(product.getId()));
+  }
+
+  @Test
   void 상품_목록_로그인_조회는_상품별_찜_수와_사용자_찜_여부를_반환한다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User viewer = saveUser("viewer@example.com", "조회자");
@@ -153,6 +173,24 @@ class ProductServiceTest {
     assertThat(response.productId()).isEqualTo(product.getId());
     assertThat(response.wishCount()).isZero();
     assertThat(response.wished()).isFalse();
+  }
+
+  @Test
+  void 상품_상세는_업로드된_이미지_목록을_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    ProductImage firstImage =
+        saveProductImage(product, "/uploads/products/%d/1.png".formatted(product.getId()), true);
+    ProductImage secondImage =
+        saveProductImage(product, "/uploads/products/%d/2.png".formatted(product.getId()), false);
+
+    ProductDetailResponse response = productService.getProduct(product.getId(), null);
+
+    assertThat(response.images()).hasSize(2);
+    assertThat(response.images().getFirst().imageId()).isEqualTo(firstImage.getId());
+    assertThat(response.images().getFirst().thumbnail()).isTrue();
+    assertThat(response.images().get(1).imageId()).isEqualTo(secondImage.getId());
+    assertThat(response.images().get(1).thumbnail()).isFalse();
   }
 
   @Test
@@ -395,6 +433,7 @@ class ProductServiceTest {
 
   private void deleteAll() {
     wishRepository.deleteAll();
+    productImageRepository.deleteAll();
     productRepository.deleteAll();
     categoryRepository.deleteAll();
     userRepository.deleteAll();
@@ -411,6 +450,10 @@ class ProductServiceTest {
 
   private void saveWish(User user, Product product) {
     wishRepository.saveAndFlush(Wish.create(user, product));
+  }
+
+  private ProductImage saveProductImage(Product product, String url, boolean thumbnail) {
+    return productImageRepository.saveAndFlush(ProductImage.create(product, url, thumbnail));
   }
 
   private Product saveHiddenProduct(User seller, String title, Integer price) {

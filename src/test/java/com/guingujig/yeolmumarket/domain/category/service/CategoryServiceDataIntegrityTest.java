@@ -11,6 +11,7 @@ import com.guingujig.yeolmumarket.domain.category.dto.UpdateCategoryRequest;
 import com.guingujig.yeolmumarket.domain.category.entity.Category;
 import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.product.service.ProductThumbnailQueryService;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import java.util.Optional;
@@ -26,12 +27,14 @@ class CategoryServiceDataIntegrityTest {
 
   @Mock private CategoryRepository categoryRepository;
   @Mock private ProductRepository productRepository;
+  @Mock private ProductThumbnailQueryService productThumbnailQueryService;
 
   private CategoryService categoryService;
 
   @BeforeEach
   void setUp() {
-    categoryService = new CategoryService(categoryRepository, productRepository);
+    categoryService =
+        new CategoryService(categoryRepository, productRepository, productThumbnailQueryService);
   }
 
   @Test

@@ -16,7 +16,9 @@ import com.guingujig.yeolmumarket.domain.product.dto.CreateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductImage;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import com.guingujig.yeolmumarket.domain.product.repository.ProductImageRepository;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.product.service.ProductService;
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductRequest;
@@ -71,6 +73,7 @@ class SearchServiceTest {
   private final OrderRepository orderRepository;
   private final UserRepository userRepository;
   private final WishRepository wishRepository;
+  private final ProductImageRepository productImageRepository;
   private final PasswordEncoder passwordEncoder;
   private final CacheManager cacheManager;
   private final SearchCacheProperties searchCacheProperties;
@@ -85,6 +88,7 @@ class SearchServiceTest {
       OrderRepository orderRepository,
       UserRepository userRepository,
       WishRepository wishRepository,
+      ProductImageRepository productImageRepository,
       PasswordEncoder passwordEncoder,
       CacheManager cacheManager,
       SearchCacheProperties searchCacheProperties) {
@@ -96,6 +100,7 @@ class SearchServiceTest {
     this.orderRepository = orderRepository;
     this.userRepository = userRepository;
     this.wishRepository = wishRepository;
+    this.productImageRepository = productImageRepository;
     this.passwordEncoder = passwordEncoder;
     this.cacheManager = cacheManager;
     this.searchCacheProperties = searchCacheProperties;
@@ -275,6 +280,21 @@ class SearchServiceTest {
     assertThat(response.content()).hasSize(1);
     assertThat(response.content().getFirst().wishCount()).isEqualTo(2);
     assertThat(response.content().getFirst().wished()).isTrue();
+  }
+
+  @Test
+  void 상품_검색은_대표_이미지를_thumbnailUrl로_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", "생활기스 조금 있습니다.", 430000);
+    saveProductImage(
+        product, "/uploads/products/%d/thumbnail.png".formatted(product.getId()), true);
+
+    PageResponse<SearchProductResponse> response =
+        searchService.searchProducts(request("아이패드", null, null, ProductStatus.ON_SALE));
+
+    assertThat(response.content()).hasSize(1);
+    assertThat(response.content().getFirst().thumbnailUrl())
+        .isEqualTo("/uploads/products/%d/thumbnail.png".formatted(product.getId()));
   }
 
   @Test
@@ -657,6 +677,7 @@ class SearchServiceTest {
   private void deleteAll() {
     orderRepository.deleteAll();
     wishRepository.deleteAll();
+    productImageRepository.deleteAll();
     productRepository.deleteAll();
     categoryRepository.deleteAll();
     userRepository.deleteAll();
@@ -681,6 +702,10 @@ class SearchServiceTest {
 
   private void saveWish(User user, Product product) {
     wishRepository.saveAndFlush(Wish.create(user, product));
+  }
+
+  private ProductImage saveProductImage(Product product, String url, boolean thumbnail) {
+    return productImageRepository.saveAndFlush(ProductImage.create(product, url, thumbnail));
   }
 
   private Product saveProductWithStatus(
