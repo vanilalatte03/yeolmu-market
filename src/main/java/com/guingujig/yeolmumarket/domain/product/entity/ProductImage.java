@@ -11,6 +11,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -43,4 +44,27 @@ public class ProductImage {
   @CreatedDate
   @Column(name = "created_at", nullable = false, updatable = false)
   private LocalDateTime createdAt;
+
+  public static ProductImage create(Product product, String url, boolean thumbnail) {
+    ProductImage productImage = new ProductImage();
+    productImage.product = Objects.requireNonNull(product, "product는 필수입니다.");
+    productImage.url = requireText(url);
+    productImage.thumbnail = thumbnail;
+    return productImage;
+  }
+
+  public void markAsThumbnail() {
+    this.thumbnail = true;
+  }
+
+  public void unmarkAsThumbnail() {
+    this.thumbnail = false;
+  }
+
+  private static String requireText(String value) {
+    if (value == null || value.isBlank()) {
+      throw new IllegalArgumentException("이미지 URL은 필수입니다.");
+    }
+    return value;
+  }
 }

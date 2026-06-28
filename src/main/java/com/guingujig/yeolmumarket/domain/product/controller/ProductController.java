@@ -2,19 +2,24 @@ package com.guingujig.yeolmumarket.domain.product.controller;
 
 import com.guingujig.yeolmumarket.domain.product.dto.CreateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.CreateProductResponse;
+import com.guingujig.yeolmumarket.domain.product.dto.DeleteProductImageResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.DeleteProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.ProductDetailResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.ProductListItemResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductResponse;
+import com.guingujig.yeolmumarket.domain.product.dto.UploadProductImagesResponse;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import com.guingujig.yeolmumarket.domain.product.service.ProductImageService;
 import com.guingujig.yeolmumarket.domain.product.service.ProductService;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
 import com.guingujig.yeolmumarket.global.security.AuthenticatedUser;
 import jakarta.validation.Valid;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -25,7 +30,9 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequiredArgsConstructor
@@ -33,6 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductController {
 
   private final ProductService productService;
+  private final ProductImageService productImageService;
 
   @GetMapping
   public ResponseEntity<ApiResponse<PageResponse<ProductListItemResponse>>> getProducts(
@@ -63,6 +71,16 @@ public class ProductController {
     return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
   }
 
+  @PostMapping(path = "/{productId}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  public ResponseEntity<ApiResponse<UploadProductImagesResponse>> uploadProductImages(
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
+      @PathVariable Long productId,
+      @RequestPart("images") List<MultipartFile> images) {
+    UploadProductImagesResponse response =
+        productImageService.uploadImages(authenticatedUser.userId(), productId, images);
+    return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
+  }
+
   @PutMapping("/{productId}")
   public ResponseEntity<ApiResponse<UpdateProductResponse>> updateProduct(
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
@@ -78,6 +96,16 @@ public class ProductController {
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long productId) {
     DeleteProductResponse response =
         productService.deleteProduct(authenticatedUser.userId(), productId);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
+  @DeleteMapping("/{productId}/images/{imageId}")
+  public ResponseEntity<ApiResponse<DeleteProductImageResponse>> deleteProductImage(
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
+      @PathVariable Long productId,
+      @PathVariable Long imageId) {
+    DeleteProductImageResponse response =
+        productImageService.deleteImage(authenticatedUser.userId(), productId, imageId);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
