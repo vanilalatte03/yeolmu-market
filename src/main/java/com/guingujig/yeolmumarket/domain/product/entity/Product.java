@@ -34,7 +34,7 @@ public class Product extends BaseTimeEntity {
   private Long id;
 
   @ManyToOne(fetch = FetchType.LAZY)
-  @JoinColumn(name = "category_id")
+  @JoinColumn(name = "category_id", nullable = false)
   private Category category;
 
   @ManyToOne(fetch = FetchType.LAZY)
@@ -67,11 +67,13 @@ public class Product extends BaseTimeEntity {
   /**
    * 신규 상품은 등록 즉시 판매 중이며 일반 사용자에게 노출된다.
    *
-   * <p>카테고리와 이미지는 P1 범위이므로 P0 상품 등록에서는 비워 둔다.
+   * <p>P1부터 신규 상품은 카테고리 없이 저장할 수 없다.
    */
-  public static Product create(User seller, String title, String description, Integer price) {
+  public static Product create(
+      User seller, String title, String description, Integer price, Category category) {
     Product product = new Product();
     product.seller = Objects.requireNonNull(seller, "seller는 필수입니다.");
+    product.category = Objects.requireNonNull(category, "category는 필수입니다.");
     product.title = requireText(title, "상품명은 필수입니다.");
     product.description = requireText(description, "상품 설명은 필수입니다.");
     product.price = requirePositive(price);
@@ -80,7 +82,7 @@ public class Product extends BaseTimeEntity {
     return product;
   }
 
-  /** P0 상품 수정은 제목, 설명, 가격만 부분 변경하며 카테고리와 이미지는 변경하지 않는다. */
+  /** 상품 기본 정보인 제목, 설명, 가격을 부분 변경한다. 카테고리 변경은 {@link #changeCategory(Category)}에서 처리한다. */
   public void updateInfo(String title, String description, Integer price) {
     if (title != null) {
       this.title = requireText(title, "상품명은 필수입니다.");
@@ -91,6 +93,11 @@ public class Product extends BaseTimeEntity {
     if (price != null) {
       this.price = requirePositive(price);
     }
+  }
+
+  /** 상품 카테고리를 변경한다. P1 이후 상품은 항상 유효한 카테고리에 속해야 한다. */
+  public void changeCategory(Category category) {
+    this.category = Objects.requireNonNull(category, "category는 필수입니다.");
   }
 
   /** 판매자 삭제는 행을 제거하지 않고 공개 조회에서 제외되는 삭제 상태와 삭제 시각만 기록한다. */
