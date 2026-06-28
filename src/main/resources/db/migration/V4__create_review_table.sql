@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS review (
+CREATE TABLE review (
     id BIGINT NOT NULL AUTO_INCREMENT,
     order_id BIGINT NOT NULL,
     reviewer_id BIGINT NOT NULL,

@@ -36,13 +36,9 @@ public class ReviewService {
     validateScore(score);
     String normalizedContent = normalizeContent(content);
 
-    orderRepository
-        .findByIdForUpdate(orderId)
-        .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
-
     Order order =
         orderRepository
-            .findWithDetailsById(orderId)
+            .findWithDetailsByIdForUpdate(orderId)
             .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
     ReviewParticipants participants = resolveParticipants(order, reviewerId);
