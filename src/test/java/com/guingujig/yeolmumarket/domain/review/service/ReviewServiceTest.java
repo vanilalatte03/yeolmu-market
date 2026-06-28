@@ -9,9 +9,11 @@ import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.review.dto.DeleteReviewResponse;
 import com.guingujig.yeolmumarket.domain.review.dto.PublicReceivedReviewListItemResponse;
 import com.guingujig.yeolmumarket.domain.review.dto.ReceivedReviewListItemResponse;
 import com.guingujig.yeolmumarket.domain.review.dto.ReviewResponse;
+import com.guingujig.yeolmumarket.domain.review.dto.UpdateReviewResponse;
 import com.guingujig.yeolmumarket.domain.review.dto.WrittenReviewListItemResponse;
 import com.guingujig.yeolmumarket.domain.review.entity.Review;
 import com.guingujig.yeolmumarket.domain.review.repository.ReviewRepository;
@@ -119,6 +121,185 @@ class ReviewServiceTest {
     assertThat(sellerReview.reviewerId()).isEqualTo(seller.getId());
     assertThat(sellerReview.revieweeId()).isEqualTo(buyer.getId());
     assertThat(reviewRepository.count()).isEqualTo(2);
+  }
+
+  @Test
+  void 리뷰_작성자는_평점과_내용을_수정할_수_있다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Order order = saveOrderWithStatus(buyer, product, OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+
+    UpdateReviewResponse response =
+        reviewService.updateReview(
+            buyer.getId(), order.getId(), review.getId(), 4, "  응답은 조금 늦었습니다.  ");
+
+    assertThat(response.reviewId()).isEqualTo(review.getId());
+    assertThat(response.score()).isEqualTo(4);
+    assertThat(response.content()).isEqualTo("응답은 조금 늦었습니다.");
+    assertThat(response.updatedAt().getOffset().getTotalSeconds()).isZero();
+    Review updatedReview = reviewRepository.findById(review.getId()).orElseThrow();
+    assertThat(updatedReview.getScore()).isEqualTo(4);
+    assertThat(updatedReview.getContent()).isEqualTo("응답은 조금 늦었습니다.");
+  }
+
+  @Test
+  void 리뷰_작성자는_평점만_수정할_수_있다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Order order = saveOrderWithStatus(buyer, product, OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+
+    UpdateReviewResponse response =
+        reviewService.updateReview(buyer.getId(), order.getId(), review.getId(), 3, null);
+
+    assertThat(response.score()).isEqualTo(3);
+    assertThat(response.content()).isEqualTo("좋은 거래였습니다.");
+  }
+
+  @Test
+  void 리뷰_작성자는_내용만_수정할_수_있다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Order order = saveOrderWithStatus(buyer, product, OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+
+    UpdateReviewResponse response =
+        reviewService.updateReview(buyer.getId(), order.getId(), review.getId(), null, "감사합니다.");
+
+    assertThat(response.score()).isEqualTo(5);
+    assertThat(response.content()).isEqualTo("감사합니다.");
+  }
+
+  @Test
+  void 작성자가_아니면_리뷰를_수정할_수_없다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User other = saveUser("other@example.com", "타인");
+    Product product = saveProduct(seller);
+    Order order = saveOrderWithStatus(buyer, product, OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+
+    assertThatThrownBy(
+            () -> reviewService.updateReview(other.getId(), order.getId(), review.getId(), 4, null))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.REVIEW_ACCESS_DENIED));
+  }
+
+  @Test
+  void 주문과_리뷰가_일치하지_않으면_리뷰_수정은_REVIEW_NOT_FOUND를_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Product otherProduct = saveProduct(seller, "다른 상품");
+    Order order = saveOrderWithStatus(buyer, product, OrderStatus.COMPLETED);
+    Order otherOrder = saveOrderWithStatus(buyer, otherProduct, OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+
+    assertThatThrownBy(
+            () ->
+                reviewService.updateReview(
+                    buyer.getId(), otherOrder.getId(), review.getId(), 4, null))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.REVIEW_NOT_FOUND));
+  }
+
+  @Test
+  void 리뷰_수정값이_유효하지_않으면_VALIDATION_FAILED를_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Order order = saveOrderWithStatus(buyer, product, OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+
+    assertThatThrownBy(
+            () ->
+                reviewService.updateReview(
+                    buyer.getId(), order.getId(), review.getId(), null, null))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+    assertThatThrownBy(
+            () -> reviewService.updateReview(buyer.getId(), order.getId(), review.getId(), 0, null))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+    assertThatThrownBy(
+            () ->
+                reviewService.updateReview(
+                    buyer.getId(), order.getId(), review.getId(), null, "   "))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+    assertThatThrownBy(
+            () ->
+                reviewService.updateReview(
+                    buyer.getId(), order.getId(), review.getId(), null, "a".repeat(256)))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+  }
+
+  @Test
+  void 리뷰_작성자는_리뷰를_삭제할_수_있다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Order order = saveOrderWithStatus(buyer, product, OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+
+    DeleteReviewResponse response =
+        reviewService.deleteReview(buyer.getId(), order.getId(), review.getId());
+
+    assertThat(response.deleted()).isTrue();
+    assertThat(reviewRepository.findById(review.getId())).isEmpty();
+    assertThat(reviewRepository.count()).isZero();
+  }
+
+  @Test
+  void 작성자가_아니면_리뷰를_삭제할_수_없다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User other = saveUser("other@example.com", "타인");
+    Product product = saveProduct(seller);
+    Order order = saveOrderWithStatus(buyer, product, OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+
+    assertThatThrownBy(
+            () -> reviewService.deleteReview(other.getId(), order.getId(), review.getId()))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.REVIEW_ACCESS_DENIED));
+  }
+
+  @Test
+  void 주문과_리뷰가_일치하지_않으면_리뷰_삭제는_REVIEW_NOT_FOUND를_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Product otherProduct = saveProduct(seller, "다른 상품");
+    Order order = saveOrderWithStatus(buyer, product, OrderStatus.COMPLETED);
+    Order otherOrder = saveOrderWithStatus(buyer, otherProduct, OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+
+    assertThatThrownBy(
+            () -> reviewService.deleteReview(buyer.getId(), otherOrder.getId(), review.getId()))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.REVIEW_NOT_FOUND));
   }
 
   @Test
@@ -385,14 +566,18 @@ class ReviewServiceTest {
   }
 
   private Review saveReview(
+      Order order, User reviewer, User reviewee, Integer score, String content) {
+    return reviewRepository.saveAndFlush(Review.create(order, reviewer, reviewee, score, content));
+  }
+
+  private Review saveReview(
       Order order,
       User reviewer,
       User reviewee,
       Integer score,
       String content,
       LocalDateTime createdAt) {
-    Review review =
-        reviewRepository.saveAndFlush(Review.create(order, reviewer, reviewee, score, content));
+    Review review = saveReview(order, reviewer, reviewee, score, content);
     jdbcTemplate.update(
         "update review set created_at = ?, modified_at = ? where id = ?",
         Timestamp.valueOf(createdAt),

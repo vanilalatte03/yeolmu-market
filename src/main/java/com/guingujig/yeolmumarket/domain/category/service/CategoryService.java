@@ -1,5 +1,6 @@
 package com.guingujig.yeolmumarket.domain.category.service;
 
+import com.guingujig.yeolmumarket.domain.category.dto.CategoryProductListItemResponse;
 import com.guingujig.yeolmumarket.domain.category.dto.CreateCategoryRequest;
 import com.guingujig.yeolmumarket.domain.category.dto.CreateCategoryResponse;
 import com.guingujig.yeolmumarket.domain.category.dto.DeleteCategoryResponse;
@@ -8,11 +9,16 @@ import com.guingujig.yeolmumarket.domain.category.dto.UpdateCategoryRequest;
 import com.guingujig.yeolmumarket.domain.category.dto.UpdateCategoryResponse;
 import com.guingujig.yeolmumarket.domain.category.entity.Category;
 import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
+import com.guingujig.yeolmumarket.domain.product.entity.Product;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.response.PageResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class CategoryService {
 
+  private static final int MAX_PAGE_SIZE = 100;
+  private static final String LATEST_SORT = "latest";
   private static final Sort DEFAULT_SORT = Sort.by(Sort.Direction.ASC, "id");
 
   private final CategoryRepository categoryRepository;
@@ -30,6 +38,26 @@ public class CategoryService {
   @Transactional(readOnly = true)
   public GetCategoriesResponse getCategories() {
     return GetCategoriesResponse.from(categoryRepository.findAll(DEFAULT_SORT));
+  }
+
+  /**
+   * 특정 카테고리에 속한 공개 상품 목록을 조회한다.
+   *
+   * <p>존재하는 카테고리만 조회 가능하며, 숨김 상품과 삭제 상품은 결과에서 제외한다.
+   */
+  @Transactional(readOnly = true)
+  public PageResponse<CategoryProductListItemResponse> getCategoryProducts(
+      Long categoryId, int page, int size, String sort) {
+    validatePagination(page, size);
+    validateCategoryExists(categoryId);
+
+    Page<Product> products =
+        productRepository.findByCategoryIdAndHiddenFalseAndDeletedAtIsNullAndStatusNot(
+            categoryId,
+            ProductStatus.DELETED,
+            PageRequest.of(page, size, resolveProductSort(sort)));
+
+    return PageResponse.from(products.map(CategoryProductListItemResponse::from));
   }
 
   /**
@@ -105,5 +133,28 @@ public class CategoryService {
     if (productRepository.existsByCategoryId(categoryId)) {
       throw new BusinessException(ErrorCode.CATEGORY_IN_USE);
     }
+  }
+
+  private void validateCategoryExists(Long categoryId) {
+    if (!categoryRepository.existsById(categoryId)) {
+      throw new BusinessException(ErrorCode.CATEGORY_NOT_FOUND);
+    }
+  }
+
+  private void validatePagination(int page, int size) {
+    if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
+      throw new BusinessException(ErrorCode.INVALID_PAGINATION);
+    }
+  }
+
+  private Sort resolveProductSort(String sort) {
+    if (sort == null || sort.isBlank() || LATEST_SORT.equals(sort)) {
+      return Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+    }
+    return switch (sort) {
+      case "priceAsc" -> Sort.by(Sort.Order.asc("price"), Sort.Order.desc("id"));
+      case "priceDesc" -> Sort.by(Sort.Order.desc("price"), Sort.Order.desc("id"));
+      default -> throw new BusinessException(ErrorCode.VALIDATION_FAILED, "지원하지 않는 정렬 조건입니다.");
+    };
   }
 }

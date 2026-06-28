@@ -1,8 +1,11 @@
 package com.guingujig.yeolmumarket.domain.review.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -336,6 +339,153 @@ class ReviewControllerTest {
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("USER_NOT_FOUND"));
+  }
+
+  @Test
+  void 리뷰_수정에_성공하면_200으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Order order = saveOrderWithStatus(buyer, product, OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            patch("/api/orders/{orderId}/reviews/{reviewId}", order.getId(), review.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"score\":4,\"content\":\" 응답은 조금 늦었습니다. \"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.reviewId").value(review.getId()))
+        .andExpect(jsonPath("$.data.score").value(4))
+        .andExpect(jsonPath("$.data.content").value("응답은 조금 늦었습니다."))
+        .andExpect(jsonPath("$.data.updatedAt", matchesPattern(".*(Z|\\+00:00)$")));
+  }
+
+  @Test
+  void 작성자가_아닌_사용자가_리뷰를_수정하면_403으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User other = saveUser("other@example.com", "타인");
+    Product product = saveProduct(seller);
+    Order order = saveOrderWithStatus(buyer, product, OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(other);
+
+    mockMvc
+        .perform(
+            patch("/api/orders/{orderId}/reviews/{reviewId}", order.getId(), review.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"score\":4}"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REVIEW_ACCESS_DENIED"));
+  }
+
+  @Test
+  void 주문과_리뷰가_일치하지_않는_수정_요청은_404로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Product otherProduct = saveProduct(seller);
+    Order order = saveOrderWithStatus(buyer, product, OrderStatus.COMPLETED);
+    Order otherOrder = saveOrderWithStatus(buyer, otherProduct, OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            patch("/api/orders/{orderId}/reviews/{reviewId}", otherOrder.getId(), review.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"score\":4}"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REVIEW_NOT_FOUND"));
+  }
+
+  @Test
+  void 리뷰_수정값이_없으면_400으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Order order = saveOrderWithStatus(buyer, product, OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            patch("/api/orders/{orderId}/reviews/{reviewId}", order.getId(), review.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void 리뷰_삭제에_성공하면_200으로_응답하고_실제_삭제한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Order order = saveOrderWithStatus(buyer, product, OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            delete("/api/orders/{orderId}/reviews/{reviewId}", order.getId(), review.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.deleted").value(true));
+
+    assertThat(reviewRepository.findById(review.getId())).isEmpty();
+  }
+
+  @Test
+  void 작성자가_아닌_사용자가_리뷰를_삭제하면_403으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User other = saveUser("other@example.com", "타인");
+    Product product = saveProduct(seller);
+    Order order = saveOrderWithStatus(buyer, product, OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(other);
+
+    mockMvc
+        .perform(
+            delete("/api/orders/{orderId}/reviews/{reviewId}", order.getId(), review.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REVIEW_ACCESS_DENIED"));
+  }
+
+  @Test
+  void 주문과_리뷰가_일치하지_않는_삭제_요청은_404로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Product otherProduct = saveProduct(seller);
+    Order order = saveOrderWithStatus(buyer, product, OrderStatus.COMPLETED);
+    Order otherOrder = saveOrderWithStatus(buyer, otherProduct, OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            delete("/api/orders/{orderId}/reviews/{reviewId}", otherOrder.getId(), review.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REVIEW_NOT_FOUND"));
   }
 
   private User saveUser(String email, String nickname) {

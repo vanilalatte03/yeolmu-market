@@ -22,6 +22,10 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
       ProductStatus status, Pageable pageable);
 
   @EntityGraph(attributePaths = "seller")
+  Page<Product> findByCategoryIdAndHiddenFalseAndDeletedAtIsNullAndStatusNot(
+      Long categoryId, ProductStatus status, Pageable pageable);
+
+  @EntityGraph(attributePaths = "seller")
   Optional<Product> findByIdAndHiddenFalseAndDeletedAtIsNullAndStatusNot(
       Long id, ProductStatus status);
 
