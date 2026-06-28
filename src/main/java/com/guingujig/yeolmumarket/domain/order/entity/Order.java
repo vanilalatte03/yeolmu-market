@@ -107,4 +107,30 @@ public class Order extends BaseTimeEntity {
     }
     this.orderStatus = OrderStatus.REFUNDED;
   }
+
+  /**
+   * PAID 상태의 주문에 배송 증빙을 기록하고 SHIPPING으로 전이한다.
+   *
+   * <p>PAID가 아닌 상태에서 호출하면 {@link BusinessException}을 던져 잘못된 전이를 차단한다.
+   */
+  public void registerShipping(String trackingNumber, LocalDateTime shippedAt) {
+    if (this.orderStatus != OrderStatus.PAID) {
+      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+    }
+    this.trackingNumber = Objects.requireNonNull(trackingNumber, "trackingNumber는 필수입니다.");
+    this.shippedAt = Objects.requireNonNull(shippedAt, "shippedAt은 필수입니다.");
+    this.orderStatus = OrderStatus.SHIPPING;
+  }
+
+  /**
+   * SHIPPING 상태의 주문을 구매확정 결과인 COMPLETED로 전이한다.
+   *
+   * <p>SHIPPING이 아닌 상태에서 호출하면 {@link BusinessException}을 던져 잘못된 전이를 차단한다.
+   */
+  public void confirmPurchase() {
+    if (this.orderStatus != OrderStatus.SHIPPING) {
+      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+    }
+    this.orderStatus = OrderStatus.COMPLETED;
+  }
 }

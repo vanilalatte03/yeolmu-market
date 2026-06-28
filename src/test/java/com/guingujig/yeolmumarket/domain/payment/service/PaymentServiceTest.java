@@ -35,6 +35,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,6 +45,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @SpringBootTest
 @RecordApplicationEvents
@@ -58,6 +61,7 @@ class PaymentServiceTest {
   private final CategoryRepository categoryRepository;
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
+  private final TransactionTemplate transactionTemplate;
 
   @Autowired
   PaymentServiceTest(
@@ -67,7 +71,8 @@ class PaymentServiceTest {
       ProductRepository productRepository,
       CategoryRepository categoryRepository,
       UserRepository userRepository,
-      PasswordEncoder passwordEncoder) {
+      PasswordEncoder passwordEncoder,
+      PlatformTransactionManager transactionManager) {
     this.paymentService = paymentService;
     this.paymentRepository = paymentRepository;
     this.orderRepository = orderRepository;
@@ -75,6 +80,7 @@ class PaymentServiceTest {
     this.categoryRepository = categoryRepository;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
+    this.transactionTemplate = new TransactionTemplate(transactionManager);
   }
 
   @BeforeEach
@@ -717,6 +723,87 @@ class PaymentServiceTest {
   }
 
   @Test
+  void 배송_증빙_등록_트랜잭션이_먼저_주문을_잠그면_결제_취소는_커밋_후_INVALID_PAYMENT_STATUS가_발생한다()
+      throws InterruptedException {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment = savePaidPayment(order, "idem-key-001");
+
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    CountDownLatch shippingUpdatedLatch = new CountDownLatch(1);
+    CountDownLatch cancelStartedLatch = new CountDownLatch(1);
+    CountDownLatch commitShippingLatch = new CountDownLatch(1);
+    AtomicReference<Throwable> shippingFailure = new AtomicReference<>();
+    AtomicReference<Throwable> cancelFailure = new AtomicReference<>();
+    AtomicInteger cancelSuccessCount = new AtomicInteger(0);
+
+    executor.submit(
+        () -> {
+          try {
+            transactionTemplate.executeWithoutResult(
+                status -> {
+                  Order lockedOrder =
+                      orderRepository.findByIdForUpdate(order.getId()).orElseThrow();
+                  lockedOrder.registerShipping("1234-5678-9012", LocalDateTime.now(ZoneOffset.UTC));
+                  orderRepository.flush();
+
+                  shippingUpdatedLatch.countDown();
+                  awaitLatch(cancelStartedLatch);
+                  awaitLatch(commitShippingLatch);
+                });
+          } catch (Throwable e) {
+            shippingFailure.set(e);
+          }
+        });
+
+    executor.submit(
+        () -> {
+          try {
+            awaitLatch(shippingUpdatedLatch);
+            cancelStartedLatch.countDown();
+
+            paymentService.cancelPayment(buyer.getId(), payment.getId(), "배송 등록 중 취소");
+            cancelSuccessCount.incrementAndGet();
+          } catch (Throwable e) {
+            cancelFailure.set(e);
+          }
+        });
+
+    try {
+      assertThat(shippingUpdatedLatch.await(5, TimeUnit.SECONDS))
+          .as("배송 등록 트랜잭션이 주문 락을 잡아야 합니다")
+          .isTrue();
+      assertThat(cancelStartedLatch.await(5, TimeUnit.SECONDS))
+          .as("결제 취소 스레드가 배송 등록 커밋 전에 시작되어야 합니다")
+          .isTrue();
+      TimeUnit.MILLISECONDS.sleep(300);
+    } finally {
+      commitShippingLatch.countDown();
+      executor.shutdown();
+    }
+    assertThat(executor.awaitTermination(10, TimeUnit.SECONDS))
+        .as("배송 등록과 결제 취소 스레드가 10초 내에 완료되어야 합니다")
+        .isTrue();
+
+    assertThat(shippingFailure.get()).isNull();
+    assertThat(cancelSuccessCount.get()).isZero();
+    assertThat(cancelFailure.get()).isInstanceOf(BusinessException.class);
+    assertThat(((BusinessException) cancelFailure.get()).getErrorCode())
+        .isEqualTo(ErrorCode.INVALID_PAYMENT_STATUS);
+
+    Payment paidPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+    Order shippingOrder = orderRepository.findById(order.getId()).orElseThrow();
+    Product reservedProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(paidPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
+    assertThat(paidPayment.getCanceledAt()).isNull();
+    assertThat(shippingOrder.getOrderStatus()).isEqualTo(OrderStatus.SHIPPING);
+    assertThat(shippingOrder.getTrackingNumber()).isEqualTo("1234-5678-9012");
+    assertThat(reservedProduct.getStatus()).isEqualTo(ProductStatus.RESERVED);
+  }
+
+  @Test
   void 취소_사유는_trim해서_저장하고_취소_응답에는_노출하지_않는다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
@@ -923,6 +1010,17 @@ class PaymentServiceTest {
     return paymentRepository.saveAndFlush(
         Payment.createPaid(
             order, PaymentMethod.MOCK_CARD, idempotencyKey, LocalDateTime.now(ZoneOffset.UTC)));
+  }
+
+  private static void awaitLatch(CountDownLatch latch) {
+    try {
+      if (!latch.await(5, TimeUnit.SECONDS)) {
+        throw new AssertionError("latch wait timed out");
+      }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new AssertionError(e);
+    }
   }
 
   private void deleteAll() {
