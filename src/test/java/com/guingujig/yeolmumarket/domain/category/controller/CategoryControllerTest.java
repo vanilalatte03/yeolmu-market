@@ -3,6 +3,7 @@ package com.guingujig.yeolmumarket.domain.category.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -14,11 +15,13 @@ import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepos
 import com.guingujig.yeolmumarket.domain.category.entity.Category;
 import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.entity.UserRole;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -76,6 +79,89 @@ class CategoryControllerTest {
         .andExpect(jsonPath("$.data.categories[0].name").value("디지털기기"))
         .andExpect(jsonPath("$.data.categories[1].categoryId").value(secondCategory.getId()))
         .andExpect(jsonPath("$.data.categories[1].name").value("가구"));
+  }
+
+  @Test
+  void 카테고리별_상품_조회에_성공하면_해당_카테고리의_공개_상품을_페이지로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Category category = saveCategory("디지털기기");
+    Category otherCategory = saveCategory("가구");
+    Product onSaleProduct = saveProduct(seller, category, "아이패드 미니 6", 450000);
+    Product reservedProduct =
+        saveProductWithStatus(seller, category, "예약 상품", 20000, ProductStatus.RESERVED);
+    saveProduct(seller, otherCategory, "다른 카테고리 상품", 30000);
+    saveHiddenProduct(seller, category, "숨김 상품", 40000);
+    saveProductWithStatus(seller, category, "삭제 상태 상품", 50000, ProductStatus.DELETED);
+    saveProductWithDeletedAtOnly(seller, category, "삭제일 설정 상품", 60000);
+
+    mockMvc
+        .perform(
+            get("/api/categories/{categoryId}/products", category.getId())
+                .param("page", "0")
+                .param("size", "10"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.content", hasSize(2)))
+        .andExpect(jsonPath("$.data.content[0].productId").value(reservedProduct.getId()))
+        .andExpect(jsonPath("$.data.content[0].title").value("예약 상품"))
+        .andExpect(jsonPath("$.data.content[0].price").value(20000))
+        .andExpect(jsonPath("$.data.content[0].status").value("RESERVED"))
+        .andExpect(jsonPath("$.data.content[0].thumbnailUrl").value(nullValue()))
+        .andExpect(jsonPath("$.data.content[0].sellerNickname").value("열무판매자"))
+        .andExpect(jsonPath("$.data.content[0].createdAt", matchesPattern(".*(Z|\\+00:00)$")))
+        .andExpect(jsonPath("$.data.content[0].wishCount").doesNotExist())
+        .andExpect(jsonPath("$.data.content[0].wished").doesNotExist())
+        .andExpect(jsonPath("$.data.content[1].productId").value(onSaleProduct.getId()))
+        .andExpect(jsonPath("$.data.page").value(0))
+        .andExpect(jsonPath("$.data.size").value(10))
+        .andExpect(jsonPath("$.data.totalElements").value(2))
+        .andExpect(jsonPath("$.data.totalPages").value(1))
+        .andExpect(jsonPath("$.data.hasNext").value(false));
+  }
+
+  @Test
+  void 카테고리별_상품_조회는_가격_정렬을_지원한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Category category = saveCategory("디지털기기");
+    Product expensiveProduct = saveProduct(seller, category, "맥북 에어", 900000);
+    Product cheapProduct = saveProduct(seller, category, "키보드", 50000);
+
+    mockMvc
+        .perform(
+            get("/api/categories/{categoryId}/products", category.getId())
+                .param("sort", "priceAsc"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content[0].productId").value(cheapProduct.getId()))
+        .andExpect(jsonPath("$.data.content[1].productId").value(expensiveProduct.getId()));
+
+    mockMvc
+        .perform(
+            get("/api/categories/{categoryId}/products", category.getId())
+                .param("sort", "priceDesc"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content[0].productId").value(expensiveProduct.getId()))
+        .andExpect(jsonPath("$.data.content[1].productId").value(cheapProduct.getId()));
+  }
+
+  @Test
+  void 존재하지_않는_카테고리의_상품_조회는_404로_응답한다() throws Exception {
+    mockMvc
+        .perform(get("/api/categories/{categoryId}/products", Long.MAX_VALUE))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("CATEGORY_NOT_FOUND"));
+  }
+
+  @Test
+  void 카테고리별_상품_조회_페이지_요청이_잘못되면_400으로_응답한다() throws Exception {
+    Category category = saveCategory("디지털기기");
+
+    mockMvc
+        .perform(get("/api/categories/{categoryId}/products", category.getId()).param("size", "0"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_PAGINATION"));
   }
 
   @Test
@@ -308,9 +394,33 @@ class CategoryControllerTest {
     return userRepository.save(new User(email, passwordEncoder.encode("Password123!"), nickname));
   }
 
-  private void saveProduct(User seller, Category category) {
-    Product product = Product.create(seller, "아이패드 미니 6", "생활기스 조금 있습니다.", 450000, category);
-    productRepository.saveAndFlush(product);
+  private Product saveProduct(User seller, Category category) {
+    return saveProduct(seller, category, "아이패드 미니 6", 450000);
+  }
+
+  private Product saveProduct(User seller, Category category, String title, Integer price) {
+    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price, category);
+    return productRepository.saveAndFlush(product);
+  }
+
+  private Product saveProductWithStatus(
+      User seller, Category category, String title, Integer price, ProductStatus status) {
+    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price, category);
+    ReflectionTestUtils.setField(product, "status", status);
+    return productRepository.saveAndFlush(product);
+  }
+
+  private Product saveHiddenProduct(User seller, Category category, String title, Integer price) {
+    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price, category);
+    product.changeHidden(true);
+    return productRepository.saveAndFlush(product);
+  }
+
+  private Product saveProductWithDeletedAtOnly(
+      User seller, Category category, String title, Integer price) {
+    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price, category);
+    ReflectionTestUtils.setField(product, "deletedAt", LocalDateTime.of(2026, 6, 24, 0, 0));
+    return productRepository.saveAndFlush(product);
   }
 
   private String bearerToken(User user) {
