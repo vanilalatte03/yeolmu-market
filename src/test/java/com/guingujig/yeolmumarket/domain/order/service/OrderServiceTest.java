@@ -508,6 +508,61 @@ class OrderServiceTest {
   }
 
   @Test
+  void 동시에_같은_주문에_배송_증빙_등록하면_한_요청만_성공한다() throws InterruptedException {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = savePaidOrder(buyer, product);
+    Payment payment = savePaidPayment(order);
+    List<String> trackingNumbers = List.of("1234-5678-9012", "9876-5432-1098");
+
+    ExecutorService executor = Executors.newFixedThreadPool(trackingNumbers.size());
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch doneLatch = new CountDownLatch(trackingNumbers.size());
+    List<RegisterOrderShippingResponse> successes = new CopyOnWriteArrayList<>();
+    List<Throwable> failures = new CopyOnWriteArrayList<>();
+
+    for (String trackingNumber : trackingNumbers) {
+      executor.submit(
+          () -> {
+            try {
+              startLatch.await();
+              successes.add(
+                  orderService.registerShipping(seller.getId(), order.getId(), trackingNumber));
+            } catch (Exception e) {
+              failures.add(e);
+            } finally {
+              doneLatch.countDown();
+            }
+          });
+    }
+
+    startLatch.countDown();
+    boolean allDone = doneLatch.await(10, TimeUnit.SECONDS);
+    executor.shutdownNow();
+    executor.awaitTermination(5, TimeUnit.SECONDS);
+
+    assertThat(allDone).as("모든 배송 증빙 등록 스레드가 10초 내에 완료되어야 합니다").isTrue();
+    assertThat(successes).hasSize(1);
+    assertThat(successes.get(0).status()).isEqualTo(OrderStatus.SHIPPING);
+    assertThat(failures).hasSize(1);
+    assertThat(failures.get(0))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_ORDER_STATUS));
+
+    Order shipped = orderRepository.findById(order.getId()).orElseThrow();
+    assertThat(shipped.getOrderStatus()).isEqualTo(OrderStatus.SHIPPING);
+    assertThat(shipped.getTrackingNumber()).isEqualTo(successes.get(0).trackingNumber());
+    assertThat(trackingNumbers).contains(shipped.getTrackingNumber());
+    assertThat(shipped.getShippedAt()).isNotNull();
+    assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProductStatus.RESERVED);
+    assertThat(paymentRepository.findById(payment.getId()).orElseThrow().getStatus())
+        .isEqualTo(PaymentStatus.PAID);
+  }
+
+  @Test
   void 구매자와_타사용자는_배송_증빙을_등록할_수_없다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
@@ -612,6 +667,58 @@ class OrderServiceTest {
         .isEqualTo(PaymentStatus.PAID);
     assertThat(applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count())
         .isEqualTo(cacheEvictionEventsBefore + 1);
+  }
+
+  @Test
+  void 동시에_같은_주문을_구매_확정하면_한_요청만_성공한다() throws InterruptedException {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    Payment payment = savePaidPayment(order);
+    int threadCount = 2;
+
+    ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch doneLatch = new CountDownLatch(threadCount);
+    List<ConfirmOrderResponse> successes = new CopyOnWriteArrayList<>();
+    List<Throwable> failures = new CopyOnWriteArrayList<>();
+
+    for (int i = 0; i < threadCount; i++) {
+      executor.submit(
+          () -> {
+            try {
+              startLatch.await();
+              successes.add(orderService.confirmOrder(buyer.getId(), order.getId()));
+            } catch (Exception e) {
+              failures.add(e);
+            } finally {
+              doneLatch.countDown();
+            }
+          });
+    }
+
+    startLatch.countDown();
+    boolean allDone = doneLatch.await(10, TimeUnit.SECONDS);
+    executor.shutdownNow();
+    executor.awaitTermination(5, TimeUnit.SECONDS);
+
+    assertThat(allDone).as("모든 구매 확정 스레드가 10초 내에 완료되어야 합니다").isTrue();
+    assertThat(successes).hasSize(1);
+    assertThat(successes.get(0).status()).isEqualTo(OrderStatus.COMPLETED);
+    assertThat(successes.get(0).productStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+    assertThat(failures).hasSize(1);
+    assertThat(failures.get(0))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_ORDER_STATUS));
+
+    Order completed = orderRepository.findById(order.getId()).orElseThrow();
+    assertThat(completed.getOrderStatus()).isEqualTo(OrderStatus.COMPLETED);
+    assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProductStatus.SOLD_OUT);
+    assertThat(paymentRepository.findById(payment.getId()).orElseThrow().getStatus())
+        .isEqualTo(PaymentStatus.PAID);
   }
 
   @Test
