@@ -9,9 +9,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.guingujig.yeolmumarket.domain.auth.repository.ActiveRefreshTokenRepository;
 import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
+import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
+import com.guingujig.yeolmumarket.domain.order.entity.Order;
+import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
+import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
+import com.guingujig.yeolmumarket.domain.product.entity.Product;
+import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.review.entity.Review;
+import com.guingujig.yeolmumarket.domain.review.repository.ReviewRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
+import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,6 +29,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +40,10 @@ class UserControllerTest {
 
   private final MockMvc mockMvc;
   private final UserRepository userRepository;
+  private final ProductRepository productRepository;
+  private final CategoryRepository categoryRepository;
+  private final OrderRepository orderRepository;
+  private final ReviewRepository reviewRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
   @MockitoBean private ActiveRefreshTokenRepository activeRefreshTokenRepository;
@@ -39,10 +53,18 @@ class UserControllerTest {
   UserControllerTest(
       MockMvc mockMvc,
       UserRepository userRepository,
+      ProductRepository productRepository,
+      CategoryRepository categoryRepository,
+      OrderRepository orderRepository,
+      ReviewRepository reviewRepository,
       PasswordEncoder passwordEncoder,
       JwtTokenProvider jwtTokenProvider) {
     this.mockMvc = mockMvc;
     this.userRepository = userRepository;
+    this.productRepository = productRepository;
+    this.categoryRepository = categoryRepository;
+    this.orderRepository = orderRepository;
+    this.reviewRepository = reviewRepository;
     this.passwordEncoder = passwordEncoder;
     this.jwtTokenProvider = jwtTokenProvider;
   }
@@ -61,7 +83,28 @@ class UserControllerTest {
         .andExpect(jsonPath("$.data.userId").value(user.getId()))
         .andExpect(jsonPath("$.data.nickname").value("열무구매자"))
         .andExpect(jsonPath("$.data.role").value("USER"))
+        .andExpect(jsonPath("$.data.averageRating").value(0.0))
+        .andExpect(jsonPath("$.data.reviewCount").value(0))
         .andExpect(jsonPath("$.data.createdAt", matchesPattern(".*(Z|\\+00:00)$")));
+  }
+
+  @Test
+  void 유저_공개_정보_조회는_받은_리뷰_평점과_리뷰_수를_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User firstBuyer = saveUser("first-buyer@example.com", "첫구매자");
+    User secondBuyer = saveUser("second-buyer@example.com", "둘째구매자");
+    Order firstOrder = saveOrderWithStatus(firstBuyer, saveProduct(seller), OrderStatus.COMPLETED);
+    Order secondOrder =
+        saveOrderWithStatus(secondBuyer, saveProduct(seller), OrderStatus.COMPLETED);
+    saveReview(firstOrder, firstBuyer, seller, 5, "좋아요.");
+    saveReview(secondOrder, secondBuyer, seller, 4, "괜찮아요.");
+
+    mockMvc
+        .perform(get("/api/users/{userId}", seller.getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.userId").value(seller.getId()))
+        .andExpect(jsonPath("$.data.averageRating").value(4.5))
+        .andExpect(jsonPath("$.data.reviewCount").value(2));
   }
 
   @Test
@@ -259,5 +302,23 @@ class UserControllerTest {
 
   private User saveUser(String email, String nickname) {
     return userRepository.save(new User(email, passwordEncoder.encode("Password123!"), nickname));
+  }
+
+  private Product saveProduct(User seller) {
+    return ProductTestFactory.saveProduct(
+        productRepository, categoryRepository, seller, "아이패드 미니 6세대", "생활기스", 430000);
+  }
+
+  private Order saveOrderWithStatus(User buyer, Product product, OrderStatus status) {
+    product.reserve();
+    productRepository.saveAndFlush(product);
+    Order order = Order.create(buyer, product);
+    ReflectionTestUtils.setField(order, "orderStatus", status);
+    return orderRepository.saveAndFlush(order);
+  }
+
+  private Review saveReview(
+      Order order, User reviewer, User reviewee, Integer score, String content) {
+    return reviewRepository.saveAndFlush(Review.create(order, reviewer, reviewee, score, content));
   }
 }

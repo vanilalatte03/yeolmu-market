@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.guingujig.yeolmumarket.domain.category.entity.Category;
 import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
+import com.guingujig.yeolmumarket.domain.order.entity.Order;
+import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
+import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.product.dto.AdminHiddenProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.CreateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.CreateProductResponse;
@@ -18,6 +21,8 @@ import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductResponse;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.review.entity.Review;
+import com.guingujig.yeolmumarket.domain.review.repository.ReviewRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.domain.wish.entity.Wish;
@@ -43,6 +48,8 @@ class ProductServiceTest {
   private final CategoryRepository categoryRepository;
   private final UserRepository userRepository;
   private final WishRepository wishRepository;
+  private final ReviewRepository reviewRepository;
+  private final OrderRepository orderRepository;
   private final PasswordEncoder passwordEncoder;
 
   private static final LocalDateTime DELETED_AT = LocalDateTime.of(2026, 6, 24, 10, 0);
@@ -54,12 +61,16 @@ class ProductServiceTest {
       CategoryRepository categoryRepository,
       UserRepository userRepository,
       WishRepository wishRepository,
+      ReviewRepository reviewRepository,
+      OrderRepository orderRepository,
       PasswordEncoder passwordEncoder) {
     this.productService = productService;
     this.productRepository = productRepository;
     this.categoryRepository = categoryRepository;
     this.userRepository = userRepository;
     this.wishRepository = wishRepository;
+    this.reviewRepository = reviewRepository;
+    this.orderRepository = orderRepository;
     this.passwordEncoder = passwordEncoder;
   }
 
@@ -153,6 +164,27 @@ class ProductServiceTest {
     assertThat(response.productId()).isEqualTo(product.getId());
     assertThat(response.wishCount()).isZero();
     assertThat(response.wished()).isFalse();
+  }
+
+  @Test
+  void 상품_상세_조회는_판매자가_받은_리뷰_평점을_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User firstBuyer = saveUser("first-buyer@example.com", "첫구매자");
+    User secondBuyer = saveUser("second-buyer@example.com", "둘째구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    Order firstOrder =
+        saveOrderWithStatus(
+            firstBuyer, saveProduct(seller, "거래 완료 상품 1", 10000), OrderStatus.COMPLETED);
+    Order secondOrder =
+        saveOrderWithStatus(
+            secondBuyer, saveProduct(seller, "거래 완료 상품 2", 20000), OrderStatus.COMPLETED);
+    saveReview(firstOrder, firstBuyer, seller, 5, "좋아요.");
+    saveReview(secondOrder, secondBuyer, seller, 4, "괜찮아요.");
+
+    ProductDetailResponse response = productService.getProduct(product.getId(), null);
+
+    assertThat(response.seller().userId()).isEqualTo(seller.getId());
+    assertThat(response.seller().averageRating()).isEqualTo(4.5);
   }
 
   @Test
@@ -394,6 +426,8 @@ class ProductServiceTest {
   }
 
   private void deleteAll() {
+    reviewRepository.deleteAll();
+    orderRepository.deleteAll();
     wishRepository.deleteAll();
     productRepository.deleteAll();
     categoryRepository.deleteAll();
@@ -407,6 +441,19 @@ class ProductServiceTest {
   private Product saveProduct(User seller, String title, Integer price) {
     return ProductTestFactory.saveProduct(
         productRepository, categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
+  }
+
+  private Order saveOrderWithStatus(User buyer, Product product, OrderStatus status) {
+    product.reserve();
+    productRepository.saveAndFlush(product);
+    Order order = Order.create(buyer, product);
+    ReflectionTestUtils.setField(order, "orderStatus", status);
+    return orderRepository.saveAndFlush(order);
+  }
+
+  private Review saveReview(
+      Order order, User reviewer, User reviewee, Integer score, String content) {
+    return reviewRepository.saveAndFlush(Review.create(order, reviewer, reviewee, score, content));
   }
 
   private void saveWish(User user, Product product) {

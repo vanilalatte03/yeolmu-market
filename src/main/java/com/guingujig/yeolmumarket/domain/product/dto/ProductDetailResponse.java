@@ -2,6 +2,7 @@ package com.guingujig.yeolmumarket.domain.product.dto;
 
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import com.guingujig.yeolmumarket.domain.review.dto.ReviewRatingSummary;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.wish.dto.ProductWishSummary;
 import java.time.OffsetDateTime;
@@ -19,7 +20,8 @@ public record ProductDetailResponse(
     OffsetDateTime createdAt,
     OffsetDateTime updatedAt) {
 
-  public static ProductDetailResponse from(Product product, ProductWishSummary wishSummary) {
+  public static ProductDetailResponse from(
+      Product product, ProductWishSummary wishSummary, ReviewRatingSummary sellerRatingSummary) {
     return new ProductDetailResponse(
         product.getId(),
         product.getTitle(),
@@ -28,14 +30,14 @@ public record ProductDetailResponse(
         product.getStatus(),
         wishSummary.wishCount(),
         wishSummary.wished(),
-        SellerInfo.from(product.getSeller()),
+        SellerInfo.from(product.getSeller(), sellerRatingSummary),
         product.getCreatedAt().atOffset(ZoneOffset.UTC),
         product.getModifiedAt().atOffset(ZoneOffset.UTC));
   }
 
-  public record SellerInfo(Long userId, String nickname) {
-    public static SellerInfo from(User seller) {
-      return new SellerInfo(seller.getId(), seller.getNickname());
+  public record SellerInfo(Long userId, String nickname, Double averageRating) {
+    public static SellerInfo from(User seller, ReviewRatingSummary ratingSummary) {
+      return new SellerInfo(seller.getId(), seller.getNickname(), ratingSummary.averageRating());
     }
   }
 }

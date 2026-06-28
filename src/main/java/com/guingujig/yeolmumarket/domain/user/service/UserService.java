@@ -1,5 +1,6 @@
 package com.guingujig.yeolmumarket.domain.user.service;
 
+import com.guingujig.yeolmumarket.domain.review.service.ReviewRatingQueryService;
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.domain.user.dto.GetUserResponse;
 import com.guingujig.yeolmumarket.domain.user.dto.UpdateUserRequest;
@@ -23,6 +24,7 @@ public class UserService {
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
   private final ApplicationEventPublisher eventPublisher;
+  private final ReviewRatingQueryService reviewRatingQueryService;
 
   /**
    * 회원 ID로 공개 프로필을 조회한다.
@@ -31,10 +33,11 @@ public class UserService {
    */
   @Transactional(readOnly = true)
   public GetUserResponse getUser(Long userId) {
-    return userRepository
-        .findById(userId)
-        .map(GetUserResponse::from)
-        .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    User user =
+        userRepository
+            .findById(userId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    return GetUserResponse.from(user, reviewRatingQueryService.getSummary(userId));
   }
 
   /**
