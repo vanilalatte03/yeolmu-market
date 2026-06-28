@@ -15,12 +15,16 @@ public record CategoryProductListItemResponse(
     OffsetDateTime createdAt) {
 
   public static CategoryProductListItemResponse from(Product product) {
+    return from(product, null);
+  }
+
+  public static CategoryProductListItemResponse from(Product product, String thumbnailUrl) {
     return new CategoryProductListItemResponse(
         product.getId(),
         product.getTitle(),
         product.getPrice(),
         product.getStatus(),
-        null,
+        thumbnailUrl,
         product.getSeller().getNickname(),
         product.getCreatedAt().atOffset(ZoneOffset.UTC));
   }
