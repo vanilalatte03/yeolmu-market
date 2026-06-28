@@ -4,16 +4,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.guingujig.yeolmumarket.domain.order.dto.CancelOrderResponse;
+import com.guingujig.yeolmumarket.domain.order.dto.ConfirmOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.CreateOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.GetOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.MyOrderListItemResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.MySaleListItemResponse;
+import com.guingujig.yeolmumarket.domain.order.dto.RegisterOrderShippingResponse;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
+import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
+import com.guingujig.yeolmumarket.domain.payment.entity.PaymentMethod;
+import com.guingujig.yeolmumarket.domain.payment.entity.PaymentStatus;
+import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
@@ -35,13 +42,19 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @SpringBootTest
+@RecordApplicationEvents
 class OrderServiceTest {
+
+  @Autowired private ApplicationEvents applicationEvents;
 
   private final OrderService orderService;
   private final OrderRepository orderRepository;
+  private final PaymentRepository paymentRepository;
   private final ProductRepository productRepository;
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
@@ -50,11 +63,13 @@ class OrderServiceTest {
   OrderServiceTest(
       OrderService orderService,
       OrderRepository orderRepository,
+      PaymentRepository paymentRepository,
       ProductRepository productRepository,
       UserRepository userRepository,
       PasswordEncoder passwordEncoder) {
     this.orderService = orderService;
     this.orderRepository = orderRepository;
+    this.paymentRepository = paymentRepository;
     this.productRepository = productRepository;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
@@ -466,6 +481,225 @@ class OrderServiceTest {
   }
 
   @Test
+  void 판매자가_PAID_주문에_배송_증빙_등록에_성공한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = savePaidOrder(buyer, product);
+    Payment payment = savePaidPayment(order);
+
+    RegisterOrderShippingResponse response =
+        orderService.registerShipping(seller.getId(), order.getId(), " 1234-5678-9012 ");
+
+    assertThat(response.orderId()).isEqualTo(order.getId());
+    assertThat(response.status()).isEqualTo(OrderStatus.SHIPPING);
+    assertThat(response.trackingNumber()).isEqualTo("1234-5678-9012");
+    assertThat(response.shippedAt()).isNotNull();
+    assertThat(response.shippedAt().getOffset().getTotalSeconds()).isZero();
+
+    Order shipped = orderRepository.findById(order.getId()).orElseThrow();
+    assertThat(shipped.getOrderStatus()).isEqualTo(OrderStatus.SHIPPING);
+    assertThat(shipped.getTrackingNumber()).isEqualTo("1234-5678-9012");
+    assertThat(response.shippedAt()).isEqualTo(shipped.getShippedAt().atOffset(ZoneOffset.UTC));
+    assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProductStatus.RESERVED);
+    assertThat(paymentRepository.findById(payment.getId()).orElseThrow().getStatus())
+        .isEqualTo(PaymentStatus.PAID);
+  }
+
+  @Test
+  void 구매자와_타사용자는_배송_증빙을_등록할_수_없다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User other = saveUser("other@example.com", "타인");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = savePaidOrder(buyer, product);
+
+    assertThatThrownBy(() -> orderService.registerShipping(buyer.getId(), order.getId(), "1234"))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ORDER_ACCESS_DENIED));
+
+    assertThatThrownBy(() -> orderService.registerShipping(other.getId(), order.getId(), "1234"))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ORDER_ACCESS_DENIED));
+
+    Order unchanged = orderRepository.findById(order.getId()).orElseThrow();
+    assertThat(unchanged.getOrderStatus()).isEqualTo(OrderStatus.PAID);
+    assertThat(unchanged.getTrackingNumber()).isNull();
+    assertThat(unchanged.getShippedAt()).isNull();
+  }
+
+  @Test
+  void 존재하지_않는_주문_배송_증빙_등록은_실패한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+
+    assertThatThrownBy(() -> orderService.registerShipping(seller.getId(), Long.MAX_VALUE, "1234"))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ORDER_NOT_FOUND));
+  }
+
+  @Test
+  void 잘못된_송장_번호는_배송_증빙_등록에_실패한다() {
+    String[] invalidTrackingNumbers = {null, "", "   ", "1".repeat(101)};
+
+    for (String trackingNumber : invalidTrackingNumbers) {
+      assertThatThrownBy(() -> orderService.registerShipping(1L, 1L, trackingNumber))
+          .isInstanceOfSatisfying(
+              BusinessException.class,
+              e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+    }
+  }
+
+  @Test
+  void PAID가_아닌_주문_배송_증빙_등록은_실패한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+
+    for (OrderStatus status :
+        new OrderStatus[] {
+          OrderStatus.CREATED,
+          OrderStatus.SHIPPING,
+          OrderStatus.COMPLETED,
+          OrderStatus.CANCELED,
+          OrderStatus.REFUND_REQUESTED,
+          OrderStatus.REFUNDED,
+          OrderStatus.DISPUTED
+        }) {
+      Product product = saveProduct(seller, "상품-" + status, 100000);
+      Order order = saveOrder(buyer, product);
+      ReflectionTestUtils.setField(order, "orderStatus", status);
+      orderRepository.saveAndFlush(order);
+
+      assertThatThrownBy(() -> orderService.registerShipping(seller.getId(), order.getId(), "1234"))
+          .isInstanceOfSatisfying(
+              BusinessException.class,
+              e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_ORDER_STATUS));
+
+      Order unchanged = orderRepository.findById(order.getId()).orElseThrow();
+      assertThat(unchanged.getTrackingNumber()).isNull();
+      assertThat(unchanged.getShippedAt()).isNull();
+    }
+  }
+
+  @Test
+  void 구매자가_SHIPPING_주문_구매_확정에_성공한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    Payment payment = savePaidPayment(order);
+    long cacheEvictionEventsBefore =
+        applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count();
+
+    ConfirmOrderResponse response = orderService.confirmOrder(buyer.getId(), order.getId());
+
+    assertThat(response.orderId()).isEqualTo(order.getId());
+    assertThat(response.status()).isEqualTo(OrderStatus.COMPLETED);
+    assertThat(response.productStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+    assertThat(response.confirmedAt()).isNotNull();
+    assertThat(response.confirmedAt().getOffset().getTotalSeconds()).isZero();
+
+    Order completed = orderRepository.findById(order.getId()).orElseThrow();
+    assertThat(completed.getOrderStatus()).isEqualTo(OrderStatus.COMPLETED);
+    assertThat(response.confirmedAt())
+        .isEqualTo(completed.getModifiedAt().atOffset(ZoneOffset.UTC));
+    assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProductStatus.SOLD_OUT);
+    assertThat(paymentRepository.findById(payment.getId()).orElseThrow().getStatus())
+        .isEqualTo(PaymentStatus.PAID);
+    assertThat(applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count())
+        .isEqualTo(cacheEvictionEventsBefore + 1);
+  }
+
+  @Test
+  void 판매자와_타사용자는_구매_확정할_수_없다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User other = saveUser("other@example.com", "타인");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+
+    assertThatThrownBy(() -> orderService.confirmOrder(seller.getId(), order.getId()))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ORDER_ACCESS_DENIED));
+
+    assertThatThrownBy(() -> orderService.confirmOrder(other.getId(), order.getId()))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ORDER_ACCESS_DENIED));
+
+    Order unchanged = orderRepository.findById(order.getId()).orElseThrow();
+    assertThat(unchanged.getOrderStatus()).isEqualTo(OrderStatus.SHIPPING);
+    assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProductStatus.RESERVED);
+  }
+
+  @Test
+  void 존재하지_않는_주문_구매_확정은_실패한다() {
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+
+    assertThatThrownBy(() -> orderService.confirmOrder(buyer.getId(), Long.MAX_VALUE))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ORDER_NOT_FOUND));
+  }
+
+  @Test
+  void SHIPPING이_아닌_주문_구매_확정은_실패한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+
+    for (OrderStatus status :
+        new OrderStatus[] {
+          OrderStatus.CREATED,
+          OrderStatus.PAID,
+          OrderStatus.COMPLETED,
+          OrderStatus.CANCELED,
+          OrderStatus.REFUND_REQUESTED,
+          OrderStatus.REFUNDED,
+          OrderStatus.DISPUTED
+        }) {
+      Product product = saveProduct(seller, "상품-" + status, 100000);
+      Order order = saveOrder(buyer, product);
+      ReflectionTestUtils.setField(order, "orderStatus", status);
+      orderRepository.saveAndFlush(order);
+
+      assertThatThrownBy(() -> orderService.confirmOrder(buyer.getId(), order.getId()))
+          .isInstanceOfSatisfying(
+              BusinessException.class,
+              e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_ORDER_STATUS));
+
+      assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus())
+          .isEqualTo(ProductStatus.RESERVED);
+    }
+  }
+
+  @Test
+  void SHIPPING_주문이어도_상품이_RESERVED가_아니면_구매_확정은_실패한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    Product savedProduct = productRepository.findById(product.getId()).orElseThrow();
+    ReflectionTestUtils.setField(savedProduct, "status", ProductStatus.ON_SALE);
+    productRepository.saveAndFlush(savedProduct);
+
+    assertThatThrownBy(() -> orderService.confirmOrder(buyer.getId(), order.getId()))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_ORDER_STATUS));
+
+    Order unchanged = orderRepository.findById(order.getId()).orElseThrow();
+    assertThat(unchanged.getOrderStatus()).isEqualTo(OrderStatus.SHIPPING);
+    assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProductStatus.ON_SALE);
+  }
+
+  @Test
   void 구매자가_내_구매_주문_목록_조회에_성공한다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
@@ -655,6 +889,7 @@ class OrderServiceTest {
   }
 
   private void deleteAll() {
+    paymentRepository.deleteAll();
     orderRepository.deleteAll();
     productRepository.deleteAll();
     userRepository.deleteAll();
@@ -685,5 +920,26 @@ class OrderServiceTest {
     product.reserve();
     productRepository.save(product);
     return orderRepository.save(Order.create(buyer, product));
+  }
+
+  private Order savePaidOrder(User buyer, Product product) {
+    Order order = saveOrder(buyer, product);
+    order.markAsPaid();
+    return orderRepository.saveAndFlush(order);
+  }
+
+  private Order saveShippingOrder(User buyer, Product product) {
+    Order order = savePaidOrder(buyer, product);
+    order.registerShipping("1234-5678-9012", LocalDateTime.of(2026, 6, 24, 10, 0));
+    return orderRepository.saveAndFlush(order);
+  }
+
+  private Payment savePaidPayment(Order order) {
+    return paymentRepository.saveAndFlush(
+        Payment.createPaid(
+            order,
+            PaymentMethod.MOCK_CARD,
+            "idempotency-key-" + order.getId(),
+            LocalDateTime.of(2026, 6, 24, 10, 5)));
   }
 }

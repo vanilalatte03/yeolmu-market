@@ -1,10 +1,12 @@
 package com.guingujig.yeolmumarket.domain.order.service;
 
 import com.guingujig.yeolmumarket.domain.order.dto.CancelOrderResponse;
+import com.guingujig.yeolmumarket.domain.order.dto.ConfirmOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.CreateOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.GetOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.MyOrderListItemResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.MySaleListItemResponse;
+import com.guingujig.yeolmumarket.domain.order.dto.RegisterOrderShippingResponse;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
@@ -18,6 +20,8 @@ import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
 import jakarta.persistence.EntityManager;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -130,6 +134,85 @@ public class OrderService {
   }
 
   /**
+   * 로그인한 판매자가 PAID 상태 주문에 배송 증빙을 등록한다.
+   *
+   * <p>배송 증빙 등록은 주문 상태만 SHIPPING으로 전이하며 상품은 RESERVED, 결제는 PAID 상태를 유지한다.
+   *
+   * @throws BusinessException VALIDATION_FAILED - 송장 번호가 누락, blank, 또는 trim 후 100자를 초과하는 경우
+   * @throws BusinessException ORDER_NOT_FOUND - 주문이 존재하지 않는 경우
+   * @throws BusinessException ORDER_ACCESS_DENIED - 주문 판매자가 아닌 사용자의 요청
+   * @throws BusinessException INVALID_ORDER_STATUS - PAID가 아닌 주문에 배송 증빙 등록 요청
+   */
+  @Transactional
+  public RegisterOrderShippingResponse registerShipping(
+      Long sellerId, Long orderId, String trackingNumber) {
+    String normalizedTrackingNumber = normalizeTrackingNumber(trackingNumber);
+
+    orderRepository
+        .findByIdForUpdate(orderId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+
+    Order order =
+        orderRepository
+            .findWithDetailsById(orderId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+
+    if (!Objects.equals(order.getSeller().getId(), sellerId)) {
+      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
+    }
+
+    order.registerShipping(normalizedTrackingNumber, LocalDateTime.now(ZoneOffset.UTC));
+
+    try {
+      orderRepository.flush();
+    } catch (ObjectOptimisticLockingFailureException e) {
+      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+    }
+    entityManager.refresh(order);
+
+    return RegisterOrderShippingResponse.from(order);
+  }
+
+  /**
+   * 로그인한 구매자가 SHIPPING 상태 주문을 구매확정하고 상품을 SOLD_OUT으로 전이한다.
+   *
+   * <p>주문과 상품 상태 변경을 하나의 트랜잭션에서 처리하며, 상품 상태 변경 후 검색 캐시 무효화 이벤트를 발행한다. confirmedAt은 DB가 확정한 주문
+   * modifiedAt 값을 사용한다.
+   *
+   * @throws BusinessException ORDER_NOT_FOUND - 주문이 존재하지 않는 경우
+   * @throws BusinessException ORDER_ACCESS_DENIED - 주문 구매자가 아닌 사용자의 요청
+   * @throws BusinessException INVALID_ORDER_STATUS - SHIPPING이 아닌 주문 또는 판매 완료 처리할 수 없는 상품 상태
+   */
+  @Transactional
+  public ConfirmOrderResponse confirmOrder(Long buyerId, Long orderId) {
+    orderRepository
+        .findByIdForUpdate(orderId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+
+    Order order =
+        orderRepository
+            .findWithDetailsById(orderId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+
+    if (!Objects.equals(order.getBuyer().getId(), buyerId)) {
+      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
+    }
+
+    order.confirmPurchase();
+    completeProductSale(order.getProduct());
+
+    try {
+      orderRepository.flush();
+    } catch (ObjectOptimisticLockingFailureException e) {
+      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+    }
+    entityManager.refresh(order);
+
+    publishProductSearchCacheEviction();
+    return ConfirmOrderResponse.from(order);
+  }
+
+  /**
    * 로그인 사용자가 구매자로 참여한 주문 목록을 페이지 단위로 조회한다.
    *
    * <p>status가 null이면 모든 주문 상태를 조회하고, 값이 있으면 해당 상태만 필터링한다.
@@ -191,6 +274,24 @@ public class OrderService {
     if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
       throw new BusinessException(ErrorCode.INVALID_PAGINATION);
     }
+  }
+
+  private String normalizeTrackingNumber(String trackingNumber) {
+    if (trackingNumber == null) {
+      throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+    }
+    String normalizedTrackingNumber = trackingNumber.trim();
+    if (normalizedTrackingNumber.isBlank() || normalizedTrackingNumber.length() > 100) {
+      throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+    }
+    return normalizedTrackingNumber;
+  }
+
+  private void completeProductSale(Product product) {
+    if (product.getStatus() != ProductStatus.RESERVED) {
+      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+    }
+    product.completeSale();
   }
 
   private void publishProductSearchCacheEviction() {
