@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
+import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.chat.entity.ChatMessage;
 import com.guingujig.yeolmumarket.domain.chat.entity.ChatRoom;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatMessageRepository;
@@ -13,6 +14,7 @@ import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
+import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -58,6 +60,7 @@ class ChatWebSocketIntegrationTest {
 
   private final UserRepository userRepository;
   private final ProductRepository productRepository;
+  private final CategoryRepository categoryRepository;
   private final ChatRoomRepository chatRoomRepository;
   private final ChatMessageRepository chatMessageRepository;
   private final PasswordEncoder passwordEncoder;
@@ -73,6 +76,7 @@ class ChatWebSocketIntegrationTest {
   ChatWebSocketIntegrationTest(
       UserRepository userRepository,
       ProductRepository productRepository,
+      CategoryRepository categoryRepository,
       ChatRoomRepository chatRoomRepository,
       ChatMessageRepository chatMessageRepository,
       PasswordEncoder passwordEncoder,
@@ -80,6 +84,7 @@ class ChatWebSocketIntegrationTest {
       SimpMessagingTemplate messagingTemplate) {
     this.userRepository = userRepository;
     this.productRepository = productRepository;
+    this.categoryRepository = categoryRepository;
     this.chatRoomRepository = chatRoomRepository;
     this.chatMessageRepository = chatMessageRepository;
     this.passwordEncoder = passwordEncoder;
@@ -349,7 +354,9 @@ class ChatWebSocketIntegrationTest {
   }
 
   private ChatRoom saveChatRoom(User seller, User buyer) {
-    Product product = productRepository.save(Product.create(seller, "아이패드 미니 6", "생활기스", 450000));
+    Product product =
+        ProductTestFactory.saveProduct(
+            productRepository, categoryRepository, seller, "아이패드 미니 6", "생활기스", 450000);
     return chatRoomRepository.saveAndFlush(ChatRoom.create(product, buyer, seller));
   }
 
@@ -415,6 +422,7 @@ class ChatWebSocketIntegrationTest {
     chatMessageRepository.deleteAll();
     chatRoomRepository.deleteAll();
     productRepository.deleteAll();
+    categoryRepository.deleteAll();
     userRepository.deleteAll();
   }
 

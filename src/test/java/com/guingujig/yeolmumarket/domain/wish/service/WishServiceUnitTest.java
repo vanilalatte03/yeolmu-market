@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
+import com.guingujig.yeolmumarket.domain.category.entity.Category;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
@@ -33,7 +34,7 @@ class WishServiceUnitTest {
     WishService wishService = new WishService(wishRepository, productRepository, userRepository);
     User user = new User("user@example.com", "encodedPassword", "열무유저");
     User seller = new User("seller@example.com", "encodedPassword", "열무판매자");
-    Product product = Product.create(seller, "아이패드 미니 6", "생활기스", 450000);
+    Product product = Product.create(seller, "아이패드 미니 6", "생활기스", 450000, Category.create("디지털기기"));
     Long userId = 1L;
     Long productId = 10L;
     when(userRepository.findById(userId)).thenReturn(Optional.of(user));

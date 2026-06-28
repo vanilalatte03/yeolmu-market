@@ -1,5 +1,7 @@
 package com.guingujig.yeolmumarket.domain.product.service;
 
+import com.guingujig.yeolmumarket.domain.category.entity.Category;
+import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.product.dto.AdminHiddenProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.CreateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.CreateProductResponse;
@@ -44,13 +46,14 @@ public class ProductService {
 
   private final ProductRepository productRepository;
   private final UserRepository userRepository;
+  private final CategoryRepository categoryRepository;
   private final ProductWishSummaryService productWishSummaryService;
   private final ApplicationEventPublisher eventPublisher;
 
   /**
    * 인증된 회원을 판매자로 지정해 상품을 등록한다.
    *
-   * <p>P0 상품 등록은 상품명, 설명, 가격만 다루며 신규 상품의 기본 상태는 판매 중이다.
+   * <p>P1부터 상품 카테고리는 필수이며, 신규 상품의 기본 상태는 판매 중이다.
    */
   @Transactional
   public CreateProductResponse createProduct(Long sellerId, CreateProductRequest request) {
@@ -58,9 +61,10 @@ public class ProductService {
         userRepository
             .findById(sellerId)
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    Category category = getCategory(request.categoryId());
 
     Product product =
-        Product.create(seller, request.title(), request.description(), request.price());
+        Product.create(seller, request.title(), request.description(), request.price(), category);
     Product savedProduct = productRepository.save(product);
     publishProductSearchCacheEviction();
     return CreateProductResponse.from(savedProduct);
@@ -149,7 +153,7 @@ public class ProductService {
   }
 
   /**
-   * 상품 판매자 본인만 P0 수정 가능 필드인 제목, 설명, 가격을 변경할 수 있다.
+   * 상품 판매자 본인만 제목, 설명, 가격, 카테고리를 변경할 수 있다.
    *
    * <p>삭제된 상품은 존재하지 않는 상품처럼 처리한다.
    */
@@ -161,6 +165,9 @@ public class ProductService {
     validateOwner(product, sellerId);
 
     product.updateInfo(request.title(), request.description(), request.price());
+    if (request.categoryId() != null) {
+      product.changeCategory(getCategory(request.categoryId()));
+    }
     productRepository.flush();
     publishProductSearchCacheEviction();
     return UpdateProductResponse.from(product);
@@ -218,6 +225,12 @@ public class ProductService {
         .findWithSellerById(productId)
         .filter(product -> !product.isDeleted())
         .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+  }
+
+  private Category getCategory(Long categoryId) {
+    return categoryRepository
+        .findById(categoryId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND));
   }
 
   private void validateOwner(Product product, Long sellerId) {

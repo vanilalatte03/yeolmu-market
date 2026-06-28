@@ -659,6 +659,7 @@ P2 리뷰와 평점 기능이 도입되면 유저 평점은 별도 평점 조회
 
 상품 API는 상품 등록, 조회, 수정, 삭제, 판매 상품 목록, 이미지 관리를 담당한다.
 P1 이미지 기능을 제외한 기본 상품 기능은 P0 범위다.
+상품 생성/수정의 카테고리 저장은 P1부터 적용된다.
 상품 숨김 여부는 `hidden` boolean으로 관리하며, 관련 결정은 `docs/adr/006-product-hidden-flag.md`를 따른다.
 
 ### 상품 등록
@@ -677,7 +678,7 @@ P1 이미지 기능을 제외한 기본 상품 기능은 P0 범위다.
 | `title` | String | Y | 상품명 |
 | `description` | String | Y | 상품 설명 |
 | `price` | int | Y | 판매 가격 |
-| `categoryId` | Long | N | 카테고리 ID. P1부터 사용 |
+| `categoryId` | Long | Y | 카테고리 ID. P1부터 필수 |
 
 ```json
 {
@@ -716,9 +717,9 @@ P1 이미지 기능을 제외한 기본 상품 기능은 P0 범위다.
 
 | 코드 | HTTP | 발생 조건 |
 | --- | --- | --- |
-| `VALIDATION_FAILED` | 400 | 상품명, 설명, 가격 검증 실패 |
+| `VALIDATION_FAILED` | 400 | 상품명, 설명, 가격, 카테고리 검증 실패 |
 | `UNAUTHORIZED` | 401 | 토큰 누락 |
-| `CATEGORY_NOT_FOUND` | 404 | 존재하지 않는 카테고리. P1 `categoryId` 사용 시 |
+| `CATEGORY_NOT_FOUND` | 404 | 존재하지 않는 카테고리 |
 
 ### 상품 목록 조회
 
@@ -869,7 +870,7 @@ P2 리뷰와 평점 기능이 도입되면 판매자 평점은 별도 평점 조
 | `title` | String | N | 상품명 |
 | `description` | String | N | 상품 설명 |
 | `price` | int | N | 판매 가격 |
-| `categoryId` | Long | N | 카테고리 ID. P1부터 사용 |
+| `categoryId` | Long | N | 카테고리 ID. 포함하면 해당 카테고리로 변경하고, 없으면 기존 카테고리 유지 |
 
 ```json
 {
@@ -885,7 +886,7 @@ P2 리뷰와 평점 기능이 도입되면 판매자 평점은 별도 평점 조
 | 필드 | 도입 단계 |
 | --- | --- |
 | `title`, `description`, `price` | P0 |
-| `categoryId` | P1 |
+| `categoryId` | P1. 이 필드만 포함해도 유효한 수정 요청 |
 
 #### Response Data
 
@@ -908,6 +909,7 @@ P2 리뷰와 평점 기능이 도입되면 판매자 평점은 별도 평점 조
 | `UNAUTHORIZED` | 401 | 토큰 누락 |
 | `PRODUCT_ACCESS_DENIED` | 403 | 판매자가 아닌 사용자의 수정 시도 |
 | `PRODUCT_NOT_FOUND` | 404 | 상품 없음 |
+| `CATEGORY_NOT_FOUND` | 404 | 존재하지 않는 카테고리 |
 
 ### 상품 삭제
 

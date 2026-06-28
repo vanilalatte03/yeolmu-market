@@ -12,6 +12,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
+import com.guingujig.yeolmumarket.domain.category.entity.Category;
+import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
@@ -20,6 +22,7 @@ import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.domain.wish.entity.Wish;
 import com.guingujig.yeolmumarket.domain.wish.repository.WishRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
+import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +46,7 @@ class ProductControllerTest {
   private final MockMvc mockMvc;
   private final UserRepository userRepository;
   private final ProductRepository productRepository;
+  private final CategoryRepository categoryRepository;
   private final WishRepository wishRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
@@ -52,12 +56,14 @@ class ProductControllerTest {
       MockMvc mockMvc,
       UserRepository userRepository,
       ProductRepository productRepository,
+      CategoryRepository categoryRepository,
       WishRepository wishRepository,
       PasswordEncoder passwordEncoder,
       JwtTokenProvider jwtTokenProvider) {
     this.mockMvc = mockMvc;
     this.userRepository = userRepository;
     this.productRepository = productRepository;
+    this.categoryRepository = categoryRepository;
     this.wishRepository = wishRepository;
     this.passwordEncoder = passwordEncoder;
     this.jwtTokenProvider = jwtTokenProvider;
@@ -275,6 +281,7 @@ class ProductControllerTest {
   @Test
   void 상품_등록에_성공하면_상품이_생성되고_201로_응답한다() throws Exception {
     User seller = saveUser("seller@example.com", "열무판매자");
+    Category category = saveCategory("디지털기기");
     String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
 
     mockMvc
@@ -287,9 +294,11 @@ class ProductControllerTest {
                     {
                       "title": "아이패드 미니 6",
                       "description": "생활기스 조금 있습니다.",
-                      "price": 450000
+                      "price": 450000,
+                      "categoryId": %d
                     }
-                    """))
+                    """
+                        .formatted(category.getId())))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.code").value("SUCCESS"))
@@ -309,7 +318,7 @@ class ProductControllerTest {
     assertThat(product.getPrice()).isEqualTo(450000);
     assertThat(product.getStatus()).isEqualTo(ProductStatus.ON_SALE);
     assertThat(product.isHidden()).isFalse();
-    assertThat(product.getCategory()).isNull();
+    assertThat(product.getCategory().getId()).isEqualTo(category.getId());
   }
 
   @Test
@@ -355,8 +364,80 @@ class ProductControllerTest {
   }
 
   @Test
+  void 상품_등록_요청에_카테고리가_없으면_400으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            post("/api/products")
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "title": "아이패드 미니 6",
+                      "description": "생활기스 조금 있습니다.",
+                      "price": 450000
+                    }
+                    """))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void 상품_등록_요청의_카테고리가_null이면_400으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            post("/api/products")
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "title": "아이패드 미니 6",
+                      "description": "생활기스 조금 있습니다.",
+                      "price": 450000,
+                      "categoryId": null
+                    }
+                    """))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void 존재하지_않는_카테고리로_상품을_등록하면_404로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            post("/api/products")
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "title": "아이패드 미니 6",
+                      "description": "생활기스 조금 있습니다.",
+                      "price": 450000,
+                      "categoryId": 9223372036854775807
+                    }
+                    """))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("CATEGORY_NOT_FOUND"));
+  }
+
+  @Test
   void 판매자가_자신의_상품을_수정하면_변경된_상품_정보를_응답한다() throws Exception {
     User seller = saveUser("seller@example.com", "열무판매자");
+    Category newCategory = saveCategory("가구");
     Product product = saveProduct(seller, "아이패드 미니 6", 450000);
     String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
 
@@ -370,9 +451,11 @@ class ProductControllerTest {
                     {
                       "title": "아이패드 미니 6세대",
                       "description": "박스 포함입니다.",
-                      "price": 430000
+                      "price": 430000,
+                      "categoryId": %d
                     }
-                    """))
+                    """
+                        .formatted(newCategory.getId())))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.code").value("SUCCESS"))
@@ -387,6 +470,59 @@ class ProductControllerTest {
     assertThat(updatedProduct.getTitle()).isEqualTo("아이패드 미니 6세대");
     assertThat(updatedProduct.getDescription()).isEqualTo("박스 포함입니다.");
     assertThat(updatedProduct.getPrice()).isEqualTo(430000);
+    assertThat(updatedProduct.getCategory().getId()).isEqualTo(newCategory.getId());
+  }
+
+  @Test
+  void 상품_수정은_카테고리만_포함해도_성공한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Category newCategory = saveCategory("가구");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            put("/api/products/{productId}", product.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "categoryId": %d
+                    }
+                    """
+                        .formatted(newCategory.getId())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.productId").value(product.getId()))
+        .andExpect(jsonPath("$.data.title").value("아이패드 미니 6"))
+        .andExpect(jsonPath("$.data.price").value(450000));
+
+    Product updatedProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(updatedProduct.getCategory().getId()).isEqualTo(newCategory.getId());
+  }
+
+  @Test
+  void 존재하지_않는_카테고리로_상품을_수정하면_404로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            put("/api/products/{productId}", product.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "categoryId": 9223372036854775807
+                    }
+                    """))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("CATEGORY_NOT_FOUND"));
   }
 
   @Test
@@ -500,26 +636,33 @@ class ProductControllerTest {
   }
 
   private Product saveProduct(User seller, String title, Integer price) {
-    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
-    return productRepository.saveAndFlush(product);
+    return ProductTestFactory.saveProduct(
+        productRepository, categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
   }
 
   private Product saveHiddenProduct(User seller, String title, Integer price) {
-    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    Product product =
+        ProductTestFactory.createProduct(categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
     ReflectionTestUtils.setField(product, "hidden", true);
     return productRepository.saveAndFlush(product);
   }
 
   private Product saveProductWithStatus(
       User seller, String title, Integer price, ProductStatus status) {
-    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    Product product =
+        ProductTestFactory.createProduct(categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
     ReflectionTestUtils.setField(product, "status", status);
     return productRepository.saveAndFlush(product);
   }
 
   private Product saveProductWithDeletedAtOnly(User seller, String title, Integer price) {
-    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    Product product =
+        ProductTestFactory.createProduct(categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
     ReflectionTestUtils.setField(product, "deletedAt", LocalDateTime.of(2026, 6, 24, 0, 0));
     return productRepository.saveAndFlush(product);
+  }
+
+  private Category saveCategory(String name) {
+    return categoryRepository.saveAndFlush(Category.create(name));
   }
 }

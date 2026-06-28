@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 
+import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
@@ -14,6 +15,7 @@ import com.guingujig.yeolmumarket.domain.search.repository.PopularKeywordReposit
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
+import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,6 +35,7 @@ class SearchServiceRedisCacheFallbackTest {
 
   private final SearchService searchService;
   private final ProductRepository productRepository;
+  private final CategoryRepository categoryRepository;
   private final OrderRepository orderRepository;
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
@@ -41,11 +44,13 @@ class SearchServiceRedisCacheFallbackTest {
   SearchServiceRedisCacheFallbackTest(
       SearchService searchService,
       ProductRepository productRepository,
+      CategoryRepository categoryRepository,
       OrderRepository orderRepository,
       UserRepository userRepository,
       PasswordEncoder passwordEncoder) {
     this.searchService = searchService;
     this.productRepository = productRepository;
+    this.categoryRepository = categoryRepository;
     this.orderRepository = orderRepository;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
@@ -83,6 +88,7 @@ class SearchServiceRedisCacheFallbackTest {
   private void deleteAll() {
     orderRepository.deleteAll();
     productRepository.deleteAll();
+    categoryRepository.deleteAll();
     userRepository.deleteAll();
   }
 
@@ -91,7 +97,7 @@ class SearchServiceRedisCacheFallbackTest {
   }
 
   private Product saveProduct(User seller, String title, String description, Integer price) {
-    Product product = Product.create(seller, title, description, price);
-    return productRepository.saveAndFlush(product);
+    return ProductTestFactory.saveProduct(
+        productRepository, categoryRepository, seller, title, description, price);
   }
 }

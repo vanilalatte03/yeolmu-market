@@ -3,6 +3,7 @@ package com.guingujig.yeolmumarket.domain.payment.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
@@ -24,6 +25,7 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import java.lang.reflect.RecordComponent;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -56,6 +58,7 @@ class PaymentServiceTest {
   private final PaymentRepository paymentRepository;
   private final OrderRepository orderRepository;
   private final ProductRepository productRepository;
+  private final CategoryRepository categoryRepository;
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
   private final TransactionTemplate transactionTemplate;
@@ -66,6 +69,7 @@ class PaymentServiceTest {
       PaymentRepository paymentRepository,
       OrderRepository orderRepository,
       ProductRepository productRepository,
+      CategoryRepository categoryRepository,
       UserRepository userRepository,
       PasswordEncoder passwordEncoder,
       PlatformTransactionManager transactionManager) {
@@ -73,6 +77,7 @@ class PaymentServiceTest {
     this.paymentRepository = paymentRepository;
     this.orderRepository = orderRepository;
     this.productRepository = productRepository;
+    this.categoryRepository = categoryRepository;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
     this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -1022,6 +1027,7 @@ class PaymentServiceTest {
     paymentRepository.deleteAll();
     orderRepository.deleteAll();
     productRepository.deleteAll();
+    categoryRepository.deleteAll();
     userRepository.deleteAll();
   }
 
@@ -1030,7 +1036,8 @@ class PaymentServiceTest {
   }
 
   private Product saveProduct(User seller, String title, Integer price) {
-    return productRepository.saveAndFlush(Product.create(seller, title, "생활기스 조금 있습니다.", price));
+    return ProductTestFactory.saveProduct(
+        productRepository, categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
   }
 
   private Order saveOrder(User buyer, Product product) {

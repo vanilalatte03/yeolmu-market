@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
+import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
@@ -15,6 +16,7 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.entity.UserRole;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
+import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +40,7 @@ class AdminProductControllerTest {
   private final MockMvc mockMvc;
   private final UserRepository userRepository;
   private final ProductRepository productRepository;
+  private final CategoryRepository categoryRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
 
@@ -48,11 +51,13 @@ class AdminProductControllerTest {
       MockMvc mockMvc,
       UserRepository userRepository,
       ProductRepository productRepository,
+      CategoryRepository categoryRepository,
       PasswordEncoder passwordEncoder,
       JwtTokenProvider jwtTokenProvider) {
     this.mockMvc = mockMvc;
     this.userRepository = userRepository;
     this.productRepository = productRepository;
+    this.categoryRepository = categoryRepository;
     this.passwordEncoder = passwordEncoder;
     this.jwtTokenProvider = jwtTokenProvider;
   }
@@ -302,18 +307,20 @@ class AdminProductControllerTest {
   }
 
   private Product saveProduct(User seller, String title, Integer price) {
-    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
-    return productRepository.saveAndFlush(product);
+    return ProductTestFactory.saveProduct(
+        productRepository, categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
   }
 
   private Product saveHiddenProduct(User seller, String title, Integer price) {
-    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    Product product =
+        ProductTestFactory.createProduct(categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
     product.changeHidden(true);
     return productRepository.saveAndFlush(product);
   }
 
   private Product saveDeletedHiddenProduct(User seller, String title, Integer price) {
-    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    Product product =
+        ProductTestFactory.createProduct(categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
     product.changeHidden(true);
     product.delete(DELETED_AT);
     return productRepository.saveAndFlush(product);
@@ -321,7 +328,8 @@ class AdminProductControllerTest {
 
   private Product saveProductWithStatus(
       User seller, String title, Integer price, ProductStatus status) {
-    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    Product product =
+        ProductTestFactory.createProduct(categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
     ReflectionTestUtils.setField(product, "status", status);
     return productRepository.saveAndFlush(product);
   }
