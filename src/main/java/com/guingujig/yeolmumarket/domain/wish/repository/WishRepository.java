@@ -1,12 +1,16 @@
 package com.guingujig.yeolmumarket.domain.wish.repository;
 
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.wish.entity.Wish;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -18,6 +22,33 @@ public interface WishRepository extends JpaRepository<Wish, Long> {
   Optional<Wish> findByUserAndProduct(User user, Product product);
 
   long countByProductId(Long productId);
+
+  @EntityGraph(attributePaths = "product")
+  @Query(
+      value =
+          """
+          select wish
+          from Wish wish
+          join wish.product product
+          where wish.user.id = :userId
+            and product.hidden = false
+            and product.deletedAt is null
+            and product.status <> :deletedStatus
+          """,
+      countQuery =
+          """
+          select count(wish)
+          from Wish wish
+          join wish.product product
+          where wish.user.id = :userId
+            and product.hidden = false
+            and product.deletedAt is null
+            and product.status <> :deletedStatus
+          """)
+  Page<Wish> findPublicWishesByUserId(
+      @Param("userId") Long userId,
+      @Param("deletedStatus") ProductStatus deletedStatus,
+      Pageable pageable);
 
   @Query(
       """

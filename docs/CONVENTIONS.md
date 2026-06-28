@@ -60,6 +60,12 @@ public class OrderController {
 - Spring Data JPA 인터페이스. 복잡한 조회는 메서드명 또는 `@Query`로 명확히.
 - 비즈니스 로직을 Repository에 두지 않는다.
 
+## DB 스키마 변경
+
+- 테이블, 컬럼, 인덱스, 제약조건을 변경하는 PR은 Flyway migration을 함께 포함한다.
+- JPA 엔티티 변경만으로 DB 스키마 변경을 대체하지 않는다.
+- 이미 적용된 migration 파일은 수정하지 않고, 보정이 필요하면 새 migration을 추가한다.
+
 ## Entity / DTO
 
 - Entity와 DTO를 분리한다. 계층 간 전달은 DTO로.
