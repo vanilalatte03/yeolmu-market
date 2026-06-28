@@ -1,8 +1,10 @@
 package com.guingujig.yeolmumarket.domain.review.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -214,6 +216,132 @@ class ReviewControllerTest {
   }
 
   @Test
+  void 내가_작성한_리뷰_목록을_조회하면_리뷰_대상_닉네임을_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Order order = saveOrderWithStatus(buyer, saveProduct(seller), OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "시간 약속을 잘 지켜주셨어요.");
+
+    mockMvc
+        .perform(
+            get("/api/users/me/reviews")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken(buyer))
+                .param("status", "written")
+                .param("page", "0")
+                .param("size", "10"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.content", hasSize(1)))
+        .andExpect(jsonPath("$.data.content[0].reviewId").value(review.getId()))
+        .andExpect(jsonPath("$.data.content[0].orderId").value(order.getId()))
+        .andExpect(jsonPath("$.data.content[0].revieweeNickname").value("열무판매자"))
+        .andExpect(jsonPath("$.data.content[0].reviewerNickname").doesNotExist())
+        .andExpect(jsonPath("$.data.content[0].score").value(5))
+        .andExpect(jsonPath("$.data.content[0].content").value("시간 약속을 잘 지켜주셨어요."))
+        .andExpect(jsonPath("$.data.content[0].createdAt", matchesPattern(".*(Z|\\+00:00)$")))
+        .andExpect(jsonPath("$.data.totalElements").value(1));
+  }
+
+  @Test
+  void 내가_받은_리뷰_목록을_조회하면_작성자_닉네임을_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Order order = saveOrderWithStatus(buyer, saveProduct(seller), OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+
+    mockMvc
+        .perform(
+            get("/api/users/me/reviews")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken(seller))
+                .param("status", "received"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content", hasSize(1)))
+        .andExpect(jsonPath("$.data.content[0].reviewId").value(review.getId()))
+        .andExpect(jsonPath("$.data.content[0].orderId").value(order.getId()))
+        .andExpect(jsonPath("$.data.content[0].reviewerNickname").value("열무구매자"))
+        .andExpect(jsonPath("$.data.content[0].revieweeNickname").doesNotExist());
+  }
+
+  @Test
+  void 특정_유저가_받은_리뷰_목록은_인증_없이_조회할_수_있다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Order order = saveOrderWithStatus(buyer, saveProduct(seller), OrderStatus.COMPLETED);
+    Review review = saveReview(order, buyer, seller, 5, "좋은 거래였습니다.");
+
+    mockMvc
+        .perform(get("/api/users/{userId}/reviews", seller.getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content", hasSize(1)))
+        .andExpect(jsonPath("$.data.content[0].reviewId").value(review.getId()))
+        .andExpect(jsonPath("$.data.content[0].orderId").doesNotExist())
+        .andExpect(jsonPath("$.data.content[0].reviewerNickname").value("열무구매자"))
+        .andExpect(jsonPath("$.data.content[0].score").value(5))
+        .andExpect(jsonPath("$.data.content[0].content").value("좋은 거래였습니다."));
+  }
+
+  @Test
+  void 내_리뷰_목록은_인증이_필요하다() throws Exception {
+    mockMvc
+        .perform(get("/api/users/me/reviews").param("status", "written"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+  }
+
+  @Test
+  void 내_리뷰_목록_status가_누락되거나_잘못되면_400으로_응답한다() throws Exception {
+    User user = saveUser("user@example.com", "열무유저");
+
+    mockMvc
+        .perform(get("/api/users/me/reviews").header(HttpHeaders.AUTHORIZATION, bearerToken(user)))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+    mockMvc
+        .perform(
+            get("/api/users/me/reviews")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken(user))
+                .param("status", "all"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void 리뷰_목록_페이지_값이_잘못되면_400으로_응답한다() throws Exception {
+    User user = saveUser("user@example.com", "열무유저");
+
+    mockMvc
+        .perform(
+            get("/api/users/me/reviews")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken(user))
+                .param("status", "written")
+                .param("size", "101"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_PAGINATION"));
+
+    mockMvc
+        .perform(get("/api/users/{userId}/reviews", user.getId()).param("page", "-1"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_PAGINATION"));
+  }
+
+  @Test
+  void 존재하지_않는_유저의_공개_리뷰_목록은_404로_응답한다() throws Exception {
+    mockMvc
+        .perform(get("/api/users/{userId}/reviews", Long.MAX_VALUE))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("USER_NOT_FOUND"));
+  }
+
+  @Test
   void 리뷰_수정에_성공하면_200으로_응답한다() throws Exception {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
@@ -380,5 +508,9 @@ class ReviewControllerTest {
   private Review saveReview(
       Order order, User reviewer, User reviewee, Integer score, String content) {
     return reviewRepository.saveAndFlush(Review.create(order, reviewer, reviewee, score, content));
+  }
+
+  private String bearerToken(User user) {
+    return "Bearer " + jwtTokenProvider.issueAccessToken(user);
   }
 }

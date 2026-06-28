@@ -46,6 +46,8 @@ public class SecurityConfig {
                     .authenticated()
                     .requestMatchers(HttpMethod.GET, "/api/users/me/sales")
                     .authenticated()
+                    .requestMatchers(HttpMethod.GET, "/api/users/me/reviews")
+                    .authenticated()
                     .requestMatchers(
                         HttpMethod.GET,
                         "/api/products",
