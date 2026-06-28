@@ -3,7 +3,9 @@ package com.guingujig.yeolmumarket.domain.review.service;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
+import com.guingujig.yeolmumarket.domain.review.dto.DeleteReviewResponse;
 import com.guingujig.yeolmumarket.domain.review.dto.ReviewResponse;
+import com.guingujig.yeolmumarket.domain.review.dto.UpdateReviewResponse;
 import com.guingujig.yeolmumarket.domain.review.entity.Review;
 import com.guingujig.yeolmumarket.domain.review.repository.ReviewRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
@@ -62,6 +64,65 @@ public class ReviewService {
     return ReviewResponse.from(review);
   }
 
+  /**
+   * 리뷰 작성자 본인만 같은 주문에 속한 리뷰의 평점 또는 내용을 수정할 수 있다.
+   *
+   * @throws BusinessException VALIDATION_FAILED - 수정할 값이 없거나 값이 유효하지 않은 경우
+   * @throws BusinessException REVIEW_NOT_FOUND - 리뷰가 없거나 주문과 리뷰가 일치하지 않는 경우
+   * @throws BusinessException REVIEW_ACCESS_DENIED - 리뷰 작성자가 아닌 사용자의 요청
+   */
+  @Transactional
+  public UpdateReviewResponse updateReview(
+      Long reviewerId, Long orderId, Long reviewId, Integer score, String content) {
+    ReviewUpdateValues updateValues = validateReviewUpdateValues(score, content);
+    Review review = getReviewInOrder(orderId, reviewId);
+    validateReviewer(review, reviewerId);
+
+    review.update(updateValues.score(), updateValues.content());
+    reviewRepository.flush();
+    return UpdateReviewResponse.from(review);
+  }
+
+  /**
+   * 리뷰 작성자 본인만 같은 주문에 속한 리뷰를 실제 삭제할 수 있다.
+   *
+   * @throws BusinessException REVIEW_NOT_FOUND - 리뷰가 없거나 주문과 리뷰가 일치하지 않는 경우
+   * @throws BusinessException REVIEW_ACCESS_DENIED - 리뷰 작성자가 아닌 사용자의 요청
+   */
+  @Transactional
+  public DeleteReviewResponse deleteReview(Long reviewerId, Long orderId, Long reviewId) {
+    Review review = getReviewInOrder(orderId, reviewId);
+    validateReviewer(review, reviewerId);
+
+    reviewRepository.delete(review);
+    reviewRepository.flush();
+    return DeleteReviewResponse.success();
+  }
+
+  private ReviewUpdateValues validateReviewUpdateValues(Integer score, String content) {
+    boolean hasScore = score != null;
+    boolean hasContent = content != null;
+    if (!hasScore && !hasContent) {
+      throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+    }
+    if (hasScore) {
+      validateScore(score);
+    }
+    return new ReviewUpdateValues(score, hasContent ? normalizeContent(content) : null);
+  }
+
+  private Review getReviewInOrder(Long orderId, Long reviewId) {
+    return reviewRepository
+        .findByIdAndOrderId(reviewId, orderId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.REVIEW_NOT_FOUND));
+  }
+
+  private void validateReviewer(Review review, Long reviewerId) {
+    if (!Objects.equals(review.getReviewer().getId(), reviewerId)) {
+      throw new BusinessException(ErrorCode.REVIEW_ACCESS_DENIED);
+    }
+  }
+
   private void validateScore(Integer score) {
     if (score == null || score < 1 || score > 5) {
       throw new BusinessException(ErrorCode.VALIDATION_FAILED);
@@ -92,4 +153,6 @@ public class ReviewService {
   }
 
   private record ReviewParticipants(User reviewer, User reviewee) {}
+
+  private record ReviewUpdateValues(Integer score, String content) {}
 }

@@ -74,6 +74,16 @@ public class Review extends BaseTimeEntity {
     return review;
   }
 
+  public void update(Integer score, String content) {
+    if (score != null) {
+      validateScore(score);
+      this.score = score;
+    }
+    if (content != null) {
+      this.content = requireContent(content);
+    }
+  }
+
   private static void validateScore(Integer score) {
     if (score == null || score < 1 || score > 5) {
       throw new IllegalArgumentException("리뷰 점수는 1점 이상 5점 이하여야 합니다.");
