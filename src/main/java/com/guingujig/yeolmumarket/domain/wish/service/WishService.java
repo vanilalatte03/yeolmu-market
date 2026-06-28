@@ -3,6 +3,7 @@ package com.guingujig.yeolmumarket.domain.wish.service;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.product.service.ProductThumbnailQueryService;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.domain.wish.dto.WishListItemResponse;
@@ -12,6 +13,8 @@ import com.guingujig.yeolmumarket.domain.wish.repository.WishRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -29,6 +32,7 @@ public class WishService {
   private final WishRepository wishRepository;
   private final ProductRepository productRepository;
   private final UserRepository userRepository;
+  private final ProductThumbnailQueryService productThumbnailQueryService;
 
   @Transactional
   public WishResponse createWish(Long userId, Long productId) {
@@ -70,7 +74,13 @@ public class WishService {
         PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt", "id"));
     Page<Wish> wishes =
         wishRepository.findPublicWishesByUserId(userId, ProductStatus.DELETED, pageable);
-    return PageResponse.from(wishes.map(WishListItemResponse::from));
+    List<Long> productIds =
+        wishes.getContent().stream().map(wish -> wish.getProduct().getId()).toList();
+    Map<Long, String> thumbnailUrls = productThumbnailQueryService.getThumbnailUrls(productIds);
+
+    return PageResponse.from(
+        wishes.map(
+            wish -> WishListItemResponse.from(wish, thumbnailUrls.get(wish.getProduct().getId()))));
   }
 
   private User getUser(Long userId) {

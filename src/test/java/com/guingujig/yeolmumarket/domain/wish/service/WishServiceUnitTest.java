@@ -9,6 +9,7 @@ import com.guingujig.yeolmumarket.domain.category.entity.Category;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.product.service.ProductThumbnailQueryService;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.domain.wish.entity.Wish;
@@ -28,10 +29,13 @@ class WishServiceUnitTest {
   @Mock private WishRepository wishRepository;
   @Mock private ProductRepository productRepository;
   @Mock private UserRepository userRepository;
+  @Mock private ProductThumbnailQueryService productThumbnailQueryService;
 
   @Test
   void 저장_중_unique_제약_위반이_발생하면_중복_찜_에러로_변환한다() {
-    WishService wishService = new WishService(wishRepository, productRepository, userRepository);
+    WishService wishService =
+        new WishService(
+            wishRepository, productRepository, userRepository, productThumbnailQueryService);
     User user = new User("user@example.com", "encodedPassword", "열무유저");
     User seller = new User("seller@example.com", "encodedPassword", "열무판매자");
     Product product = Product.create(seller, "아이패드 미니 6", "생활기스", 450000, Category.create("디지털기기"));

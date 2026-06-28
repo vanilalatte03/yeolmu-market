@@ -18,12 +18,17 @@ public record ProductListItemResponse(
     OffsetDateTime createdAt) {
 
   public static ProductListItemResponse from(Product product, ProductWishSummary wishSummary) {
+    return from(product, wishSummary, null);
+  }
+
+  public static ProductListItemResponse from(
+      Product product, ProductWishSummary wishSummary, String thumbnailUrl) {
     return new ProductListItemResponse(
         product.getId(),
         product.getTitle(),
         product.getPrice(),
         product.getStatus(),
-        null,
+        thumbnailUrl,
         product.getSeller().getNickname(),
         wishSummary.wishCount(),
         wishSummary.wished(),

@@ -3,6 +3,10 @@ spring:
     import: optional:file:.env[.properties]
   application:
     name: yeolmu-market
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 25MB
   jpa:
     properties:
       hibernate:
@@ -33,3 +37,8 @@ yeolmu:
     search:
       products-v2:
         ttl: 5m
+  storage:
+    local:
+      root-path: build/uploads
+      public-base-url: /uploads
+      max-file-size: 5MB

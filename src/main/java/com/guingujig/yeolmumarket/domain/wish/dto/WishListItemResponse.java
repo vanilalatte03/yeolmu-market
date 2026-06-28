@@ -15,13 +15,17 @@ public record WishListItemResponse(
     OffsetDateTime wishedAt) {
 
   public static WishListItemResponse from(Wish wish) {
+    return from(wish, null);
+  }
+
+  public static WishListItemResponse from(Wish wish, String thumbnailUrl) {
     Product product = wish.getProduct();
     return new WishListItemResponse(
         product.getId(),
         product.getTitle(),
         product.getPrice(),
         product.getStatus(),
-        null,
+        thumbnailUrl,
         wish.getCreatedAt().atOffset(ZoneOffset.UTC));
   }
 }
