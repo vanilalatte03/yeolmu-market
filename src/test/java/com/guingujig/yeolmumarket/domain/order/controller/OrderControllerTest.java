@@ -1,7 +1,9 @@
 package com.guingujig.yeolmumarket.domain.order.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -16,11 +18,13 @@ import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -368,6 +372,218 @@ class OrderControllerTest {
         .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
   }
 
+  @Test
+  void 판매자가_PAID_주문_배송_증빙_등록하면_200으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = savePaidOrder(buyer, product);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            patch("/api/orders/{orderId}/shipping", order.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"trackingNumber\":\" 1234-5678-9012 \"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.orderId").value(order.getId()))
+        .andExpect(jsonPath("$.data.status").value("SHIPPING"))
+        .andExpect(jsonPath("$.data.trackingNumber").value("1234-5678-9012"))
+        .andExpect(jsonPath("$.data.shippedAt", matchesPattern(".*(Z|\\+00:00)$")));
+
+    Order shipped = orderRepository.findById(order.getId()).orElseThrow();
+    assertThat(shipped.getOrderStatus()).isEqualTo(OrderStatus.SHIPPING);
+  }
+
+  @Test
+  void 인증되지_않은_사용자가_배송_증빙_등록하면_401로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = savePaidOrder(buyer, product);
+
+    mockMvc
+        .perform(
+            patch("/api/orders/{orderId}/shipping", order.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"trackingNumber\":\"1234\"}"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+  }
+
+  @Test
+  void 구매자가_배송_증빙_등록하면_403으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = savePaidOrder(buyer, product);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            patch("/api/orders/{orderId}/shipping", order.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"trackingNumber\":\"1234\"}"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("ORDER_ACCESS_DENIED"));
+  }
+
+  @Test
+  void 존재하지_않는_주문_배송_증빙_등록하면_404로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            patch("/api/orders/{orderId}/shipping", Long.MAX_VALUE)
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"trackingNumber\":\"1234\"}"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("ORDER_NOT_FOUND"));
+  }
+
+  @Test
+  void 잘못된_송장_번호로_배송_증빙_등록하면_400으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = savePaidOrder(buyer, product);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            patch("/api/orders/{orderId}/shipping", order.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"trackingNumber\":\"   \"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+    mockMvc
+        .perform(
+            patch("/api/orders/{orderId}/shipping", order.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"trackingNumber\":\"" + "1".repeat(101) + "\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void PAID가_아닌_주문_배송_증빙_등록하면_409로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            patch("/api/orders/{orderId}/shipping", order.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"trackingNumber\":\"1234\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_ORDER_STATUS"));
+  }
+
+  @Test
+  void 구매자가_SHIPPING_주문_구매_확정하면_200으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            post("/api/orders/{orderId}/confirm", order.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.orderId").value(order.getId()))
+        .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+        .andExpect(jsonPath("$.data.productStatus").value("SOLD_OUT"))
+        .andExpect(jsonPath("$.data.confirmedAt", matchesPattern(".*(Z|\\+00:00)$")));
+
+    Product soldOut = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(soldOut.getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+  }
+
+  @Test
+  void 인증되지_않은_사용자가_구매_확정하면_401로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+
+    mockMvc
+        .perform(post("/api/orders/{orderId}/confirm", order.getId()))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+  }
+
+  @Test
+  void 판매자가_구매_확정하면_403으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            post("/api/orders/{orderId}/confirm", order.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("ORDER_ACCESS_DENIED"));
+  }
+
+  @Test
+  void 존재하지_않는_주문_구매_확정하면_404로_응답한다() throws Exception {
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            post("/api/orders/{orderId}/confirm", Long.MAX_VALUE)
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("ORDER_NOT_FOUND"));
+  }
+
+  @Test
+  void SHIPPING이_아닌_주문_구매_확정하면_409로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = savePaidOrder(buyer, product);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            post("/api/orders/{orderId}/confirm", order.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_ORDER_STATUS"));
+  }
+
   private User saveUser(String email, String nickname) {
     return userRepository.save(new User(email, passwordEncoder.encode("Password123!"), nickname));
   }
@@ -393,5 +609,17 @@ class OrderControllerTest {
     product.reserve();
     productRepository.save(product);
     return orderRepository.save(Order.create(buyer, product));
+  }
+
+  private Order savePaidOrder(User buyer, Product product) {
+    Order order = saveOrder(buyer, product);
+    order.markAsPaid();
+    return orderRepository.saveAndFlush(order);
+  }
+
+  private Order saveShippingOrder(User buyer, Product product) {
+    Order order = savePaidOrder(buyer, product);
+    order.registerShipping("1234-5678-9012", LocalDateTime.of(2026, 6, 24, 10, 0));
+    return orderRepository.saveAndFlush(order);
   }
 }
