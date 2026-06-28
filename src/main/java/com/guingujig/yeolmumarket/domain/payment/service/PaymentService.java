@@ -3,12 +3,14 @@ package com.guingujig.yeolmumarket.domain.payment.service;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
+import com.guingujig.yeolmumarket.domain.payment.dto.CancelPaymentResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.CreatePaymentRequest;
 import com.guingujig.yeolmumarket.domain.payment.dto.MockPaymentResult;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentDetailResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentStatusResponse;
 import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
+import com.guingujig.yeolmumarket.domain.payment.entity.PaymentStatus;
 import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
@@ -20,6 +22,7 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -121,6 +124,46 @@ public class PaymentService {
     return PaymentDetailResponse.from(payment);
   }
 
+  /**
+   * 로그인한 주문 구매자가 배송 증빙 등록 전 모의 결제를 취소한다.
+   *
+   * <p>PENDING 결제는 결제/주문을 CANCELED로, PAID 결제는 결제/주문을 REFUNDED로 전이하고 상품 예약을 해제한다. 결제, 주문, 상품 상태 변경은
+   * 하나의 트랜잭션에서 처리하며 상품이 ON_SALE로 복귀하면 검색 캐시 무효화 이벤트를 발행한다.
+   *
+   * @throws BusinessException VALIDATION_FAILED - trim한 취소 사유가 255자를 초과하는 경우
+   * @throws BusinessException PAYMENT_NOT_FOUND - 결제가 존재하지 않는 경우
+   * @throws BusinessException PAYMENT_ACCESS_DENIED - 주문 구매자가 아닌 사용자의 취소 요청
+   * @throws BusinessException INVALID_PAYMENT_STATUS - 취소할 수 없는 결제 또는 주문 상태, 또는 동시 취소 경합
+   */
+  @Transactional
+  public CancelPaymentResponse cancelPayment(Long buyerId, Long paymentId, String reason) {
+    String normalizedReason = normalizeCancelReason(reason);
+    Payment payment = fetchWithBuyerAuthCheckForUpdate(buyerId, paymentId);
+    Order order = payment.getOrder();
+
+    validateCancelable(payment, order);
+
+    LocalDateTime canceledAt = LocalDateTime.now(ZoneOffset.UTC);
+    if (payment.getStatus() == PaymentStatus.PENDING) {
+      payment.cancelPending(canceledAt, normalizedReason);
+      order.cancel();
+    } else {
+      payment.cancelPaid(canceledAt, normalizedReason);
+      order.cancelPaidPayment();
+    }
+    order.getProduct().cancelReservation();
+
+    try {
+      paymentRepository.flush();
+    } catch (ObjectOptimisticLockingFailureException e) {
+      throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
+    }
+
+    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+
+    return CancelPaymentResponse.from(payment);
+  }
+
   private Payment fetchWithAuthCheck(Long userId, Long paymentId) {
     Payment payment =
         paymentRepository
@@ -133,5 +176,43 @@ public class PaymentService {
       throw new BusinessException(ErrorCode.PAYMENT_ACCESS_DENIED);
     }
     return payment;
+  }
+
+  private Payment fetchWithBuyerAuthCheckForUpdate(Long buyerId, Long paymentId) {
+    Payment payment =
+        paymentRepository
+            .findWithOrderBuyerSellerAndProductByIdForUpdate(paymentId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+
+    Long orderBuyerId = payment.getOrder().getBuyer().getId();
+    if (!Objects.equals(orderBuyerId, buyerId)) {
+      throw new BusinessException(ErrorCode.PAYMENT_ACCESS_DENIED);
+    }
+    return payment;
+  }
+
+  private void validateCancelable(Payment payment, Order order) {
+    boolean pendingCancel =
+        payment.getStatus() == PaymentStatus.PENDING
+            && order.getOrderStatus() == OrderStatus.CREATED;
+    boolean paidCancel =
+        payment.getStatus() == PaymentStatus.PAID && order.getOrderStatus() == OrderStatus.PAID;
+    if (!pendingCancel && !paidCancel) {
+      throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
+    }
+  }
+
+  private String normalizeCancelReason(String reason) {
+    if (reason == null) {
+      return null;
+    }
+    String trimmedReason = reason.trim();
+    if (trimmedReason.isBlank()) {
+      return null;
+    }
+    if (trimmedReason.length() > 255) {
+      throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+    }
+    return trimmedReason;
   }
 }

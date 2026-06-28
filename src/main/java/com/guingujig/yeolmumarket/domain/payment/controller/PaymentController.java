@@ -1,5 +1,7 @@
 package com.guingujig.yeolmumarket.domain.payment.controller;
 
+import com.guingujig.yeolmumarket.domain.payment.dto.CancelPaymentRequest;
+import com.guingujig.yeolmumarket.domain.payment.dto.CancelPaymentResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.CreatePaymentRequest;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentDetailResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentResponse;
@@ -56,6 +58,17 @@ public class PaymentController {
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long paymentId) {
     PaymentDetailResponse response =
         paymentService.getPaymentDetail(authenticatedUser.userId(), paymentId);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
+  @PostMapping("/api/payments/{paymentId}/cancel")
+  public ResponseEntity<ApiResponse<CancelPaymentResponse>> cancelPayment(
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
+      @PathVariable Long paymentId,
+      @RequestBody(required = false) CancelPaymentRequest request) {
+    String reason = request != null ? request.reason() : null;
+    CancelPaymentResponse response =
+        paymentService.cancelPayment(authenticatedUser.userId(), paymentId, reason);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 }

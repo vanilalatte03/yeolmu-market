@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
+import com.guingujig.yeolmumarket.domain.payment.dto.CancelPaymentResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.CreatePaymentRequest;
 import com.guingujig.yeolmumarket.domain.payment.dto.MockPaymentResult;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentDetailResponse;
@@ -23,6 +24,7 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import java.lang.reflect.RecordComponent;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -608,6 +610,281 @@ class PaymentServiceTest {
   }
 
   @Test
+  void 구매자가_PENDING_결제를_취소하면_결제_주문은_CANCELED_상품은_ON_SALE이_된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment = savePendingPayment(order, "idem-key-001");
+
+    CancelPaymentResponse response =
+        paymentService.cancelPayment(buyer.getId(), payment.getId(), null);
+
+    assertThat(response.paymentId()).isEqualTo(payment.getId());
+    assertThat(response.orderId()).isEqualTo(order.getId());
+    assertThat(response.status()).isEqualTo(PaymentStatus.CANCELED);
+    assertThat(response.orderStatus()).isEqualTo(OrderStatus.CANCELED);
+    assertThat(response.productStatus()).isEqualTo(ProductStatus.ON_SALE);
+    assertThat(response.canceledAt()).isNotNull();
+    assertThat(response.canceledAt().getOffset()).isEqualTo(ZoneOffset.UTC);
+
+    Payment canceledPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+    Order canceledOrder = orderRepository.findById(order.getId()).orElseThrow();
+    Product onSaleProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(canceledPayment.getStatus()).isEqualTo(PaymentStatus.CANCELED);
+    assertThat(canceledPayment.getCanceledAt()).isNotNull();
+    assertThat(canceledOrder.getOrderStatus()).isEqualTo(OrderStatus.CANCELED);
+    assertThat(onSaleProduct.getStatus()).isEqualTo(ProductStatus.ON_SALE);
+  }
+
+  @Test
+  void 구매자가_PAID_결제를_취소하면_결제_주문은_REFUNDED_상품은_ON_SALE이_된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment = savePaidPayment(order, "idem-key-001");
+
+    CancelPaymentResponse response =
+        paymentService.cancelPayment(buyer.getId(), payment.getId(), "배송 전 취소");
+
+    assertThat(response.status()).isEqualTo(PaymentStatus.REFUNDED);
+    assertThat(response.orderStatus()).isEqualTo(OrderStatus.REFUNDED);
+    assertThat(response.productStatus()).isEqualTo(ProductStatus.ON_SALE);
+    assertThat(response.canceledAt()).isNotNull();
+
+    Payment refundedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+    Order refundedOrder = orderRepository.findById(order.getId()).orElseThrow();
+    Product onSaleProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(refundedPayment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
+    assertThat(refundedPayment.getCancelReason()).isEqualTo("배송 전 취소");
+    assertThat(refundedOrder.getOrderStatus()).isEqualTo(OrderStatus.REFUNDED);
+    assertThat(onSaleProduct.getStatus()).isEqualTo(ProductStatus.ON_SALE);
+  }
+
+  @Test
+  void 같은_결제를_동시_취소하면_하나만_성공하고_나머지는_INVALID_PAYMENT_STATUS가_발생한다() throws InterruptedException {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment = savePaidPayment(order, "idem-key-001");
+
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch doneLatch = new CountDownLatch(2);
+    AtomicInteger successCount = new AtomicInteger(0);
+    CopyOnWriteArrayList<Throwable> failures = new CopyOnWriteArrayList<>();
+
+    for (int i = 0; i < 2; i++) {
+      executor.submit(
+          () -> {
+            try {
+              startLatch.await();
+              paymentService.cancelPayment(buyer.getId(), payment.getId(), "동시 취소");
+              successCount.incrementAndGet();
+            } catch (Exception e) {
+              failures.add(e);
+            } finally {
+              doneLatch.countDown();
+            }
+          });
+    }
+
+    startLatch.countDown();
+    boolean allDone = doneLatch.await(10, TimeUnit.SECONDS);
+    executor.shutdownNow();
+    executor.awaitTermination(5, TimeUnit.SECONDS);
+
+    assertThat(allDone).as("모든 취소 스레드가 10초 내에 완료되어야 합니다").isTrue();
+    assertThat(successCount.get()).isEqualTo(1);
+    assertThat(failures).hasSize(1);
+    assertThat(failures.get(0)).isInstanceOf(BusinessException.class);
+    assertThat(((BusinessException) failures.get(0)).getErrorCode())
+        .isEqualTo(ErrorCode.INVALID_PAYMENT_STATUS);
+
+    Payment refundedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+    Order refundedOrder = orderRepository.findById(order.getId()).orElseThrow();
+    Product onSaleProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(refundedPayment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
+    assertThat(refundedOrder.getOrderStatus()).isEqualTo(OrderStatus.REFUNDED);
+    assertThat(onSaleProduct.getStatus()).isEqualTo(ProductStatus.ON_SALE);
+  }
+
+  @Test
+  void 취소_사유는_trim해서_저장하고_취소_응답에는_노출하지_않는다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment = savePaidPayment(order, "idem-key-001");
+
+    CancelPaymentResponse response =
+        paymentService.cancelPayment(buyer.getId(), payment.getId(), "  단순 변심  ");
+
+    Payment reloadedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+    assertThat(reloadedPayment.getCancelReason()).isEqualTo("단순 변심");
+    assertThat(response.getClass().getRecordComponents())
+        .extracting(RecordComponent::getName)
+        .containsExactly(
+            "paymentId", "orderId", "status", "orderStatus", "productStatus", "canceledAt");
+  }
+
+  @Test
+  void 취소_사유가_blank이면_저장하지_않는다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment = savePaidPayment(order, "idem-key-001");
+
+    paymentService.cancelPayment(buyer.getId(), payment.getId(), "   ");
+
+    Payment reloadedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+    assertThat(reloadedPayment.getCancelReason()).isNull();
+  }
+
+  @Test
+  void 취소_사유가_255자를_초과하면_VALIDATION_FAILED가_발생하고_상태는_변경되지_않는다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment = savePaidPayment(order, "idem-key-001");
+
+    assertThatThrownBy(
+            () -> paymentService.cancelPayment(buyer.getId(), payment.getId(), "a".repeat(256)))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+
+    Payment reloadedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+    Order reloadedOrder = orderRepository.findById(order.getId()).orElseThrow();
+    Product reloadedProduct = productRepository.findById(product.getId()).orElseThrow();
+    assertThat(reloadedPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
+    assertThat(reloadedPayment.getCanceledAt()).isNull();
+    assertThat(reloadedOrder.getOrderStatus()).isEqualTo(OrderStatus.PAID);
+    assertThat(reloadedProduct.getStatus()).isEqualTo(ProductStatus.RESERVED);
+  }
+
+  @Test
+  void 판매자가_결제_취소를_요청하면_PAYMENT_ACCESS_DENIED가_발생한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment = savePaidPayment(order, "idem-key-001");
+
+    assertThatThrownBy(() -> paymentService.cancelPayment(seller.getId(), payment.getId(), null))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_ACCESS_DENIED));
+  }
+
+  @Test
+  void 주문_참여자가_아닌_사용자가_결제_취소를_요청하면_PAYMENT_ACCESS_DENIED가_발생한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User other = saveUser("other@example.com", "타인");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment = savePaidPayment(order, "idem-key-001");
+
+    assertThatThrownBy(() -> paymentService.cancelPayment(other.getId(), payment.getId(), null))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_ACCESS_DENIED));
+  }
+
+  @Test
+  void 존재하지_않는_결제_취소는_PAYMENT_NOT_FOUND가_발생한다() {
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+
+    assertThatThrownBy(() -> paymentService.cancelPayment(buyer.getId(), Long.MAX_VALUE, null))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_NOT_FOUND));
+  }
+
+  @Test
+  void FAILED_CANCELED_REFUNDED_결제는_취소할_수_없다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    PaymentStatus[] invalidStatuses = {
+      PaymentStatus.FAILED, PaymentStatus.CANCELED, PaymentStatus.REFUNDED
+    };
+
+    for (PaymentStatus invalidStatus : invalidStatuses) {
+      Product product = saveProduct(seller, "상품-" + invalidStatus, 430000);
+      Order order = saveOrder(buyer, product);
+      Payment payment = savePaidPayment(order, "idem-key-" + invalidStatus);
+      ReflectionTestUtils.setField(payment, "status", invalidStatus);
+      paymentRepository.saveAndFlush(payment);
+
+      assertThatThrownBy(() -> paymentService.cancelPayment(buyer.getId(), payment.getId(), null))
+          .as("%s 결제는 취소할 수 없어야 합니다", invalidStatus)
+          .isInstanceOfSatisfying(
+              BusinessException.class,
+              e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_PAYMENT_STATUS));
+
+      Payment reloadedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+      Order reloadedOrder = orderRepository.findById(order.getId()).orElseThrow();
+      Product reloadedProduct = productRepository.findById(product.getId()).orElseThrow();
+      assertThat(reloadedPayment.getStatus()).isEqualTo(invalidStatus);
+      assertThat(reloadedOrder.getOrderStatus()).isEqualTo(OrderStatus.PAID);
+      assertThat(reloadedProduct.getStatus()).isEqualTo(ProductStatus.RESERVED);
+    }
+  }
+
+  @Test
+  void PAID_결제라도_배송_이후_주문_상태이면_INVALID_PAYMENT_STATUS가_발생하고_상태는_변경되지_않는다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    OrderStatus[] invalidOrderStatuses = {
+      OrderStatus.SHIPPING,
+      OrderStatus.COMPLETED,
+      OrderStatus.REFUND_REQUESTED,
+      OrderStatus.DISPUTED
+    };
+
+    for (OrderStatus invalidOrderStatus : invalidOrderStatuses) {
+      Product product = saveProduct(seller, "상품-" + invalidOrderStatus, 430000);
+      Order order = saveOrder(buyer, product);
+      Payment payment = savePaidPayment(order, "idem-key-" + invalidOrderStatus);
+      ReflectionTestUtils.setField(order, "orderStatus", invalidOrderStatus);
+      orderRepository.saveAndFlush(order);
+
+      assertThatThrownBy(() -> paymentService.cancelPayment(buyer.getId(), payment.getId(), null))
+          .as("%s 주문 연결 결제는 취소할 수 없어야 합니다", invalidOrderStatus)
+          .isInstanceOfSatisfying(
+              BusinessException.class,
+              e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_PAYMENT_STATUS));
+
+      Payment reloadedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+      Order reloadedOrder = orderRepository.findById(order.getId()).orElseThrow();
+      Product reloadedProduct = productRepository.findById(product.getId()).orElseThrow();
+      assertThat(reloadedPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
+      assertThat(reloadedPayment.getCanceledAt()).isNull();
+      assertThat(reloadedOrder.getOrderStatus()).isEqualTo(invalidOrderStatus);
+      assertThat(reloadedProduct.getStatus()).isEqualTo(ProductStatus.RESERVED);
+    }
+  }
+
+  @Test
+  void 결제_취소_성공_시_검색_캐시_무효화_이벤트가_발행된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveOrder(buyer, product);
+    Payment payment = savePaidPayment(order, "idem-key-001");
+
+    paymentService.cancelPayment(buyer.getId(), payment.getId(), null);
+
+    assertThat(applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count())
+        .isEqualTo(1);
+  }
+
+  @Test
   void 멱등키가_blank이면_VALIDATION_FAILED가_발생한다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
@@ -624,6 +901,23 @@ class PaymentServiceTest {
         .isInstanceOfSatisfying(
             BusinessException.class,
             e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+  }
+
+  private Payment savePendingPayment(Order order, String idempotencyKey) {
+    Payment payment =
+        Payment.createPaid(
+            order, PaymentMethod.MOCK_CARD, idempotencyKey, LocalDateTime.now(ZoneOffset.UTC));
+    ReflectionTestUtils.setField(payment, "status", PaymentStatus.PENDING);
+    ReflectionTestUtils.setField(payment, "paidAt", null);
+    return paymentRepository.saveAndFlush(payment);
+  }
+
+  private Payment savePaidPayment(Order order, String idempotencyKey) {
+    order.markAsPaid();
+    orderRepository.saveAndFlush(order);
+    return paymentRepository.saveAndFlush(
+        Payment.createPaid(
+            order, PaymentMethod.MOCK_CARD, idempotencyKey, LocalDateTime.now(ZoneOffset.UTC)));
   }
 
   private void deleteAll() {
