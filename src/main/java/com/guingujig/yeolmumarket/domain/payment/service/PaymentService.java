@@ -138,7 +138,7 @@ public class PaymentService {
   @Transactional
   public CancelPaymentResponse cancelPayment(Long buyerId, Long paymentId, String reason) {
     String normalizedReason = normalizeCancelReason(reason);
-    Payment payment = fetchWithBuyerAuthCheckForUpdate(buyerId, paymentId);
+    Payment payment = fetchWithBuyerAuthCheckAfterOrderLock(buyerId, paymentId);
     Order order = payment.getOrder();
 
     validateCancelable(payment, order);
@@ -178,7 +178,17 @@ public class PaymentService {
     return payment;
   }
 
-  private Payment fetchWithBuyerAuthCheckForUpdate(Long buyerId, Long paymentId) {
+  private Payment fetchWithBuyerAuthCheckAfterOrderLock(Long buyerId, Long paymentId) {
+    // 주문 락 전에 Order 엔티티를 올리면 persistence context에 stale 상태가 남을 수 있다.
+    Long orderId =
+        paymentRepository
+            .findOrderIdById(paymentId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+
+    orderRepository
+        .findByIdForUpdate(orderId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+
     Payment payment =
         paymentRepository
             .findWithOrderBuyerSellerAndProductByIdForUpdate(paymentId)
