@@ -1,11 +1,14 @@
 package com.guingujig.yeolmumarket.domain.review.repository;
 
+import com.guingujig.yeolmumarket.domain.review.dto.ReviewRatingSummary;
 import com.guingujig.yeolmumarket.domain.review.entity.Review;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface ReviewRepository extends JpaRepository<Review, Long> {
 
@@ -19,4 +22,15 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 
   @EntityGraph(attributePaths = {"order", "reviewer"})
   Page<Review> findByRevieweeId(Long revieweeId, Pageable pageable);
+
+  @Query(
+      """
+      select new com.guingujig.yeolmumarket.domain.review.dto.ReviewRatingSummary(
+        coalesce(avg(review.score), 0.0),
+        count(review)
+      )
+      from Review review
+      where review.reviewee.id = :revieweeId
+      """)
+  ReviewRatingSummary findRatingSummaryByRevieweeId(@Param("revieweeId") Long revieweeId);
 }
