@@ -178,19 +178,6 @@ public class PaymentService {
     return payment;
   }
 
-  private Payment fetchWithBuyerAuthCheck(Long buyerId, Long paymentId) {
-    Payment payment =
-        paymentRepository
-            .findWithOrderBuyerSellerAndProductById(paymentId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
-
-    Long orderBuyerId = payment.getOrder().getBuyer().getId();
-    if (!Objects.equals(orderBuyerId, buyerId)) {
-      throw new BusinessException(ErrorCode.PAYMENT_ACCESS_DENIED);
-    }
-    return payment;
-  }
-
   private Payment fetchWithBuyerAuthCheckForUpdate(Long buyerId, Long paymentId) {
     Payment payment =
         paymentRepository
