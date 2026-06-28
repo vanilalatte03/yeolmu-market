@@ -74,6 +74,16 @@ public class Review extends BaseTimeEntity {
     return review;
   }
 
+  public void update(Integer score, String content) {
+    if (score != null) {
+      validateScore(score);
+      this.score = score;
+    }
+    if (content != null) {
+      this.content = requireContent(content);
+    }
+  }
+
   private static void validateScore(Integer score) {
     if (score == null || score < 1 || score > 5) {
       throw new IllegalArgumentException("리뷰 점수는 1점 이상 5점 이하여야 합니다.");
@@ -104,9 +114,13 @@ public class Review extends BaseTimeEntity {
   }
 
   private static String requireContent(String content) {
-    if (content == null || content.isBlank()) {
+    if (content == null) {
       throw new IllegalArgumentException("리뷰 내용은 필수입니다.");
     }
-    return content;
+    String normalizedContent = content.trim();
+    if (normalizedContent.isBlank() || normalizedContent.length() > 255) {
+      throw new IllegalArgumentException("리뷰 내용은 255자 이하의 필수 값입니다.");
+    }
+    return normalizedContent;
   }
 }
