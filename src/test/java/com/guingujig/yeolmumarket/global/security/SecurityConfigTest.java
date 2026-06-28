@@ -18,7 +18,10 @@ import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepos
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.entity.UserRole;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.global.config.LocalProductImageStorageProperties;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,17 +50,20 @@ class SecurityConfigTest {
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
+  private final LocalProductImageStorageProperties storageProperties;
 
   @Autowired
   SecurityConfigTest(
       MockMvc mockMvc,
       UserRepository userRepository,
       PasswordEncoder passwordEncoder,
-      JwtTokenProvider jwtTokenProvider) {
+      JwtTokenProvider jwtTokenProvider,
+      LocalProductImageStorageProperties storageProperties) {
     this.mockMvc = mockMvc;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
     this.jwtTokenProvider = jwtTokenProvider;
+    this.storageProperties = storageProperties;
   }
 
   @Test
@@ -96,6 +102,17 @@ class SecurityConfigTest {
   @Test
   void 웹소켓_handshake는_HTTP_인증_없이_보안_필터를_통과한다() throws Exception {
     mockMvc.perform(get("/ws")).andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void 업로드된_상품_이미지는_인증_없이_조회할_수_있다() throws Exception {
+    Path imagePath = storageProperties.rootPath().resolve("products/1/security-public-image.png");
+    Files.createDirectories(imagePath.getParent());
+    Files.write(imagePath, "image".getBytes());
+
+    mockMvc
+        .perform(get("/uploads/products/1/security-public-image.png"))
+        .andExpect(status().isOk());
   }
 
   @Test
