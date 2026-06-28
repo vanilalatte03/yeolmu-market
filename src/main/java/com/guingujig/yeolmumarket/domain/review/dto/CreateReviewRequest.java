@@ -1,0 +1,9 @@
+package com.guingujig.yeolmumarket.domain.review.dto;
+
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+
+public record CreateReviewRequest(
+    @NotNull @Min(1) @Max(5) Integer score, @NotBlank String content) {}

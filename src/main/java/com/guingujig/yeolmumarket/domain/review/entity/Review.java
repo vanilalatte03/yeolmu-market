@@ -104,9 +104,13 @@ public class Review extends BaseTimeEntity {
   }
 
   private static String requireContent(String content) {
-    if (content == null || content.isBlank()) {
+    if (content == null) {
       throw new IllegalArgumentException("리뷰 내용은 필수입니다.");
     }
-    return content;
+    String normalizedContent = content.trim();
+    if (normalizedContent.isBlank() || normalizedContent.length() > 255) {
+      throw new IllegalArgumentException("리뷰 내용은 255자 이하의 필수 값입니다.");
+    }
+    return normalizedContent;
   }
 }
