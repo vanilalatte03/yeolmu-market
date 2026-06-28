@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
+import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
@@ -17,6 +18,7 @@ import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.domain.wish.entity.Wish;
 import com.guingujig.yeolmumarket.domain.wish.repository.WishRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
+import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -37,6 +39,7 @@ class WishControllerTest {
   private final MockMvc mockMvc;
   private final UserRepository userRepository;
   private final ProductRepository productRepository;
+  private final CategoryRepository categoryRepository;
   private final WishRepository wishRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
@@ -46,12 +49,14 @@ class WishControllerTest {
       MockMvc mockMvc,
       UserRepository userRepository,
       ProductRepository productRepository,
+      CategoryRepository categoryRepository,
       WishRepository wishRepository,
       PasswordEncoder passwordEncoder,
       JwtTokenProvider jwtTokenProvider) {
     this.mockMvc = mockMvc;
     this.userRepository = userRepository;
     this.productRepository = productRepository;
+    this.categoryRepository = categoryRepository;
     this.wishRepository = wishRepository;
     this.passwordEncoder = passwordEncoder;
     this.jwtTokenProvider = jwtTokenProvider;
@@ -192,7 +197,8 @@ class WishControllerTest {
   }
 
   private Product saveProduct(User seller) {
-    return productRepository.save(Product.create(seller, "아이패드 미니 6", "생활기스", 450000));
+    return ProductTestFactory.saveProduct(
+        productRepository, categoryRepository, seller, "아이패드 미니 6", "생활기스", 450000);
   }
 
   private User saveUser(String email, String nickname) {

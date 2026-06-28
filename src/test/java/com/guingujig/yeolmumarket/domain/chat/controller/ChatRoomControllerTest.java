@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
+import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.chat.entity.ChatMessage;
 import com.guingujig.yeolmumarket.domain.chat.entity.ChatRoom;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatMessageRepository;
@@ -16,6 +17,7 @@ import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
+import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -36,6 +38,7 @@ class ChatRoomControllerTest {
   private final MockMvc mockMvc;
   private final UserRepository userRepository;
   private final ProductRepository productRepository;
+  private final CategoryRepository categoryRepository;
   private final ChatRoomRepository chatRoomRepository;
   private final ChatMessageRepository chatMessageRepository;
   private final PasswordEncoder passwordEncoder;
@@ -46,6 +49,7 @@ class ChatRoomControllerTest {
       MockMvc mockMvc,
       UserRepository userRepository,
       ProductRepository productRepository,
+      CategoryRepository categoryRepository,
       ChatRoomRepository chatRoomRepository,
       ChatMessageRepository chatMessageRepository,
       PasswordEncoder passwordEncoder,
@@ -53,6 +57,7 @@ class ChatRoomControllerTest {
     this.mockMvc = mockMvc;
     this.userRepository = userRepository;
     this.productRepository = productRepository;
+    this.categoryRepository = categoryRepository;
     this.chatRoomRepository = chatRoomRepository;
     this.chatMessageRepository = chatMessageRepository;
     this.passwordEncoder = passwordEncoder;
@@ -63,7 +68,7 @@ class ChatRoomControllerTest {
   void 인증된_구매자는_상품_채팅방을_생성할_수_있다() throws Exception {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
-    Product product = productRepository.save(Product.create(seller, "아이패드 미니 6", "생활기스", 450000));
+    Product product = saveProduct(seller);
     String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
 
     mockMvc
@@ -96,7 +101,7 @@ class ChatRoomControllerTest {
   void 인증된_사용자는_내_채팅방_목록을_조회할_수_있다() throws Exception {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
-    Product product = productRepository.save(Product.create(seller, "아이패드 미니 6", "생활기스", 450000));
+    Product product = saveProduct(seller);
     ChatRoom chatRoom = chatRoomRepository.saveAndFlush(ChatRoom.create(product, buyer, seller));
     chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, buyer, "거래 가능할까요?"));
     String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
@@ -123,7 +128,7 @@ class ChatRoomControllerTest {
   void 인증된_참여자는_이전_메시지를_조회할_수_있다() throws Exception {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
-    Product product = productRepository.save(Product.create(seller, "아이패드 미니 6", "생활기스", 450000));
+    Product product = saveProduct(seller);
     ChatRoom chatRoom = chatRoomRepository.saveAndFlush(ChatRoom.create(product, buyer, seller));
     chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, buyer, "거래 가능할까요?"));
     ChatMessage secondMessage =
@@ -175,7 +180,7 @@ class ChatRoomControllerTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     User otherUser = saveUser("other@example.com", "열무구경꾼");
-    Product product = productRepository.save(Product.create(seller, "아이패드 미니 6", "생활기스", 450000));
+    Product product = saveProduct(seller);
     ChatRoom chatRoom = chatRoomRepository.saveAndFlush(ChatRoom.create(product, buyer, seller));
     String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(otherUser);
 
@@ -259,5 +264,10 @@ class ChatRoomControllerTest {
 
   private User saveUser(String email, String nickname) {
     return userRepository.save(new User(email, passwordEncoder.encode("Password123!"), nickname));
+  }
+
+  private Product saveProduct(User seller) {
+    return ProductTestFactory.saveProduct(
+        productRepository, categoryRepository, seller, "아이패드 미니 6", "생활기스", 450000);
   }
 }

@@ -2,10 +2,12 @@ package com.guingujig.yeolmumarket.domain.product.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,11 +25,16 @@ class ProductRepositoryTest {
   private static final LocalDateTime DELETED_AT = LocalDateTime.of(2026, 6, 24, 10, 0);
 
   private final ProductRepository productRepository;
+  private final CategoryRepository categoryRepository;
   private final UserRepository userRepository;
 
   @Autowired
-  ProductRepositoryTest(ProductRepository productRepository, UserRepository userRepository) {
+  ProductRepositoryTest(
+      ProductRepository productRepository,
+      CategoryRepository categoryRepository,
+      UserRepository userRepository) {
     this.productRepository = productRepository;
+    this.categoryRepository = categoryRepository;
     this.userRepository = userRepository;
   }
 
@@ -63,6 +70,7 @@ class ProductRepositoryTest {
 
   private void deleteAll() {
     productRepository.deleteAll();
+    categoryRepository.deleteAll();
     userRepository.deleteAll();
   }
 
@@ -71,25 +79,28 @@ class ProductRepositoryTest {
   }
 
   private Product saveProduct(User seller, String title, Integer price) {
-    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
-    return productRepository.saveAndFlush(product);
+    return ProductTestFactory.saveProduct(
+        productRepository, categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
   }
 
   private Product saveHiddenProduct(User seller, String title, Integer price) {
-    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    Product product =
+        ProductTestFactory.createProduct(categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
     product.changeHidden(true);
     return productRepository.saveAndFlush(product);
   }
 
   private Product saveDeletedAtHiddenProduct(User seller, String title, Integer price) {
-    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    Product product =
+        ProductTestFactory.createProduct(categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
     product.changeHidden(true);
     ReflectionTestUtils.setField(product, "deletedAt", DELETED_AT);
     return productRepository.saveAndFlush(product);
   }
 
   private Product saveDeletedStatusHiddenProduct(User seller, String title, Integer price) {
-    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    Product product =
+        ProductTestFactory.createProduct(categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
     product.changeHidden(true);
     ReflectionTestUtils.setField(product, "status", ProductStatus.DELETED);
     return productRepository.saveAndFlush(product);

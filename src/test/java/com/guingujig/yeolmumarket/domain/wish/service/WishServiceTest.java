@@ -3,6 +3,7 @@ package com.guingujig.yeolmumarket.domain.wish.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
@@ -15,6 +16,7 @@ import com.guingujig.yeolmumarket.domain.wish.repository.WishRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
+import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import org.junit.jupiter.api.AfterEach;
@@ -32,6 +34,7 @@ class WishServiceTest {
   private final WishService wishService;
   private final WishRepository wishRepository;
   private final ProductRepository productRepository;
+  private final CategoryRepository categoryRepository;
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
   private final JdbcTemplate jdbcTemplate;
@@ -41,12 +44,14 @@ class WishServiceTest {
       WishService wishService,
       WishRepository wishRepository,
       ProductRepository productRepository,
+      CategoryRepository categoryRepository,
       UserRepository userRepository,
       PasswordEncoder passwordEncoder,
       JdbcTemplate jdbcTemplate) {
     this.wishService = wishService;
     this.wishRepository = wishRepository;
     this.productRepository = productRepository;
+    this.categoryRepository = categoryRepository;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
     this.jdbcTemplate = jdbcTemplate;
@@ -258,15 +263,18 @@ class WishServiceTest {
   private void deleteAll() {
     wishRepository.deleteAll();
     productRepository.deleteAll();
+    categoryRepository.deleteAll();
     userRepository.deleteAll();
   }
 
   private Product saveProduct(User seller) {
-    return productRepository.save(Product.create(seller, "아이패드 미니 6", "생활기스", 450000));
+    return ProductTestFactory.saveProduct(
+        productRepository, categoryRepository, seller, "아이패드 미니 6", "생활기스", 450000);
   }
 
   private Product saveProduct(User seller, String title, Integer price) {
-    return productRepository.save(Product.create(seller, title, "생활기스", price));
+    return ProductTestFactory.saveProduct(
+        productRepository, categoryRepository, seller, title, "생활기스", price);
   }
 
   private Wish saveWishAt(User user, Product product, LocalDateTime wishedAt) {

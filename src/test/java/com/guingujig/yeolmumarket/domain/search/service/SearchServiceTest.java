@@ -7,6 +7,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import com.guingujig.yeolmumarket.domain.category.entity.Category;
+import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.order.dto.CreateOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.order.service.OrderService;
@@ -29,6 +31,7 @@ import com.guingujig.yeolmumarket.global.config.SearchCacheProperties;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
+import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -64,6 +67,7 @@ class SearchServiceTest {
   private final ProductService productService;
   private final OrderService orderService;
   private final ProductRepository productRepository;
+  private final CategoryRepository categoryRepository;
   private final OrderRepository orderRepository;
   private final UserRepository userRepository;
   private final WishRepository wishRepository;
@@ -77,6 +81,7 @@ class SearchServiceTest {
       ProductService productService,
       OrderService orderService,
       ProductRepository productRepository,
+      CategoryRepository categoryRepository,
       OrderRepository orderRepository,
       UserRepository userRepository,
       WishRepository wishRepository,
@@ -87,6 +92,7 @@ class SearchServiceTest {
     this.productService = productService;
     this.orderService = orderService;
     this.productRepository = productRepository;
+    this.categoryRepository = categoryRepository;
     this.orderRepository = orderRepository;
     this.userRepository = userRepository;
     this.wishRepository = wishRepository;
@@ -493,7 +499,10 @@ class SearchServiceTest {
     SearchProductRequest request = request(null, null, null, ProductStatus.ON_SALE);
 
     searchService.searchProductsV2(request);
-    productService.createProduct(seller.getId(), new CreateProductRequest("새 상품", "설명", 20000));
+    Category category = saveCategory("디지털기기");
+
+    productService.createProduct(
+        seller.getId(), new CreateProductRequest("새 상품", "설명", 20000, category.getId()));
     PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
 
     assertThat(response.content())
@@ -509,7 +518,7 @@ class SearchServiceTest {
 
     searchService.searchProductsV2(request);
     productService.updateProduct(
-        seller.getId(), product.getId(), new UpdateProductRequest("변경 후 상품", "수정 설명", 20000));
+        seller.getId(), product.getId(), new UpdateProductRequest("변경 후 상품", "수정 설명", 20000, null));
     PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
 
     assertThat(response.content())
@@ -649,6 +658,7 @@ class SearchServiceTest {
     orderRepository.deleteAll();
     wishRepository.deleteAll();
     productRepository.deleteAll();
+    categoryRepository.deleteAll();
     userRepository.deleteAll();
   }
 
@@ -665,8 +675,8 @@ class SearchServiceTest {
   }
 
   private Product saveProduct(User seller, String title, String description, Integer price) {
-    Product product = Product.create(seller, title, description, price);
-    return productRepository.saveAndFlush(product);
+    return ProductTestFactory.saveProduct(
+        productRepository, categoryRepository, seller, title, description, price);
   }
 
   private void saveWish(User user, Product product) {
@@ -675,22 +685,29 @@ class SearchServiceTest {
 
   private Product saveProductWithStatus(
       User seller, String title, String description, Integer price, ProductStatus status) {
-    Product product = Product.create(seller, title, description, price);
+    Product product =
+        ProductTestFactory.createProduct(categoryRepository, seller, title, description, price);
     ReflectionTestUtils.setField(product, "status", status);
     return productRepository.saveAndFlush(product);
   }
 
   private Product saveHiddenProduct(User seller, String title, String description, Integer price) {
-    Product product = Product.create(seller, title, description, price);
+    Product product =
+        ProductTestFactory.createProduct(categoryRepository, seller, title, description, price);
     ReflectionTestUtils.setField(product, "hidden", true);
     return productRepository.saveAndFlush(product);
   }
 
   private Product saveProductWithDeletedAtOnly(
       User seller, String title, String description, Integer price) {
-    Product product = Product.create(seller, title, description, price);
+    Product product =
+        ProductTestFactory.createProduct(categoryRepository, seller, title, description, price);
     ReflectionTestUtils.setField(product, "deletedAt", LocalDateTime.of(2026, 6, 24, 0, 0));
     return productRepository.saveAndFlush(product);
+  }
+
+  private Category saveCategory(String name) {
+    return categoryRepository.saveAndFlush(Category.create(name));
   }
 
   private byte[] toBytes(ByteBuffer byteBuffer) {

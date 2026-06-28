@@ -23,7 +23,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.util.ReflectionTestUtils;
 
 @SpringBootTest
 class CategoryServiceTest {
@@ -193,8 +192,7 @@ class CategoryServiceTest {
   }
 
   private void saveProduct(User seller, Category category) {
-    Product product = Product.create(seller, "아이패드 미니 6", "생활기스 조금 있습니다.", 450000);
-    ReflectionTestUtils.setField(product, "category", category);
+    Product product = Product.create(seller, "아이패드 미니 6", "생활기스 조금 있습니다.", 450000, category);
     productRepository.saveAndFlush(product);
   }
 }

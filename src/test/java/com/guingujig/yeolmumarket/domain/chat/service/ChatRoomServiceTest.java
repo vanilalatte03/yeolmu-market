@@ -3,6 +3,7 @@ package com.guingujig.yeolmumarket.domain.chat.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.chat.dto.ChatMessagesResponse;
 import com.guingujig.yeolmumarket.domain.chat.dto.ChatRoomListItemResponse;
 import com.guingujig.yeolmumarket.domain.chat.dto.CreateChatRoomResponse;
@@ -18,6 +19,7 @@ import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
+import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -41,6 +43,7 @@ class ChatRoomServiceTest {
   private final ChatRoomRepository chatRoomRepository;
   private final ChatMessageRepository chatMessageRepository;
   private final ProductRepository productRepository;
+  private final CategoryRepository categoryRepository;
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
 
@@ -50,12 +53,14 @@ class ChatRoomServiceTest {
       ChatRoomRepository chatRoomRepository,
       ChatMessageRepository chatMessageRepository,
       ProductRepository productRepository,
+      CategoryRepository categoryRepository,
       UserRepository userRepository,
       PasswordEncoder passwordEncoder) {
     this.chatRoomService = chatRoomService;
     this.chatRoomRepository = chatRoomRepository;
     this.chatMessageRepository = chatMessageRepository;
     this.productRepository = productRepository;
+    this.categoryRepository = categoryRepository;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
   }
@@ -74,6 +79,7 @@ class ChatRoomServiceTest {
     chatMessageRepository.deleteAll();
     chatRoomRepository.deleteAll();
     productRepository.deleteAll();
+    categoryRepository.deleteAll();
     userRepository.deleteAll();
   }
 
@@ -437,7 +443,8 @@ class ChatRoomServiceTest {
   }
 
   private Product saveProduct(User seller) {
-    return productRepository.save(Product.create(seller, "아이패드 미니 6", "생활기스", 450000));
+    return ProductTestFactory.saveProduct(
+        productRepository, categoryRepository, seller, "아이패드 미니 6", "생활기스", 450000);
   }
 
   private User saveUser(String email, String nickname) {

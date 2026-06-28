@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
+import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
@@ -15,6 +16,7 @@ import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
+import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -36,6 +38,7 @@ class UserOrderControllerTest {
   private final MockMvc mockMvc;
   private final UserRepository userRepository;
   private final ProductRepository productRepository;
+  private final CategoryRepository categoryRepository;
   private final OrderRepository orderRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
@@ -45,12 +48,14 @@ class UserOrderControllerTest {
       MockMvc mockMvc,
       UserRepository userRepository,
       ProductRepository productRepository,
+      CategoryRepository categoryRepository,
       OrderRepository orderRepository,
       PasswordEncoder passwordEncoder,
       JwtTokenProvider jwtTokenProvider) {
     this.mockMvc = mockMvc;
     this.userRepository = userRepository;
     this.productRepository = productRepository;
+    this.categoryRepository = categoryRepository;
     this.orderRepository = orderRepository;
     this.passwordEncoder = passwordEncoder;
     this.jwtTokenProvider = jwtTokenProvider;
@@ -300,7 +305,8 @@ class UserOrderControllerTest {
   }
 
   private Product saveProduct(User seller, String title, Integer price) {
-    return productRepository.saveAndFlush(Product.create(seller, title, "생활기스 조금 있습니다.", price));
+    return ProductTestFactory.saveProduct(
+        productRepository, categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
   }
 
   private Order saveOrder(User buyer, Product product) {

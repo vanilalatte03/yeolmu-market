@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
+import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
@@ -23,6 +24,7 @@ import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
+import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import org.junit.jupiter.api.Test;
@@ -47,6 +49,7 @@ class PaymentControllerTest {
   private final MockMvc mockMvc;
   private final UserRepository userRepository;
   private final ProductRepository productRepository;
+  private final CategoryRepository categoryRepository;
   private final OrderRepository orderRepository;
   private final PaymentRepository paymentRepository;
   private final PasswordEncoder passwordEncoder;
@@ -57,6 +60,7 @@ class PaymentControllerTest {
       MockMvc mockMvc,
       UserRepository userRepository,
       ProductRepository productRepository,
+      CategoryRepository categoryRepository,
       OrderRepository orderRepository,
       PaymentRepository paymentRepository,
       PasswordEncoder passwordEncoder,
@@ -64,6 +68,7 @@ class PaymentControllerTest {
     this.mockMvc = mockMvc;
     this.userRepository = userRepository;
     this.productRepository = productRepository;
+    this.categoryRepository = categoryRepository;
     this.orderRepository = orderRepository;
     this.paymentRepository = paymentRepository;
     this.passwordEncoder = passwordEncoder;
@@ -643,7 +648,8 @@ class PaymentControllerTest {
   }
 
   private Product saveProduct(User seller, String title, Integer price) {
-    return productRepository.saveAndFlush(Product.create(seller, title, "생활기스 조금 있습니다.", price));
+    return ProductTestFactory.saveProduct(
+        productRepository, categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
   }
 
   private Order saveOrder(User buyer, Product product) {

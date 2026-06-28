@@ -3,6 +3,7 @@ package com.guingujig.yeolmumarket.domain.order.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.order.dto.CancelOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.CreateOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.GetOrderResponse;
@@ -19,6 +20,7 @@ import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
+import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -43,6 +45,7 @@ class OrderServiceTest {
   private final OrderService orderService;
   private final OrderRepository orderRepository;
   private final ProductRepository productRepository;
+  private final CategoryRepository categoryRepository;
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
 
@@ -51,11 +54,13 @@ class OrderServiceTest {
       OrderService orderService,
       OrderRepository orderRepository,
       ProductRepository productRepository,
+      CategoryRepository categoryRepository,
       UserRepository userRepository,
       PasswordEncoder passwordEncoder) {
     this.orderService = orderService;
     this.orderRepository = orderRepository;
     this.productRepository = productRepository;
+    this.categoryRepository = categoryRepository;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
   }
@@ -657,6 +662,7 @@ class OrderServiceTest {
   private void deleteAll() {
     orderRepository.deleteAll();
     productRepository.deleteAll();
+    categoryRepository.deleteAll();
     userRepository.deleteAll();
   }
 
@@ -665,18 +671,21 @@ class OrderServiceTest {
   }
 
   private Product saveProduct(User seller, String title, Integer price) {
-    return productRepository.saveAndFlush(Product.create(seller, title, "생활기스 조금 있습니다.", price));
+    return ProductTestFactory.saveProduct(
+        productRepository, categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
   }
 
   private Product saveHiddenProduct(User seller, String title, Integer price) {
-    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    Product product =
+        ProductTestFactory.createProduct(categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
     ReflectionTestUtils.setField(product, "hidden", true);
     return productRepository.saveAndFlush(product);
   }
 
   private Product saveProductWithStatus(
       User seller, String title, Integer price, ProductStatus status) {
-    Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price);
+    Product product =
+        ProductTestFactory.createProduct(categoryRepository, seller, title, "생활기스 조금 있습니다.", price);
     ReflectionTestUtils.setField(product, "status", status);
     return productRepository.saveAndFlush(product);
   }
