@@ -9,13 +9,21 @@ import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.review.dto.PublicReceivedReviewListItemResponse;
+import com.guingujig.yeolmumarket.domain.review.dto.ReceivedReviewListItemResponse;
 import com.guingujig.yeolmumarket.domain.review.dto.ReviewResponse;
+import com.guingujig.yeolmumarket.domain.review.dto.WrittenReviewListItemResponse;
+import com.guingujig.yeolmumarket.domain.review.entity.Review;
 import com.guingujig.yeolmumarket.domain.review.repository.ReviewRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.response.PageResponse;
 import com.guingujig.yeolmumarket.support.ProductTestFactory;
+import jakarta.persistence.EntityManager;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -27,6 +35,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -40,6 +49,8 @@ class ReviewServiceTest {
   private final CategoryRepository categoryRepository;
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
+  private final JdbcTemplate jdbcTemplate;
+  private final EntityManager entityManager;
 
   @Autowired
   ReviewServiceTest(
@@ -49,7 +60,9 @@ class ReviewServiceTest {
       ProductRepository productRepository,
       CategoryRepository categoryRepository,
       UserRepository userRepository,
-      PasswordEncoder passwordEncoder) {
+      PasswordEncoder passwordEncoder,
+      JdbcTemplate jdbcTemplate,
+      EntityManager entityManager) {
     this.reviewService = reviewService;
     this.reviewRepository = reviewRepository;
     this.orderRepository = orderRepository;
@@ -57,6 +70,8 @@ class ReviewServiceTest {
     this.categoryRepository = categoryRepository;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
+    this.jdbcTemplate = jdbcTemplate;
+    this.entityManager = entityManager;
   }
 
   @BeforeEach
@@ -246,6 +261,100 @@ class ReviewServiceTest {
                 assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
   }
 
+  @Test
+  void 내가_작성한_리뷰_목록은_createdAt과_id_내림차순으로_조회된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Order oldOrder =
+        saveOrderWithStatus(buyer, saveProduct(seller, "오래된 상품"), OrderStatus.COMPLETED);
+    Order newOrder =
+        saveOrderWithStatus(buyer, saveProduct(seller, "최신 상품"), OrderStatus.COMPLETED);
+    Review oldReview =
+        saveReview(oldOrder, buyer, seller, 4, "오래된 리뷰", LocalDateTime.of(2026, 6, 22, 10, 0));
+    Review newReview =
+        saveReview(newOrder, buyer, seller, 5, "최신 리뷰", LocalDateTime.of(2026, 6, 22, 11, 0));
+
+    PageResponse<?> response = reviewService.getMyReviews(buyer.getId(), "written", 0, 10);
+
+    assertThat(response.totalElements()).isEqualTo(2);
+    assertThat(response.content()).hasSize(2);
+    WrittenReviewListItemResponse first = (WrittenReviewListItemResponse) response.content().get(0);
+    WrittenReviewListItemResponse second =
+        (WrittenReviewListItemResponse) response.content().get(1);
+    assertThat(first.reviewId()).isEqualTo(newReview.getId());
+    assertThat(first.revieweeNickname()).isEqualTo("열무판매자");
+    assertThat(second.reviewId()).isEqualTo(oldReview.getId());
+  }
+
+  @Test
+  void 내가_받은_리뷰_목록은_작성자_닉네임을_포함한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Order order = saveOrderWithStatus(buyer, saveProduct(seller), OrderStatus.COMPLETED);
+    Review review =
+        saveReview(order, buyer, seller, 5, "좋은 거래였습니다.", LocalDateTime.of(2026, 6, 22, 10, 0));
+
+    PageResponse<?> response = reviewService.getMyReviews(seller.getId(), "received", 0, 10);
+
+    assertThat(response.totalElements()).isEqualTo(1);
+    ReceivedReviewListItemResponse item =
+        (ReceivedReviewListItemResponse) response.content().get(0);
+    assertThat(item.reviewId()).isEqualTo(review.getId());
+    assertThat(item.reviewerNickname()).isEqualTo("열무구매자");
+  }
+
+  @Test
+  void 특정_유저가_받은_공개_리뷰_목록은_주문_id를_노출하지_않는다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Order order = saveOrderWithStatus(buyer, saveProduct(seller), OrderStatus.COMPLETED);
+    Review review =
+        saveReview(order, buyer, seller, 5, "좋은 거래였습니다.", LocalDateTime.of(2026, 6, 22, 10, 0));
+
+    PageResponse<PublicReceivedReviewListItemResponse> response =
+        reviewService.getReceivedReviews(seller.getId(), 0, 10);
+
+    assertThat(response.totalElements()).isEqualTo(1);
+    PublicReceivedReviewListItemResponse item = response.content().get(0);
+    assertThat(item.reviewId()).isEqualTo(review.getId());
+    assertThat(item.reviewerNickname()).isEqualTo("열무구매자");
+  }
+
+  @Test
+  void 리뷰_목록_status가_잘못되면_VALIDATION_FAILED를_반환한다() {
+    User user = saveUser("user@example.com", "열무유저");
+
+    assertThatThrownBy(() -> reviewService.getMyReviews(user.getId(), "all", 0, 10))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+  }
+
+  @Test
+  void 리뷰_목록_페이지_값이_잘못되면_INVALID_PAGINATION을_반환한다() {
+    User user = saveUser("user@example.com", "열무유저");
+
+    assertThatThrownBy(() -> reviewService.getMyReviews(user.getId(), "written", -1, 10))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_PAGINATION));
+    assertThatThrownBy(() -> reviewService.getReceivedReviews(user.getId(), 0, 101))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_PAGINATION));
+  }
+
+  @Test
+  void 존재하지_않는_유저의_공개_리뷰_목록은_USER_NOT_FOUND를_반환한다() {
+    assertThatThrownBy(() -> reviewService.getReceivedReviews(Long.MAX_VALUE, 0, 10))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.USER_NOT_FOUND));
+  }
+
   private void deleteAll() {
     reviewRepository.deleteAll();
     orderRepository.deleteAll();
@@ -273,5 +382,23 @@ class ReviewServiceTest {
     Order order = Order.create(buyer, product);
     ReflectionTestUtils.setField(order, "orderStatus", status);
     return orderRepository.saveAndFlush(order);
+  }
+
+  private Review saveReview(
+      Order order,
+      User reviewer,
+      User reviewee,
+      Integer score,
+      String content,
+      LocalDateTime createdAt) {
+    Review review =
+        reviewRepository.saveAndFlush(Review.create(order, reviewer, reviewee, score, content));
+    jdbcTemplate.update(
+        "update review set created_at = ?, modified_at = ? where id = ?",
+        Timestamp.valueOf(createdAt),
+        Timestamp.valueOf(createdAt),
+        review.getId());
+    entityManager.clear();
+    return reviewRepository.findById(review.getId()).orElseThrow();
   }
 }
