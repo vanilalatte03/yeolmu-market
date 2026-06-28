@@ -2302,6 +2302,8 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 
 특정 카테고리에 속한 상품 목록을 조회한다.
 숨김·삭제 상품은 반환하지 않으며, 공개 목록은 `hidden=false`이고 `status != DELETED`인 상품만 반환한다.
+`ON_SALE` 외 삭제되지 않은 공개 상품도 반환하며, 응답에는 `wishCount`, `wished`를 포함하지 않는다.
+`thumbnailUrl`은 상품 이미지 도입 전까지 `null`이다.
 
 - Method: `GET`
 - Path: `/api/categories/{categoryId}/products`
@@ -2320,7 +2322,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 | --- | --- | --- | --- |
 | `page` | int | N | 페이지 번호 |
 | `size` | int | N | 페이지 크기 |
-| `sort` | String | N | 정렬 조건 |
+| `sort` | String | N | 정렬 조건. 기본값 `latest`. 지원값: `latest`, `priceAsc`, `priceDesc` |
 
 #### Response Data
 
@@ -2332,7 +2334,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
       "title": "아이패드 미니 6세대",
       "price": 430000,
       "status": "ON_SALE",
-      "thumbnailUrl": "https://cdn.example.com/products/10/thumbnail.jpg",
+      "thumbnailUrl": null,
       "sellerNickname": "열무판매자",
       "createdAt": "2026-06-22T09:30:00Z"
     }
@@ -2351,6 +2353,7 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 | --- | --- | --- |
 | `CATEGORY_NOT_FOUND` | 404 | 카테고리 없음 |
 | `INVALID_PAGINATION` | 400 | 페이지 번호 또는 크기 오류 |
+| `VALIDATION_FAILED` | 400 | 지원하지 않는 정렬 조건 |
 
 ## 찜 API
 
