@@ -18,6 +18,7 @@ import com.guingujig.yeolmumarket.domain.product.entity.ProductImage;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductImageRepository;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.review.service.ReviewRatingQueryService;
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
@@ -52,6 +53,7 @@ public class ProductService {
   private final CategoryRepository categoryRepository;
   private final ProductThumbnailQueryService productThumbnailQueryService;
   private final ProductWishSummaryService productWishSummaryService;
+  private final ReviewRatingQueryService reviewRatingQueryService;
   private final ApplicationEventPublisher eventPublisher;
 
   /**
@@ -120,7 +122,11 @@ public class ProductService {
     List<ProductImage> images =
         productImageRepository.findByProductIdOrderByCreatedAtAscIdAsc(productId);
 
-    return ProductDetailResponse.from(product, wishSummary, images);
+    return ProductDetailResponse.from(
+        product,
+        wishSummary,
+        images,
+        reviewRatingQueryService.getSummary(product.getSeller().getId()));
   }
 
   /**

@@ -15,11 +15,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
 import com.guingujig.yeolmumarket.domain.category.entity.Category;
 import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
+import com.guingujig.yeolmumarket.domain.order.entity.Order;
+import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
+import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductImage;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductImageRepository;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.review.entity.Review;
+import com.guingujig.yeolmumarket.domain.review.repository.ReviewRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.domain.wish.entity.Wish;
@@ -54,6 +59,8 @@ class ProductControllerTest {
   private final ProductImageRepository productImageRepository;
   private final CategoryRepository categoryRepository;
   private final WishRepository wishRepository;
+  private final OrderRepository orderRepository;
+  private final ReviewRepository reviewRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
 
@@ -65,6 +72,8 @@ class ProductControllerTest {
       ProductImageRepository productImageRepository,
       CategoryRepository categoryRepository,
       WishRepository wishRepository,
+      OrderRepository orderRepository,
+      ReviewRepository reviewRepository,
       PasswordEncoder passwordEncoder,
       JwtTokenProvider jwtTokenProvider) {
     this.mockMvc = mockMvc;
@@ -73,6 +82,8 @@ class ProductControllerTest {
     this.productImageRepository = productImageRepository;
     this.categoryRepository = categoryRepository;
     this.wishRepository = wishRepository;
+    this.orderRepository = orderRepository;
+    this.reviewRepository = reviewRepository;
     this.passwordEncoder = passwordEncoder;
     this.jwtTokenProvider = jwtTokenProvider;
   }
@@ -200,7 +211,30 @@ class ProductControllerTest {
         .andExpect(jsonPath("$.data.wishCount").value(0))
         .andExpect(jsonPath("$.data.wished").value(false))
         .andExpect(jsonPath("$.data.viewCount").doesNotExist())
-        .andExpect(jsonPath("$.data.seller.averageRating").doesNotExist());
+        .andExpect(jsonPath("$.data.seller.averageRating").value(0.0));
+  }
+
+  @Test
+  void 상품_상세_조회는_판매자가_받은_리뷰_평점을_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User firstBuyer = saveUser("first-buyer@example.com", "첫구매자");
+    User secondBuyer = saveUser("second-buyer@example.com", "둘째구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    Order firstOrder =
+        saveOrderWithStatus(
+            firstBuyer, saveProduct(seller, "거래 완료 상품 1", 10000), OrderStatus.COMPLETED);
+    Order secondOrder =
+        saveOrderWithStatus(
+            secondBuyer, saveProduct(seller, "거래 완료 상품 2", 20000), OrderStatus.COMPLETED);
+    saveReview(firstOrder, firstBuyer, seller, 5, "좋아요.");
+    saveReview(secondOrder, secondBuyer, seller, 4, "괜찮아요.");
+
+    mockMvc
+        .perform(get("/api/products/{productId}", product.getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.productId").value(product.getId()))
+        .andExpect(jsonPath("$.data.seller.userId").value(seller.getId()))
+        .andExpect(jsonPath("$.data.seller.averageRating").value(4.5));
   }
 
   @Test
@@ -704,6 +738,19 @@ class ProductControllerTest {
 
   private void saveWish(User user, Product product) {
     wishRepository.saveAndFlush(Wish.create(user, product));
+  }
+
+  private Order saveOrderWithStatus(User buyer, Product product, OrderStatus status) {
+    product.reserve();
+    productRepository.saveAndFlush(product);
+    Order order = Order.create(buyer, product);
+    ReflectionTestUtils.setField(order, "orderStatus", status);
+    return orderRepository.saveAndFlush(order);
+  }
+
+  private Review saveReview(
+      Order order, User reviewer, User reviewee, Integer score, String content) {
+    return reviewRepository.saveAndFlush(Review.create(order, reviewer, reviewee, score, content));
   }
 
   private Product saveProduct(User seller, String title, Integer price) {
