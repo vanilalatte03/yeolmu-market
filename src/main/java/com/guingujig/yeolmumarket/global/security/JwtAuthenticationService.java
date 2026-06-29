@@ -3,7 +3,6 @@ package com.guingujig.yeolmumarket.global.security;
 import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
-import com.guingujig.yeolmumarket.global.security.JwtTokenProvider.JwtAccessClaims;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;

@@ -238,10 +238,6 @@ public class JwtTokenProvider {
     }
   }
 
-  public record JwtAccessClaims(Long userId, String email, UserRole role) {}
-
-  public record JwtRefreshClaims(Long userId, String jti, long expiresAtEpochSeconds) {}
-
   private record JwtClaims(
       Long userId,
       String email,
