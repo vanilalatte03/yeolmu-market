@@ -49,7 +49,7 @@ public class RefundController {
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
       @PathVariable Long refundId,
       @RequestBody(required = false) RejectRefundRequest request) {
-    String reason = request == null ? null : request.reason();
+    String reason = resolveRejectReason(request);
     RejectRefundRequestResponse response =
         refundService.rejectRefundRequest(authenticatedUser.userId(), refundId, reason);
     return ResponseEntity.ok(ApiResponse.success(response));
@@ -64,5 +64,12 @@ public class RefundController {
         refundService.resolveRefundRequest(
             authenticatedUser.userId(), refundId, request.resolution(), request.reason());
     return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
+  private String resolveRejectReason(RejectRefundRequest request) {
+    if (request == null) {
+      return null;
+    }
+    return request.reason();
   }
 }
