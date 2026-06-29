@@ -1,6 +1,6 @@
 # ADR-007: Redis 기반 JWT 폐기와 refresh token 회전 정책
 
-- 상태: 채택됨
+- 상태: 대체됨 (ADR-012)
 - 날짜: 2026-06-24
 - 관련: `docs/PRD.md` (7.1 회원), `docs/API.md` (인증 API), `docs/ERD.md` (Redis 데이터 제외)
 - 대체: ADR-004
