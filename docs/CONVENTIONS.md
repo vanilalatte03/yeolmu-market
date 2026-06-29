@@ -38,6 +38,7 @@
 - 하지 않는다: 비즈니스 로직, Entity 직접 조립, 외부 API 호출, 트랜잭션 처리, 복잡한 조건 분기
 - 의존성 주입은 `@RequiredArgsConstructor` + `private final`. `@Autowired` 필드 주입 금지.
 - Entity를 직접 반환하지 않고 항상 DTO로 변환한다.
+- 핸들러는 같은 HTTP 메서드끼리 모아 배치한다(GET은 GET끼리, POST는 POST끼리). 라우팅을 한눈에 파악하기 위함이다.
 
 ```java
 @RestController
@@ -54,6 +55,9 @@ public class OrderController {
 - 트랜잭션 경계는 Service 계층에 둔다. 조회 전용 `@Transactional(readOnly = true)`, 상태 변경 `@Transactional`.
 - 의존성 주입은 `@RequiredArgsConstructor` + `private final`. `@Autowired` 금지.
 - 외부 API 연동은 별도 Client 클래스로 분리한다.
+- 한 메서드가 여러 Repository를 호출하며 유스케이스 흐름이 길어지면 Facade로 흐름을 분리하고, 각 Service는 자기 도메인 책임에 집중한다.
+- 메서드 파라미터가 3개 이상이면 Request DTO로 묶는다.
+- Service 내부에 `record`/DTO를 선언하지 않고 별도 파일로 분리한다.
 
 ## Repository
 
@@ -76,6 +80,7 @@ public class OrderController {
 
 - 도메인 예외는 커스텀 예외(`{Domain}Exception`) 또는 공통 `BusinessException`.
 - 전역 처리는 `@RestControllerAdvice`로 일관되게.
+- 검증 메서드(`validate`)나 `@Valid`가 이미 보장하는 것을 try-catch로 다시 감싸지 않는다. 검증 책임을 한 곳에 두고 방어적 중복 코드를 제거한다.
 
 ## API 응답
 
@@ -88,12 +93,19 @@ public class OrderController {
 - Request DTO 검증은 `@Valid` + Bean Validation으로.
 - 음수/0/빈 목록/잘못된 수량 등 경계값을 막는다.
 - 인증 사용자와 요청 리소스의 소유자 일치를 검증한다.
+- 자식 레코드 존재 여부 등은 변경 전에 미리 조회해 막기보다, DB 제약이나 발생하는 예외로 처리한다(불필요한 선검증 조회를 지양).
 
 ## Transaction
 
 - 트랜잭션은 Service 계층에서 시작한다.
 - 외부 API 호출과 DB 트랜잭션 범위를 신중하게 잡는다 (외부 성공 후 내부 실패 가능성 고려).
 - 읽기 전용은 `readOnly = true`.
+- `@Transactional` 안에서는 더티 체킹으로 변경을 반영하고, `saveAndFlush`를 습관적으로 반복하지 않는다. 즉시 flush가 꼭 필요할 때만 쓰고 그 의도를 드러낸다.
+
+## 설정과 상수
+
+- 환경·운영에 따라 달라지는 값(토큰 만료 시간, 캐시 TTL, 페이지 크기 등)은 코드 상수로 박지 않고 `application.yml`로 분리해 주입한다(`@Value` 또는 `@ConfigurationProperties`).
+- 민감정보는 `application.yml`에 두지 않는다. 루트 `AGENTS.md`의 `.env` 정책을 따른다.
 
 ## Logging
 
