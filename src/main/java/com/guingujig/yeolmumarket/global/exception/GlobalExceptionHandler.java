@@ -15,6 +15,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestCookieException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -95,7 +96,8 @@ public class GlobalExceptionHandler {
   @ExceptionHandler({
     MissingServletRequestParameterException.class,
     HttpMessageNotReadableException.class,
-    MissingServletRequestPartException.class
+    MissingServletRequestPartException.class,
+    MissingRequestCookieException.class
   })
   public ResponseEntity<ApiResponse<Void>> handleValidationException(Exception exception) {
     ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
