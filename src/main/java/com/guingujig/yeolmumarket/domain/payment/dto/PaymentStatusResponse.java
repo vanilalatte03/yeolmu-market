@@ -3,7 +3,6 @@ package com.guingujig.yeolmumarket.domain.payment.dto;
 import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
 import com.guingujig.yeolmumarket.domain.payment.entity.PaymentStatus;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 
 public record PaymentStatusResponse(
     Long paymentId, Long orderId, PaymentStatus status, Integer amount, OffsetDateTime paidAt) {
@@ -14,6 +13,6 @@ public record PaymentStatusResponse(
         payment.getOrder().getId(),
         payment.getStatus(),
         payment.getAmount(),
-        payment.getPaidAt() != null ? payment.getPaidAt().atOffset(ZoneOffset.UTC) : null);
+        PaymentDateTimes.toUtcOffset(payment.getPaidAt()));
   }
 }
