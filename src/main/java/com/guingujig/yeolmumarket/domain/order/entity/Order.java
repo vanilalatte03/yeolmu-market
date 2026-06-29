@@ -169,4 +169,28 @@ public class Order extends BaseTimeEntity {
     }
     this.orderStatus = OrderStatus.DISPUTED;
   }
+
+  /**
+   * DISPUTED 상태의 주문을 분쟁 환불 결과인 REFUNDED로 전이한다.
+   *
+   * <p>DISPUTED가 아닌 상태에서 호출하면 {@link BusinessException}을 던져 잘못된 전이를 차단한다.
+   */
+  public void refundDispute() {
+    if (this.orderStatus != OrderStatus.DISPUTED) {
+      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+    }
+    this.orderStatus = OrderStatus.REFUNDED;
+  }
+
+  /**
+   * DISPUTED 상태의 주문을 분쟁 거래 완료 결과인 COMPLETED로 전이한다.
+   *
+   * <p>DISPUTED가 아닌 상태에서 호출하면 {@link BusinessException}을 던져 잘못된 전이를 차단한다.
+   */
+  public void completeDispute() {
+    if (this.orderStatus != OrderStatus.DISPUTED) {
+      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+    }
+    this.orderStatus = OrderStatus.COMPLETED;
+  }
 }

@@ -106,8 +106,28 @@ public class RefundRequest extends BaseTimeEntity {
     this.rejectedAt = Objects.requireNonNull(rejectedAt, "rejectedAt은 필수입니다.");
   }
 
+  /**
+   * DISPUTED 상태의 환불 요청을 분쟁 종료 결과인 CLOSED로 전이한다.
+   *
+   * <p>선택 입력된 종료 사유가 있으면 판매자 응답으로 기록하고, DISPUTED가 아닌 상태에서 호출하면 {@link BusinessException}을 던진다.
+   */
+  public void resolveDispute(String sellerResponse, LocalDateTime resolvedAt) {
+    validateDisputed();
+    this.status = RefundRequestStatus.CLOSED;
+    if (sellerResponse != null) {
+      this.sellerResponse = sellerResponse;
+    }
+    this.resolvedAt = Objects.requireNonNull(resolvedAt, "resolvedAt은 필수입니다.");
+  }
+
   private void validateRequested() {
     if (this.status != RefundRequestStatus.REQUESTED) {
+      throw new BusinessException(ErrorCode.INVALID_REFUND_REQUEST_STATUS);
+    }
+  }
+
+  private void validateDisputed() {
+    if (this.status != RefundRequestStatus.DISPUTED) {
       throw new BusinessException(ErrorCode.INVALID_REFUND_REQUEST_STATUS);
     }
   }

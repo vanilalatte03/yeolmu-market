@@ -1,13 +1,17 @@
 package com.guingujig.yeolmumarket.domain.refund.service;
 
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
+import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
 import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
 import com.guingujig.yeolmumarket.domain.refund.dto.ApproveRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.dto.CreateRefundRequestResponse;
+import com.guingujig.yeolmumarket.domain.refund.dto.RefundResolution;
 import com.guingujig.yeolmumarket.domain.refund.dto.RejectRefundRequestResponse;
+import com.guingujig.yeolmumarket.domain.refund.dto.ResolveRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.entity.RefundRequest;
+import com.guingujig.yeolmumarket.domain.refund.entity.RefundRequestStatus;
 import com.guingujig.yeolmumarket.domain.refund.repository.RefundRequestRepository;
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
@@ -147,6 +151,56 @@ public class RefundService {
     return RejectRefundRequestResponse.from(refundRequest);
   }
 
+  /**
+   * 로그인한 판매자가 DISPUTED 환불 요청을 환불 또는 거래 완료 방향으로 종료한다.
+   *
+   * <p>주문과 환불 요청 row lock으로 동일 분쟁 종료 요청을 직렬화한다. 환불 종료는 결제를 REFUNDED로, 거래 완료 종료는 결제를 PAID로 유지하며, 양쪽
+   * 모두 상품 상태 변경 후 검색 캐시 무효화 이벤트를 발행한다.
+   *
+   * @throws BusinessException VALIDATION_FAILED - 종료 방향이 누락되었거나 trim한 종료 사유가 255자를 초과하는 경우
+   * @throws BusinessException REFUND_REQUEST_NOT_FOUND - 환불 요청이 존재하지 않는 경우
+   * @throws BusinessException REFUND_REQUEST_ACCESS_DENIED - 주문 판매자가 아닌 사용자의 요청
+   * @throws BusinessException INVALID_REFUND_REQUEST_STATUS - DISPUTED 환불 요청 또는 DISPUTED 주문이 아닌 경우,
+   *     또는 동시 처리 경합
+   */
+  @Transactional
+  public ResolveRefundRequestResponse resolveRefundRequest(
+      Long sellerId, Long refundId, RefundResolution resolution, String reason) {
+    if (resolution == null) {
+      throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+    }
+    String normalizedReason = normalizeOptionalReason(reason);
+    RefundRequest refundRequest = fetchRefundRequestForProcessing(refundId);
+
+    if (!Objects.equals(refundRequest.getOrder().getSeller().getId(), sellerId)) {
+      throw new BusinessException(ErrorCode.REFUND_REQUEST_ACCESS_DENIED);
+    }
+
+    validateResolvableDispute(refundRequest);
+
+    Payment payment =
+        paymentRepository
+            .findByOrder_Id(refundRequest.getOrder().getId())
+            .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+
+    LocalDateTime resolvedAt = nowUtc();
+    refundRequest.resolveDispute(normalizedReason, resolvedAt);
+
+    if (resolution == RefundResolution.REFUND) {
+      refundRequest.getOrder().refundDispute();
+      refundRequest.getOrder().getProduct().cancelReservation();
+      payment.cancelPaid(resolvedAt, "분쟁 환불 종료");
+    } else {
+      refundRequest.getOrder().completeDispute();
+      refundRequest.getOrder().getProduct().completeSale();
+    }
+
+    flushRefundRequestChanges();
+    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+
+    return ResolveRefundRequestResponse.from(refundRequest);
+  }
+
   private String normalizeReason(String reason) {
     if (reason == null) {
       throw new BusinessException(ErrorCode.VALIDATION_FAILED);
@@ -185,6 +239,13 @@ public class RefundService {
     return refundRequestRepository
         .findWithOrderSellerAndProductByIdForUpdate(refundId)
         .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_REQUEST_NOT_FOUND));
+  }
+
+  private void validateResolvableDispute(RefundRequest refundRequest) {
+    if (refundRequest.getStatus() != RefundRequestStatus.DISPUTED
+        || refundRequest.getOrder().getOrderStatus() != OrderStatus.DISPUTED) {
+      throw new BusinessException(ErrorCode.INVALID_REFUND_REQUEST_STATUS);
+    }
   }
 
   private void flushRefundRequestChanges() {
