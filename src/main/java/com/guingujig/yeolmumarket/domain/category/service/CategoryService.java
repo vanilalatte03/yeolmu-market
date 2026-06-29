@@ -63,10 +63,18 @@ public class CategoryService {
     List<Long> productIds = products.getContent().stream().map(Product::getId).toList();
     Map<Long, String> thumbnailUrls = productThumbnailQueryService.getThumbnailUrls(productIds);
 
-    return PageResponse.from(
-        products.map(
-            product ->
-                CategoryProductListItemResponse.from(product, thumbnailUrls.get(product.getId()))));
+    Page<CategoryProductListItemResponse> categoryProducts =
+        products.map(product -> toCategoryProductListItemResponse(product, thumbnailUrls));
+
+    return PageResponse.from(categoryProducts);
+  }
+
+  private CategoryProductListItemResponse toCategoryProductListItemResponse(
+      Product product, Map<Long, String> thumbnailUrls) {
+    Long productId = product.getId();
+    String thumbnailUrl = thumbnailUrls.get(productId);
+
+    return CategoryProductListItemResponse.from(product, thumbnailUrl);
   }
 
   /**

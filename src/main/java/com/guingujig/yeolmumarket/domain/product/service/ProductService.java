@@ -96,14 +96,22 @@ public class ProductService {
         productWishSummaryService.getSummaries(productIds, authenticatedUserId);
     Map<Long, String> thumbnailUrls = productThumbnailQueryService.getThumbnailUrls(productIds);
 
-    return PageResponse.from(
-        products.map(
-            product ->
-                ProductListItemResponse.from(
-                    product,
-                    wishSummaries.getOrDefault(
-                        product.getId(), ProductWishSummary.empty(product.getId())),
-                    thumbnailUrls.get(product.getId()))));
+    Page<ProductListItemResponse> productResponses =
+        products.map(product -> toProductListItemResponse(product, wishSummaries, thumbnailUrls));
+
+    return PageResponse.from(productResponses);
+  }
+
+  private ProductListItemResponse toProductListItemResponse(
+      Product product,
+      Map<Long, ProductWishSummary> wishSummaries,
+      Map<Long, String> thumbnailUrls) {
+    Long productId = product.getId();
+    ProductWishSummary wishSummary =
+        wishSummaries.getOrDefault(productId, ProductWishSummary.empty(productId));
+    String thumbnailUrl = thumbnailUrls.get(productId);
+
+    return ProductListItemResponse.from(product, wishSummary, thumbnailUrl);
   }
 
   /**
