@@ -59,6 +59,9 @@ public class ChatWebSocketAuthenticationInterceptor implements ChannelIntercepto
   private StompHeaderAccessor getAccessor(Message<?> message) {
     StompHeaderAccessor accessor =
         MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
-    return accessor != null ? accessor : StompHeaderAccessor.wrap(message);
+    if (accessor != null) {
+      return accessor;
+    }
+    return StompHeaderAccessor.wrap(message);
   }
 }

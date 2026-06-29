@@ -20,8 +20,8 @@ public record ChatRoomListItemResponse(
         chatRoom.getProduct().getId(),
         chatRoom.getProduct().getTitle(),
         resolveOpponentNickname(chatRoom, currentUserId),
-        lastMessage == null ? null : lastMessage.getContent(),
-        lastMessage == null ? null : lastMessage.getCreatedAt().atOffset(ZoneOffset.UTC));
+        resolveLastMessageContent(lastMessage),
+        resolveLastMessageAt(lastMessage));
   }
 
   private static String resolveOpponentNickname(ChatRoom chatRoom, Long currentUserId) {
@@ -29,5 +29,19 @@ public record ChatRoomListItemResponse(
       return chatRoom.getSeller().getNickname();
     }
     return chatRoom.getBuyer().getNickname();
+  }
+
+  private static String resolveLastMessageContent(ChatMessage lastMessage) {
+    if (lastMessage == null) {
+      return null;
+    }
+    return lastMessage.getContent();
+  }
+
+  private static OffsetDateTime resolveLastMessageAt(ChatMessage lastMessage) {
+    if (lastMessage == null) {
+      return null;
+    }
+    return lastMessage.getCreatedAt().atOffset(ZoneOffset.UTC);
   }
 }

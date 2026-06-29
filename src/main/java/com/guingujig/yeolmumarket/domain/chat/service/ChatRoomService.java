@@ -106,7 +106,7 @@ public class ChatRoomService {
         chatMessageRepository.findPreviousMessages(
             chatRoom, beforeMessageId, PageRequest.of(0, size + 1));
     boolean hasNext = messages.size() > size;
-    List<ChatMessage> pageMessages = hasNext ? messages.subList(0, size) : messages;
+    List<ChatMessage> pageMessages = toPageMessages(messages, hasNext, size);
     return ChatMessagesResponse.of(pageMessages, hasNext);
   }
 
@@ -169,6 +169,13 @@ public class ChatRoomService {
     if (size <= 0 || size > MAX_PAGE_SIZE || (beforeMessageId != null && beforeMessageId <= 0)) {
       throw new BusinessException(ErrorCode.INVALID_PAGINATION);
     }
+  }
+
+  private List<ChatMessage> toPageMessages(List<ChatMessage> messages, boolean hasNext, int size) {
+    if (hasNext) {
+      return messages.subList(0, size);
+    }
+    return messages;
   }
 
   private Map<Long, ChatMessage> getLatestMessages(Page<ChatRoom> chatRooms) {
