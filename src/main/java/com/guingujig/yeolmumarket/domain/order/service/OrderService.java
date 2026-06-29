@@ -223,10 +223,7 @@ public class OrderService {
     validatePagination(page, size);
     PageRequest pageable =
         PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt", "id"));
-    Page<Order> orders =
-        status == null
-            ? orderRepository.findByBuyerId(buyerId, pageable)
-            : orderRepository.findByBuyerIdAndOrderStatus(buyerId, status, pageable);
+    Page<Order> orders = findBuyerOrders(buyerId, status, pageable);
     return PageResponse.from(orders.map(MyOrderListItemResponse::from));
   }
 
@@ -241,10 +238,7 @@ public class OrderService {
     validatePagination(page, size);
     PageRequest pageable =
         PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt", "id"));
-    Page<Order> orders =
-        status == null
-            ? orderRepository.findBySellerId(sellerId, pageable)
-            : orderRepository.findBySellerIdAndOrderStatus(sellerId, status, pageable);
+    Page<Order> orders = findSellerOrders(sellerId, status, pageable);
     return PageResponse.from(orders.map(MySaleListItemResponse::from));
   }
 
@@ -274,6 +268,20 @@ public class OrderService {
     if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
       throw new BusinessException(ErrorCode.INVALID_PAGINATION);
     }
+  }
+
+  private Page<Order> findBuyerOrders(Long buyerId, OrderStatus status, PageRequest pageable) {
+    if (status == null) {
+      return orderRepository.findByBuyerId(buyerId, pageable);
+    }
+    return orderRepository.findByBuyerIdAndOrderStatus(buyerId, status, pageable);
+  }
+
+  private Page<Order> findSellerOrders(Long sellerId, OrderStatus status, PageRequest pageable) {
+    if (status == null) {
+      return orderRepository.findBySellerId(sellerId, pageable);
+    }
+    return orderRepository.findBySellerIdAndOrderStatus(sellerId, status, pageable);
   }
 
   private String normalizeTrackingNumber(String trackingNumber) {
