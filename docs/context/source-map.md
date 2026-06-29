@@ -12,6 +12,7 @@
 | chat/websocket | `domain/chat`, `global/config/WebSocketConfig.java` | `docs/API.md`, `docs/ERD.md` |
 | order/payment/refund/review | `domain/order`, `domain/payment`, `domain/refund`, `domain/review` | `docs/API.md`, `docs/ERD.md`, `docs/adr/001-concurrent-order-control.md`, `docs/adr/005-mock-safe-payment-transaction-policy.md` |
 | global | `global/exception`, `global/response`, `global/config`, `global/security`, `global/entity` | `docs/API.md`, `docs/CONVENTIONS.md` |
+| development/validation | `build.gradle`, `docker-compose.yml`, `.githooks`, `gradlew.bat` | `docs/DEVELOPMENT.md` |
 | test | `src/test/java/com/guingujig/yeolmumarket` | `docs/CONVENTIONS.md`, `docs/DEVELOPMENT.md` |
 
 도메인 내부는 가능한 한 `controller / service / repository / dto / entity` 흐름을 따른다.
