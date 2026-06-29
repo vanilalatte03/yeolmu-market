@@ -1,0 +1,842 @@
+### P2 REST API 흐름
+### 로컬 앱이 http://localhost:8080 에 떠 있는 상태에서 위에서 아래 순서로 실행한다.
+### 이 파일은 실행 중인 앱의 MySQL/Redis 연결이 필요하다.
+### 수동 실행 전 .env 설정, docker compose up -d mysql redis, ./gradlew bootRun 이 필요하다.
+### 실행 전 상품 등록에 사용할 카테고리가 1개 이상 있어야 한다.
+### 이 파일은 JetBrains HTTP Client 응답 핸들러를 사용한다.
+### 시나리오 설명은 docs/P2_TEST_SCENARIOS.md에 정리되어 있다.
+
+@baseUrl = http://localhost:8080
+@runId = {{$timestamp}}
+@password = Password123!
+@approvePaymentKey = p2-approve-payment-{{runId}}
+@refundPaymentKey = p2-refund-payment-{{runId}}
+@completePaymentKey = p2-complete-payment-{{runId}}
+@reviewPaymentKey = p2-review-payment-{{runId}}
+
+### 01. 판매자 회원가입
+# @name signupP2Seller
+POST {{baseUrl}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "email": "p2-seller-{{runId}}@example.com",
+  "password": "{{password}}",
+  "nickname": "P2판매자"
+}
+
+> {%
+client.test("판매자 회원가입은 201을 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("p2SellerId", response.body.data.userId);
+%}
+
+### 02. 구매자 회원가입
+# @name signupP2Buyer
+POST {{baseUrl}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "email": "p2-buyer-{{runId}}@example.com",
+  "password": "{{password}}",
+  "nickname": "P2구매자"
+}
+
+> {%
+client.test("구매자 회원가입은 201을 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("p2BuyerId", response.body.data.userId);
+%}
+
+### 03. 타인 회원가입
+# @name signupP2Other
+POST {{baseUrl}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "email": "p2-other-{{runId}}@example.com",
+  "password": "{{password}}",
+  "nickname": "P2타인"
+}
+
+> {%
+client.test("타인 회원가입은 201을 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("p2OtherId", response.body.data.userId);
+%}
+
+### 04. 판매자 로그인
+# @name loginP2Seller
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "p2-seller-{{runId}}@example.com",
+  "password": "{{password}}"
+}
+
+> {%
+client.test("판매자 로그인은 토큰을 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(!!response.body.data.accessToken, "access token이 없습니다.");
+});
+client.global.set("p2SellerAccessToken", response.body.data.accessToken);
+client.global.set("p2SellerId", response.body.data.user.userId);
+%}
+
+### 05. 구매자 로그인
+# @name loginP2Buyer
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "p2-buyer-{{runId}}@example.com",
+  "password": "{{password}}"
+}
+
+> {%
+client.test("구매자 로그인은 토큰을 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(!!response.body.data.accessToken, "access token이 없습니다.");
+});
+client.global.set("p2BuyerAccessToken", response.body.data.accessToken);
+client.global.set("p2BuyerId", response.body.data.user.userId);
+%}
+
+### 06. 타인 로그인
+# @name loginP2Other
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "p2-other-{{runId}}@example.com",
+  "password": "{{password}}"
+}
+
+> {%
+client.test("타인 로그인은 토큰을 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(!!response.body.data.accessToken, "access token이 없습니다.");
+});
+client.global.set("p2OtherAccessToken", response.body.data.accessToken);
+client.global.set("p2OtherId", response.body.data.user.userId);
+%}
+
+### 07. 카테고리 목록 조회
+# @name getP2Categories
+GET {{baseUrl}}/api/categories
+
+> {%
+client.test("카테고리 목록은 1개 이상이어야 한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.categories.length > 0, "상품 등록에 사용할 카테고리가 없습니다.");
+});
+client.global.set("p2CategoryId", response.body.data.categories[0].categoryId);
+%}
+
+### 08. 환불 승인용 상품 등록
+# @name createP2ApproveProduct
+POST {{baseUrl}}/api/products
+Authorization: Bearer {{p2SellerAccessToken}}
+Content-Type: application/json
+
+{
+  "title": "P2 환불 승인 상품 {{runId}}",
+  "description": "P2 환불 승인 흐름 검증용 상품입니다.",
+  "price": 430000,
+  "categoryId": {{p2CategoryId}}
+}
+
+> {%
+client.test("환불 승인용 상품 등록은 201을 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("p2ApproveProductId", response.body.data.productId);
+%}
+
+### 09. 환불 승인용 주문 생성
+# @name createP2ApproveOrder
+POST {{baseUrl}}/api/products/{{p2ApproveProductId}}/orders
+Authorization: Bearer {{p2BuyerAccessToken}}
+
+> {%
+client.test("환불 승인용 주문은 CREATED로 생성된다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+  client.assert(response.body.data.status === "CREATED", "CREATED를 기대했습니다.");
+});
+client.global.set("p2ApproveOrderId", response.body.data.orderId);
+%}
+
+### 10. 환불 승인용 결제 성공
+POST {{baseUrl}}/api/orders/{{p2ApproveOrderId}}/payment
+Authorization: Bearer {{p2BuyerAccessToken}}
+Idempotency-Key: {{approvePaymentKey}}
+Content-Type: application/json
+
+{
+  "method": "MOCK_CARD",
+  "result": "PAID"
+}
+
+> {%
+client.test("환불 승인용 결제는 PAID를 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+  client.assert(response.body.data.status === "PAID", "PAID를 기대했습니다.");
+});
+client.global.set("p2ApprovePaymentId", response.body.data.paymentId);
+%}
+
+### 11. 환불 승인용 배송 증빙 등록
+PATCH {{baseUrl}}/api/orders/{{p2ApproveOrderId}}/shipping
+Authorization: Bearer {{p2SellerAccessToken}}
+Content-Type: application/json
+
+{
+  "trackingNumber": "P2-APPROVE-{{runId}}"
+}
+
+> {%
+client.test("환불 승인용 주문은 SHIPPING이 된다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.status === "SHIPPING", "SHIPPING을 기대했습니다.");
+});
+%}
+
+### 12. 구매자 환불 요청
+# @name requestP2ApproveRefund
+POST {{baseUrl}}/api/orders/{{p2ApproveOrderId}}/refund
+Authorization: Bearer {{p2BuyerAccessToken}}
+Content-Type: application/json
+
+{
+  "reason": "상품 상태가 설명과 다릅니다."
+}
+
+> {%
+client.test("환불 요청은 REQUESTED를 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+  client.assert(response.body.data.status === "REQUESTED", "REQUESTED를 기대했습니다.");
+  client.assert(response.body.data.orderStatus === "REFUND_REQUESTED", "REFUND_REQUESTED를 기대했습니다.");
+});
+client.global.set("p2ApproveRefundId", response.body.data.refundRequestId);
+%}
+
+### 13. 판매자가 아닌 사용자의 환불 승인 실패
+POST {{baseUrl}}/api/refund/{{p2ApproveRefundId}}/approve
+Authorization: Bearer {{p2BuyerAccessToken}}
+
+> {%
+client.test("판매자가 아닌 사용자는 환불 승인할 수 없다", function () {
+  client.assert(response.status === 403, "403을 기대했습니다.");
+  client.assert(response.body.code === "REFUND_REQUEST_ACCESS_DENIED", "REFUND_REQUEST_ACCESS_DENIED를 기대했습니다.");
+});
+%}
+
+### 14. 판매자 환불 승인
+POST {{baseUrl}}/api/refund/{{p2ApproveRefundId}}/approve
+Authorization: Bearer {{p2SellerAccessToken}}
+
+> {%
+client.test("판매자는 환불 요청을 승인할 수 있다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.status === "APPROVED", "APPROVED를 기대했습니다.");
+  client.assert(response.body.data.orderStatus === "REFUNDED", "REFUNDED를 기대했습니다.");
+  client.assert(response.body.data.productStatus === "ON_SALE", "ON_SALE을 기대했습니다.");
+});
+%}
+
+### 15. 환불 승인 후 결제 상태 조회
+GET {{baseUrl}}/api/payments/{{p2ApprovePaymentId}}/status
+Authorization: Bearer {{p2BuyerAccessToken}}
+
+> {%
+client.test("환불 승인 후 결제는 REFUNDED다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.status === "REFUNDED", "REFUNDED를 기대했습니다.");
+});
+%}
+
+### 16. 분쟁 REFUND용 상품 등록
+# @name createP2RefundDisputeProduct
+POST {{baseUrl}}/api/products
+Authorization: Bearer {{p2SellerAccessToken}}
+Content-Type: application/json
+
+{
+  "title": "P2 분쟁 환불 상품 {{runId}}",
+  "description": "P2 분쟁 REFUND 종료 검증용 상품입니다.",
+  "price": 510000,
+  "categoryId": {{p2CategoryId}}
+}
+
+> {%
+client.test("분쟁 REFUND용 상품 등록은 201을 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("p2RefundDisputeProductId", response.body.data.productId);
+%}
+
+### 17. 분쟁 REFUND용 주문 생성
+# @name createP2RefundDisputeOrder
+POST {{baseUrl}}/api/products/{{p2RefundDisputeProductId}}/orders
+Authorization: Bearer {{p2BuyerAccessToken}}
+
+> {%
+client.test("분쟁 REFUND용 주문은 CREATED로 생성된다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("p2RefundDisputeOrderId", response.body.data.orderId);
+%}
+
+### 18. 분쟁 REFUND용 결제 성공
+POST {{baseUrl}}/api/orders/{{p2RefundDisputeOrderId}}/payment
+Authorization: Bearer {{p2BuyerAccessToken}}
+Idempotency-Key: {{refundPaymentKey}}
+Content-Type: application/json
+
+{
+  "method": "MOCK_CARD",
+  "result": "PAID"
+}
+
+> {%
+client.test("분쟁 REFUND용 결제는 PAID를 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("p2RefundDisputePaymentId", response.body.data.paymentId);
+%}
+
+### 19. 분쟁 REFUND용 배송 증빙 등록
+PATCH {{baseUrl}}/api/orders/{{p2RefundDisputeOrderId}}/shipping
+Authorization: Bearer {{p2SellerAccessToken}}
+Content-Type: application/json
+
+{
+  "trackingNumber": "P2-REFUND-{{runId}}"
+}
+
+> {%
+client.test("분쟁 REFUND용 주문은 SHIPPING이 된다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+});
+%}
+
+### 20. 분쟁 REFUND용 환불 요청
+# @name requestP2RefundDispute
+POST {{baseUrl}}/api/orders/{{p2RefundDisputeOrderId}}/refund
+Authorization: Bearer {{p2BuyerAccessToken}}
+Content-Type: application/json
+
+{
+  "reason": "배송 중 하자를 발견했습니다."
+}
+
+> {%
+client.test("분쟁 REFUND용 환불 요청은 REQUESTED다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("p2RefundDisputeRefundId", response.body.data.refundRequestId);
+%}
+
+### 21. 판매자 환불 요청 거절
+POST {{baseUrl}}/api/refund/{{p2RefundDisputeRefundId}}/reject
+Authorization: Bearer {{p2SellerAccessToken}}
+Content-Type: application/json
+
+{
+  "reason": "판매자는 정상 상품으로 판단합니다."
+}
+
+> {%
+client.test("환불 거절은 DISPUTED를 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.status === "DISPUTED", "DISPUTED를 기대했습니다.");
+  client.assert(response.body.data.orderStatus === "DISPUTED", "DISPUTED 주문을 기대했습니다.");
+});
+%}
+
+### 22. 판매자가 아닌 사용자의 분쟁 종료 실패
+POST {{baseUrl}}/api/refund/{{p2RefundDisputeRefundId}}/resolve
+Authorization: Bearer {{p2BuyerAccessToken}}
+Content-Type: application/json
+
+{
+  "resolution": "REFUND"
+}
+
+> {%
+client.test("판매자가 아닌 사용자는 분쟁 종료할 수 없다", function () {
+  client.assert(response.status === 403, "403을 기대했습니다.");
+  client.assert(response.body.code === "REFUND_REQUEST_ACCESS_DENIED", "REFUND_REQUEST_ACCESS_DENIED를 기대했습니다.");
+});
+%}
+
+### 23. 잘못된 resolution 분쟁 종료 실패
+POST {{baseUrl}}/api/refund/{{p2RefundDisputeRefundId}}/resolve
+Authorization: Bearer {{p2SellerAccessToken}}
+Content-Type: application/json
+
+{
+  "resolution": "INVALID"
+}
+
+> {%
+client.test("잘못된 resolution은 validation 실패를 반환한다", function () {
+  client.assert(response.status === 400, "400을 기대했습니다.");
+  client.assert(response.body.code === "VALIDATION_FAILED", "VALIDATION_FAILED를 기대했습니다.");
+});
+%}
+
+### 24. 분쟁 REFUND 종료
+POST {{baseUrl}}/api/refund/{{p2RefundDisputeRefundId}}/resolve
+Authorization: Bearer {{p2SellerAccessToken}}
+Content-Type: application/json
+
+{
+  "resolution": "REFUND",
+  "reason": "구매자 환불로 종료합니다."
+}
+
+> {%
+client.test("분쟁 REFUND 종료는 주문과 결제를 환불한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.status === "CLOSED", "CLOSED를 기대했습니다.");
+  client.assert(response.body.data.orderStatus === "REFUNDED", "REFUNDED 주문을 기대했습니다.");
+  client.assert(response.body.data.productStatus === "ON_SALE", "ON_SALE을 기대했습니다.");
+});
+%}
+
+### 25. 분쟁 COMPLETE용 상품 등록
+# @name createP2CompleteDisputeProduct
+POST {{baseUrl}}/api/products
+Authorization: Bearer {{p2SellerAccessToken}}
+Content-Type: application/json
+
+{
+  "title": "P2 분쟁 완료 상품 {{runId}}",
+  "description": "P2 분쟁 COMPLETE 종료 검증용 상품입니다.",
+  "price": 620000,
+  "categoryId": {{p2CategoryId}}
+}
+
+> {%
+client.test("분쟁 COMPLETE용 상품 등록은 201을 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("p2CompleteDisputeProductId", response.body.data.productId);
+%}
+
+### 26. 분쟁 COMPLETE용 주문 생성
+# @name createP2CompleteDisputeOrder
+POST {{baseUrl}}/api/products/{{p2CompleteDisputeProductId}}/orders
+Authorization: Bearer {{p2BuyerAccessToken}}
+
+> {%
+client.test("분쟁 COMPLETE용 주문은 CREATED로 생성된다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("p2CompleteDisputeOrderId", response.body.data.orderId);
+%}
+
+### 27. 분쟁 COMPLETE용 결제 성공
+POST {{baseUrl}}/api/orders/{{p2CompleteDisputeOrderId}}/payment
+Authorization: Bearer {{p2BuyerAccessToken}}
+Idempotency-Key: {{completePaymentKey}}
+Content-Type: application/json
+
+{
+  "method": "MOCK_CARD",
+  "result": "PAID"
+}
+
+> {%
+client.test("분쟁 COMPLETE용 결제는 PAID를 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("p2CompleteDisputePaymentId", response.body.data.paymentId);
+%}
+
+### 28. 분쟁 COMPLETE용 배송 증빙 등록
+PATCH {{baseUrl}}/api/orders/{{p2CompleteDisputeOrderId}}/shipping
+Authorization: Bearer {{p2SellerAccessToken}}
+Content-Type: application/json
+
+{
+  "trackingNumber": "P2-COMPLETE-{{runId}}"
+}
+
+> {%
+client.test("분쟁 COMPLETE용 주문은 SHIPPING이 된다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+});
+%}
+
+### 29. 분쟁 COMPLETE용 환불 요청
+# @name requestP2CompleteDispute
+POST {{baseUrl}}/api/orders/{{p2CompleteDisputeOrderId}}/refund
+Authorization: Bearer {{p2BuyerAccessToken}}
+Content-Type: application/json
+
+{
+  "reason": "구매자가 환불을 요청합니다."
+}
+
+> {%
+client.test("분쟁 COMPLETE용 환불 요청은 REQUESTED다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("p2CompleteDisputeRefundId", response.body.data.refundRequestId);
+%}
+
+### 30. 판매자 환불 요청 거절
+POST {{baseUrl}}/api/refund/{{p2CompleteDisputeRefundId}}/reject
+Authorization: Bearer {{p2SellerAccessToken}}
+Content-Type: application/json
+
+{
+  "reason": "정상 상품입니다."
+}
+
+> {%
+client.test("분쟁 COMPLETE용 환불 거절은 DISPUTED를 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.status === "DISPUTED", "DISPUTED를 기대했습니다.");
+});
+%}
+
+### 31. 분쟁 COMPLETE 종료
+POST {{baseUrl}}/api/refund/{{p2CompleteDisputeRefundId}}/resolve
+Authorization: Bearer {{p2SellerAccessToken}}
+Content-Type: application/json
+
+{
+  "resolution": "COMPLETE"
+}
+
+> {%
+client.test("분쟁 COMPLETE 종료는 거래 완료 상태를 반환한다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.status === "CLOSED", "CLOSED를 기대했습니다.");
+  client.assert(response.body.data.orderStatus === "COMPLETED", "COMPLETED 주문을 기대했습니다.");
+  client.assert(response.body.data.productStatus === "SOLD_OUT", "SOLD_OUT을 기대했습니다.");
+});
+%}
+
+### 32. 리뷰용 상품 등록
+# @name createP2ReviewProduct
+POST {{baseUrl}}/api/products
+Authorization: Bearer {{p2SellerAccessToken}}
+Content-Type: application/json
+
+{
+  "title": "P2 리뷰 상품 {{runId}}",
+  "description": "P2 리뷰와 평점 검증용 상품입니다.",
+  "price": 370000,
+  "categoryId": {{p2CategoryId}}
+}
+
+> {%
+client.test("리뷰용 상품 등록은 201을 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("p2ReviewProductId", response.body.data.productId);
+%}
+
+### 33. 리뷰용 주문 생성
+# @name createP2ReviewOrder
+POST {{baseUrl}}/api/products/{{p2ReviewProductId}}/orders
+Authorization: Bearer {{p2BuyerAccessToken}}
+
+> {%
+client.test("리뷰용 주문은 CREATED로 생성된다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("p2ReviewOrderId", response.body.data.orderId);
+%}
+
+### 34. 리뷰용 결제 성공
+POST {{baseUrl}}/api/orders/{{p2ReviewOrderId}}/payment
+Authorization: Bearer {{p2BuyerAccessToken}}
+Idempotency-Key: {{reviewPaymentKey}}
+Content-Type: application/json
+
+{
+  "method": "MOCK_CARD",
+  "result": "PAID"
+}
+
+> {%
+client.test("리뷰용 결제는 PAID를 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+%}
+
+### 35. 리뷰용 배송 증빙 등록
+PATCH {{baseUrl}}/api/orders/{{p2ReviewOrderId}}/shipping
+Authorization: Bearer {{p2SellerAccessToken}}
+Content-Type: application/json
+
+{
+  "trackingNumber": "P2-REVIEW-{{runId}}"
+}
+
+> {%
+client.test("리뷰용 주문은 SHIPPING이 된다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+});
+%}
+
+### 36. 거래 완료 전 리뷰 작성 실패
+POST {{baseUrl}}/api/orders/{{p2ReviewOrderId}}/reviews
+Authorization: Bearer {{p2BuyerAccessToken}}
+Content-Type: application/json
+
+{
+  "score": 5,
+  "content": "거래 완료 전 리뷰입니다."
+}
+
+> {%
+client.test("거래 완료 전 리뷰 작성은 거부된다", function () {
+  client.assert(response.status === 409, "409를 기대했습니다.");
+  client.assert(response.body.code === "REVIEW_NOT_ALLOWED", "REVIEW_NOT_ALLOWED를 기대했습니다.");
+});
+%}
+
+### 37. 구매자 구매확정
+POST {{baseUrl}}/api/orders/{{p2ReviewOrderId}}/confirm
+Authorization: Bearer {{p2BuyerAccessToken}}
+
+> {%
+client.test("리뷰용 주문은 구매확정으로 COMPLETED가 된다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.status === "COMPLETED", "COMPLETED를 기대했습니다.");
+});
+%}
+
+### 38. 구매자가 판매자에게 리뷰 작성
+# @name createP2BuyerReview
+POST {{baseUrl}}/api/orders/{{p2ReviewOrderId}}/reviews
+Authorization: Bearer {{p2BuyerAccessToken}}
+Content-Type: application/json
+
+{
+  "score": 5,
+  "content": "상품 설명이 정확하고 응답이 빨랐습니다."
+}
+
+> {%
+client.test("구매자는 판매자에게 리뷰를 작성할 수 있다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+  client.assert(response.body.data.reviewerId == client.global.get("p2BuyerId"), "구매자 reviewerId를 기대했습니다.");
+  client.assert(response.body.data.revieweeId == client.global.get("p2SellerId"), "판매자 revieweeId를 기대했습니다.");
+});
+client.global.set("p2BuyerReviewId", response.body.data.reviewId);
+%}
+
+### 39. 판매자가 구매자에게 리뷰 작성
+# @name createP2SellerReview
+POST {{baseUrl}}/api/orders/{{p2ReviewOrderId}}/reviews
+Authorization: Bearer {{p2SellerAccessToken}}
+Content-Type: application/json
+
+{
+  "score": 4,
+  "content": "약속 시간을 잘 지킨 구매자입니다."
+}
+
+> {%
+client.test("판매자는 구매자에게 리뷰를 작성할 수 있다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+  client.assert(response.body.data.reviewerId == client.global.get("p2SellerId"), "판매자 reviewerId를 기대했습니다.");
+  client.assert(response.body.data.revieweeId == client.global.get("p2BuyerId"), "구매자 revieweeId를 기대했습니다.");
+});
+client.global.set("p2SellerReviewId", response.body.data.reviewId);
+%}
+
+### 40. 구매자 중복 리뷰 작성 실패
+POST {{baseUrl}}/api/orders/{{p2ReviewOrderId}}/reviews
+Authorization: Bearer {{p2BuyerAccessToken}}
+Content-Type: application/json
+
+{
+  "score": 5,
+  "content": "중복 리뷰입니다."
+}
+
+> {%
+client.test("같은 작성자의 같은 주문 중복 리뷰는 거부된다", function () {
+  client.assert(response.status === 409, "409를 기대했습니다.");
+  client.assert(response.body.code === "REVIEW_ALREADY_EXISTS", "REVIEW_ALREADY_EXISTS를 기대했습니다.");
+});
+%}
+
+### 41. 구매자 내 작성 리뷰 목록 조회
+GET {{baseUrl}}/api/users/me/reviews?status=written&page=0&size=10
+Authorization: Bearer {{p2BuyerAccessToken}}
+
+> {%
+client.test("구매자 내 작성 리뷰 목록에 판매자 리뷰가 포함된다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.totalElements >= 1, "작성 리뷰가 있어야 합니다.");
+});
+%}
+
+### 42. 판매자 내 받은 리뷰 목록 조회
+GET {{baseUrl}}/api/users/me/reviews?status=received&page=0&size=10
+Authorization: Bearer {{p2SellerAccessToken}}
+
+> {%
+client.test("판매자 내 받은 리뷰 목록에 구매자 리뷰가 포함된다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.totalElements >= 1, "받은 리뷰가 있어야 합니다.");
+});
+%}
+
+### 43. 판매자가 받은 공개 리뷰 목록 조회
+GET {{baseUrl}}/api/users/{{p2SellerId}}/reviews?page=0&size=10
+
+> {%
+client.test("판매자 공개 리뷰 목록을 조회할 수 있다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.totalElements >= 1, "공개 리뷰가 있어야 합니다.");
+});
+%}
+
+### 44. 판매자 정보 평점 조회
+GET {{baseUrl}}/api/users/{{p2SellerId}}
+
+> {%
+client.test("판매자 평점은 받은 리뷰 기준으로 계산된다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.averageRating === 5.0, "판매자 평균 평점 5.0을 기대했습니다.");
+  client.assert(response.body.data.reviewCount >= 1, "판매자 받은 리뷰 수를 기대했습니다.");
+});
+%}
+
+### 45. 상품 상세의 판매자 평점 조회
+GET {{baseUrl}}/api/products/{{p2ReviewProductId}}
+
+> {%
+client.test("상품 상세의 seller.averageRating은 판매자 받은 리뷰 기준이다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.seller.averageRating === 5.0, "seller.averageRating 5.0을 기대했습니다.");
+});
+%}
+
+### 46. 구매자가 작성한 리뷰 수정
+PATCH {{baseUrl}}/api/orders/{{p2ReviewOrderId}}/reviews/{{p2BuyerReviewId}}
+Authorization: Bearer {{p2BuyerAccessToken}}
+Content-Type: application/json
+
+{
+  "score": 3,
+  "content": "응답은 빨랐지만 포장이 아쉬웠습니다."
+}
+
+> {%
+client.test("작성자는 자신의 리뷰를 수정할 수 있다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.score === 3, "수정된 평점 3을 기대했습니다.");
+});
+%}
+
+### 47. 작성자가 아닌 사용자의 리뷰 수정 실패
+PATCH {{baseUrl}}/api/orders/{{p2ReviewOrderId}}/reviews/{{p2BuyerReviewId}}
+Authorization: Bearer {{p2OtherAccessToken}}
+Content-Type: application/json
+
+{
+  "score": 4
+}
+
+> {%
+client.test("작성자가 아닌 사용자는 리뷰를 수정할 수 없다", function () {
+  client.assert(response.status === 403, "403을 기대했습니다.");
+  client.assert(response.body.code === "REVIEW_ACCESS_DENIED", "REVIEW_ACCESS_DENIED를 기대했습니다.");
+});
+%}
+
+### 48. 잘못된 내 리뷰 목록 status 실패
+GET {{baseUrl}}/api/users/me/reviews?status=all
+Authorization: Bearer {{p2BuyerAccessToken}}
+
+> {%
+client.test("잘못된 리뷰 목록 status는 validation 실패를 반환한다", function () {
+  client.assert(response.status === 400, "400을 기대했습니다.");
+  client.assert(response.body.code === "VALIDATION_FAILED", "VALIDATION_FAILED를 기대했습니다.");
+});
+%}
+
+### 49. 판매자가 작성한 리뷰 삭제
+DELETE {{baseUrl}}/api/orders/{{p2ReviewOrderId}}/reviews/{{p2SellerReviewId}}
+Authorization: Bearer {{p2SellerAccessToken}}
+
+> {%
+client.test("작성자는 자신의 리뷰를 삭제할 수 있다", function () {
+  client.assert(response.status === 200, "200을 기대했습니다.");
+  client.assert(response.body.data.deleted === true, "deleted=true를 기대했습니다.");
+});
+%}
+
+### 50. 작성자가 아닌 사용자의 리뷰 삭제 실패
+DELETE {{baseUrl}}/api/orders/{{p2ReviewOrderId}}/reviews/{{p2BuyerReviewId}}
+Authorization: Bearer {{p2OtherAccessToken}}
+
+> {%
+client.test("작성자가 아닌 사용자는 리뷰를 삭제할 수 없다", function () {
+  client.assert(response.status === 403, "403을 기대했습니다.");
+  client.assert(response.body.code === "REVIEW_ACCESS_DENIED", "REVIEW_ACCESS_DENIED를 기대했습니다.");
+});
+%}
+
+### 51. SHIPPING이 아닌 주문 환불 요청 실패용 상품 등록
+# @name createP2InvalidRefundProduct
+POST {{baseUrl}}/api/products
+Authorization: Bearer {{p2SellerAccessToken}}
+Content-Type: application/json
+
+{
+  "title": "P2 환불 실패 상품 {{runId}}",
+  "description": "P2 환불 실패 검증용 상품입니다.",
+  "price": 220000,
+  "categoryId": {{p2CategoryId}}
+}
+
+> {%
+client.test("환불 실패용 상품 등록은 201을 반환한다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("p2InvalidRefundProductId", response.body.data.productId);
+%}
+
+### 52. SHIPPING이 아닌 주문 환불 요청 실패용 주문 생성
+# @name createP2InvalidRefundOrder
+POST {{baseUrl}}/api/products/{{p2InvalidRefundProductId}}/orders
+Authorization: Bearer {{p2BuyerAccessToken}}
+
+> {%
+client.test("환불 실패용 주문은 CREATED로 생성된다", function () {
+  client.assert(response.status === 201, "201을 기대했습니다.");
+});
+client.global.set("p2InvalidRefundOrderId", response.body.data.orderId);
+%}
+
+### 53. CREATED 주문 환불 요청 실패
+POST {{baseUrl}}/api/orders/{{p2InvalidRefundOrderId}}/refund
+Authorization: Bearer {{p2BuyerAccessToken}}
+Content-Type: application/json
+
+{
+  "reason": "배송 전 환불 요청입니다."
+}
+
+> {%
+client.test("SHIPPING이 아닌 주문의 환불 요청은 거부된다", function () {
+  client.assert(response.status === 409, "409를 기대했습니다.");
+  client.assert(response.body.code === "INVALID_ORDER_STATUS", "INVALID_ORDER_STATUS를 기대했습니다.");
+});
+%}
