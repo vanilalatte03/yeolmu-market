@@ -1,7 +1,10 @@
 package com.guingujig.yeolmumarket.domain.refund.controller;
 
+import com.guingujig.yeolmumarket.domain.refund.dto.ApproveRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.dto.CreateRefundRequest;
 import com.guingujig.yeolmumarket.domain.refund.dto.CreateRefundRequestResponse;
+import com.guingujig.yeolmumarket.domain.refund.dto.RejectRefundRequest;
+import com.guingujig.yeolmumarket.domain.refund.dto.RejectRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.service.RefundService;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import com.guingujig.yeolmumarket.global.security.AuthenticatedUser;
@@ -29,5 +32,24 @@ public class RefundController {
     CreateRefundRequestResponse response =
         refundService.createRefundRequest(authenticatedUser.userId(), orderId, request.reason());
     return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
+  }
+
+  @PostMapping("/api/refund/{refundId}/approve")
+  public ResponseEntity<ApiResponse<ApproveRefundRequestResponse>> approveRefundRequest(
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long refundId) {
+    ApproveRefundRequestResponse response =
+        refundService.approveRefundRequest(authenticatedUser.userId(), refundId);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
+  @PostMapping("/api/refund/{refundId}/reject")
+  public ResponseEntity<ApiResponse<RejectRefundRequestResponse>> rejectRefundRequest(
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
+      @PathVariable Long refundId,
+      @RequestBody(required = false) RejectRefundRequest request) {
+    String reason = request == null ? null : request.reason();
+    RejectRefundRequestResponse response =
+        refundService.rejectRefundRequest(authenticatedUser.userId(), refundId, reason);
+    return ResponseEntity.ok(ApiResponse.success(response));
   }
 }

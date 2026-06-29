@@ -3,6 +3,8 @@ package com.guingujig.yeolmumarket.domain.refund.entity;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.global.entity.BaseTimeEntity;
+import com.guingujig.yeolmumarket.global.exception.BusinessException;
+import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -79,5 +81,34 @@ public class RefundRequest extends BaseTimeEntity {
     refundRequest.status = RefundRequestStatus.REQUESTED;
     refundRequest.requestedAt = Objects.requireNonNull(requestedAt, "requestedAt은 필수입니다.");
     return refundRequest;
+  }
+
+  /**
+   * REQUESTED 상태의 환불 요청을 판매자 승인 결과인 APPROVED로 전이한다.
+   *
+   * <p>REQUESTED가 아닌 상태에서 호출하면 {@link BusinessException}을 던져 재처리를 차단한다.
+   */
+  public void approve(LocalDateTime approvedAt) {
+    validateRequested();
+    this.status = RefundRequestStatus.APPROVED;
+    this.approvedAt = Objects.requireNonNull(approvedAt, "approvedAt은 필수입니다.");
+  }
+
+  /**
+   * REQUESTED 상태의 환불 요청을 판매자 거절 결과인 DISPUTED로 전이한다.
+   *
+   * <p>판매자 거절은 별도 REJECTED 상태를 만들지 않고 분쟁 상태와 선택 입력된 판매자 응답만 기록한다.
+   */
+  public void rejectToDispute(String sellerResponse, LocalDateTime rejectedAt) {
+    validateRequested();
+    this.status = RefundRequestStatus.DISPUTED;
+    this.sellerResponse = sellerResponse;
+    this.rejectedAt = Objects.requireNonNull(rejectedAt, "rejectedAt은 필수입니다.");
+  }
+
+  private void validateRequested() {
+    if (this.status != RefundRequestStatus.REQUESTED) {
+      throw new BusinessException(ErrorCode.INVALID_REFUND_REQUEST_STATUS);
+    }
   }
 }

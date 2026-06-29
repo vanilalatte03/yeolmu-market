@@ -145,4 +145,28 @@ public class Order extends BaseTimeEntity {
     }
     this.orderStatus = OrderStatus.REFUND_REQUESTED;
   }
+
+  /**
+   * REFUND_REQUESTED 상태의 주문을 환불 승인 결과인 REFUNDED로 전이한다.
+   *
+   * <p>REFUND_REQUESTED가 아닌 상태에서 호출하면 {@link BusinessException}을 던져 잘못된 전이를 차단한다.
+   */
+  public void approveRefund() {
+    if (this.orderStatus != OrderStatus.REFUND_REQUESTED) {
+      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+    }
+    this.orderStatus = OrderStatus.REFUNDED;
+  }
+
+  /**
+   * REFUND_REQUESTED 상태의 주문을 환불 거절 결과인 DISPUTED로 전이한다.
+   *
+   * <p>REFUND_REQUESTED가 아닌 상태에서 호출하면 {@link BusinessException}을 던져 잘못된 전이를 차단한다.
+   */
+  public void rejectRefund() {
+    if (this.orderStatus != OrderStatus.REFUND_REQUESTED) {
+      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+    }
+    this.orderStatus = OrderStatus.DISPUTED;
+  }
 }
