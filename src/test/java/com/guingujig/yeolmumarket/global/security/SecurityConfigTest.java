@@ -125,6 +125,15 @@ class SecurityConfigTest {
   }
 
   @Test
+  void 내_상품_목록_API는_공개_사용자_상품_패턴보다_우선해_JWT를_요구한다() throws Exception {
+    mockMvc
+        .perform(get("/api/users/me/products"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+  }
+
+  @Test
   void 보호_API는_유효한_JWT로_인증_사용자를_식별한다() throws Exception {
     User user =
         userRepository.save(

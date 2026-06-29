@@ -1,5 +1,7 @@
 package com.guingujig.yeolmumarket.global.security;
 
+import static org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher.pathPattern;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -9,10 +11,39 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 
 @Configuration
 @RequiredArgsConstructor
 public class SecurityConfig {
+
+  private static final RequestMatcher[] PUBLIC_REQUEST_MATCHERS = {
+    pathPattern(HttpMethod.POST, "/api/auth/signup"),
+    pathPattern(HttpMethod.POST, "/api/auth/login"),
+    pathPattern(HttpMethod.POST, "/api/auth/refresh"),
+    pathPattern("/ws"),
+    pathPattern("/ws/**"),
+    pathPattern(HttpMethod.GET, "/api/products"),
+    pathPattern(HttpMethod.GET, "/api/products/*"),
+    pathPattern(HttpMethod.GET, "/api/search/products"),
+    pathPattern(HttpMethod.GET, "/api/search/v2/products"),
+    pathPattern(HttpMethod.GET, "/api/search/popular-keywords"),
+    pathPattern(HttpMethod.GET, "/api/categories"),
+    pathPattern(HttpMethod.GET, "/api/categories/*/products"),
+    pathPattern(HttpMethod.GET, "/api/users/*/products"),
+    pathPattern(HttpMethod.GET, "/api/users/*"),
+    pathPattern(HttpMethod.GET, "/api/users/*/reviews"),
+    pathPattern(HttpMethod.GET, "/uploads/**")
+  };
+
+  private static final RequestMatcher[] AUTHENTICATED_USER_REQUEST_MATCHERS = {
+    pathPattern(HttpMethod.GET, "/api/users/me/products"),
+    pathPattern(HttpMethod.GET, "/api/users/me/orders"),
+    pathPattern(HttpMethod.GET, "/api/users/me/sales"),
+    pathPattern(HttpMethod.GET, "/api/users/me/reviews")
+  };
+
+  private static final RequestMatcher ADMIN_API_REQUEST_MATCHER = pathPattern("/api/admin/**");
 
   private final JwtAuthenticationFilter jwtAuthenticationFilter;
   private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
@@ -34,35 +65,11 @@ public class SecurityConfig {
         .authorizeHttpRequests(
             authorize ->
                 authorize
-                    .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login")
-                    .permitAll()
-                    .requestMatchers(HttpMethod.POST, "/api/auth/refresh")
-                    .permitAll()
-                    .requestMatchers("/ws", "/ws/**")
-                    .permitAll()
-                    .requestMatchers(HttpMethod.GET, "/api/users/me/products")
+                    .requestMatchers(AUTHENTICATED_USER_REQUEST_MATCHERS)
                     .authenticated()
-                    .requestMatchers(HttpMethod.GET, "/api/users/me/orders")
-                    .authenticated()
-                    .requestMatchers(HttpMethod.GET, "/api/users/me/sales")
-                    .authenticated()
-                    .requestMatchers(HttpMethod.GET, "/api/users/me/reviews")
-                    .authenticated()
-                    .requestMatchers(
-                        HttpMethod.GET,
-                        "/api/products",
-                        "/api/products/*",
-                        "/api/search/products",
-                        "/api/search/v2/products",
-                        "/api/search/popular-keywords",
-                        "/api/categories",
-                        "/api/categories/*/products",
-                        "/api/users/*/products",
-                        "/api/users/*",
-                        "/api/users/*/reviews",
-                        "/uploads/**")
+                    .requestMatchers(PUBLIC_REQUEST_MATCHERS)
                     .permitAll()
-                    .requestMatchers("/api/admin/**")
+                    .requestMatchers(ADMIN_API_REQUEST_MATCHER)
                     .hasRole("ADMIN")
                     .anyRequest()
                     .authenticated())
