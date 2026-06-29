@@ -12,7 +12,7 @@
 | chat/websocket | `domain/chat`, `global/config/WebSocketConfig.java` | `docs/API.md`, `docs/ERD.md` |
 | order/payment/refund/review | `domain/order`, `domain/payment`, `domain/refund`, `domain/review` | `docs/API.md`, `docs/ERD.md`, `docs/adr/001-concurrent-order-control.md`, `docs/adr/005-mock-safe-payment-transaction-policy.md` |
 | global | `global/exception`, `global/response`, `global/config`, `global/security`, `global/entity` | `docs/API.md`, `docs/CONVENTIONS.md` |
-| test | `src/test/java/com/guingujig/yeolmumarket` | `docs/CONVENTIONS.md`, `AGENTS.md` 실행 게이트 |
+| test | `src/test/java/com/guingujig/yeolmumarket` | `docs/CONVENTIONS.md`, `docs/DEVELOPMENT.md` |
 
 도메인 내부는 가능한 한 `controller / service / repository / dto / entity` 흐름을 따른다.
 새 파일을 추가할 때는 기존 같은 도메인의 이름·패키지·테스트 배치를 먼저 맞춘다.
