@@ -3,8 +3,12 @@ package com.guingujig.yeolmumarket.global.security;
 import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.security.JwtTokenProvider.JwtAccessClaims;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -20,10 +24,17 @@ public class JwtAuthenticationService {
    * <p>폐기 토큰은 인증 실패로 처리하며, Redis 조회 실패는 호출자가 인증 채널별 응답 형식에 맞게 처리한다.
    */
   public Authentication authenticate(String token) {
-    Authentication authentication = jwtTokenProvider.getAuthentication(token);
+    JwtAccessClaims claims = jwtTokenProvider.parseAccessToken(token);
     if (revokedAccessTokenRepository.exists(jwtTokenProvider.hashToken(token))) {
       throw new BusinessException(ErrorCode.REVOKED_TOKEN);
     }
-    return authentication;
+    return createAuthentication(claims);
+  }
+
+  private Authentication createAuthentication(JwtAccessClaims claims) {
+    AuthenticatedUser principal =
+        new AuthenticatedUser(claims.userId(), claims.email(), claims.role());
+    return UsernamePasswordAuthenticationToken.authenticated(
+        principal, null, List.of(new SimpleGrantedAuthority("ROLE_" + claims.role().name())));
   }
 }

@@ -9,15 +9,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
@@ -100,13 +96,10 @@ public class JwtTokenProvider {
     }
   }
 
-  public Authentication getAuthentication(String token) {
+  public JwtAccessClaims parseAccessToken(String token) {
     JwtClaims claims = parseClaims(token);
     validateTokenType(claims, TOKEN_TYPE_ACCESS, "access token이 아닙니다.");
-    AuthenticatedUser principal =
-        new AuthenticatedUser(claims.userId(), claims.email(), claims.role());
-    return UsernamePasswordAuthenticationToken.authenticated(
-        principal, null, List.of(new SimpleGrantedAuthority("ROLE_" + claims.role().name())));
+    return new JwtAccessClaims(claims.userId(), claims.email(), claims.role());
   }
 
   public JwtRefreshClaims parseRefreshToken(String token) {
@@ -244,6 +237,8 @@ public class JwtTokenProvider {
       throw new IllegalArgumentException("JWT 알고리즘이 올바르지 않습니다.");
     }
   }
+
+  public record JwtAccessClaims(Long userId, String email, UserRole role) {}
 
   public record JwtRefreshClaims(Long userId, String jti, long expiresAtEpochSeconds) {}
 
