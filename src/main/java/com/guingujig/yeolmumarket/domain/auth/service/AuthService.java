@@ -62,9 +62,7 @@ public class AuthService {
             .findByEmail(request.email())
             .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_LOGIN_CREDENTIALS));
 
-    if (!passwordEncoder.matches(request.password(), user.getPassword())) {
-      throw new BusinessException(ErrorCode.INVALID_LOGIN_CREDENTIALS);
-    }
+    validateLoginPassword(request, user);
 
     String accessToken = jwtTokenProvider.issueAccessToken(user);
     String refreshToken = jwtTokenProvider.issueRefreshToken(user);
@@ -116,9 +114,7 @@ public class AuthService {
       throw new BusinessException(ErrorCode.REDIS_UNAVAILABLE);
     }
 
-    if (!rotated) {
-      throw new BusinessException(ErrorCode.REVOKED_TOKEN);
-    }
+    validateRefreshTokenRotated(rotated);
 
     return new RefreshTokenResponse(
         "Bearer",
@@ -156,6 +152,18 @@ public class AuthService {
       return jwtTokenProvider.parseRefreshToken(refreshToken);
     } catch (JwtException exception) {
       throw new BusinessException(exception.getErrorCode());
+    }
+  }
+
+  private void validateLoginPassword(LoginRequest request, User user) {
+    if (!passwordEncoder.matches(request.password(), user.getPassword())) {
+      throw new BusinessException(ErrorCode.INVALID_LOGIN_CREDENTIALS);
+    }
+  }
+
+  private void validateRefreshTokenRotated(boolean rotated) {
+    if (!rotated) {
+      throw new BusinessException(ErrorCode.REVOKED_TOKEN);
     }
   }
 }

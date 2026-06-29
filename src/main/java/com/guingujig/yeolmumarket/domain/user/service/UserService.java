@@ -48,9 +48,7 @@ public class UserService {
    */
   @Transactional
   public UpdateUserResponse updateMe(Long userId, UpdateUserRequest request) {
-    if (!StringUtils.hasText(request.nickname()) && !StringUtils.hasText(request.password())) {
-      throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-    }
+    validateUpdateValue(request);
 
     User user =
         userRepository
@@ -73,5 +71,11 @@ public class UserService {
       eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
     }
     return UpdateUserResponse.from(user);
+  }
+
+  private void validateUpdateValue(UpdateUserRequest request) {
+    if (!StringUtils.hasText(request.nickname()) && !StringUtils.hasText(request.password())) {
+      throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+    }
   }
 }

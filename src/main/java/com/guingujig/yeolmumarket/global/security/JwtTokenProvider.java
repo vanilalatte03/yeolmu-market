@@ -74,9 +74,7 @@ public class JwtTokenProvider {
 
   public Duration getAccessTokenRemainingTtl(String token) {
     JwtClaims claims = parseClaims(token);
-    if (!TOKEN_TYPE_ACCESS.equals(claims.tokenType())) {
-      throw new JwtException(ErrorCode.INVALID_TOKEN, "access token이 아닙니다.");
-    }
+    validateTokenType(claims, TOKEN_TYPE_ACCESS, "access token이 아닙니다.");
     long remaining = claims.expiresAtEpochSeconds() - Instant.now().getEpochSecond();
     if (remaining <= 0) {
       throw new JwtException(ErrorCode.EXPIRED_TOKEN, "JWT가 만료되었습니다.");
@@ -104,9 +102,7 @@ public class JwtTokenProvider {
 
   public Authentication getAuthentication(String token) {
     JwtClaims claims = parseClaims(token);
-    if (!TOKEN_TYPE_ACCESS.equals(claims.tokenType())) {
-      throw new JwtException(ErrorCode.INVALID_TOKEN, "access token이 아닙니다.");
-    }
+    validateTokenType(claims, TOKEN_TYPE_ACCESS, "access token이 아닙니다.");
     AuthenticatedUser principal =
         new AuthenticatedUser(claims.userId(), claims.email(), claims.role());
     return UsernamePasswordAuthenticationToken.authenticated(
@@ -115,9 +111,7 @@ public class JwtTokenProvider {
 
   public JwtRefreshClaims parseRefreshToken(String token) {
     JwtClaims claims = parseClaims(token);
-    if (!TOKEN_TYPE_REFRESH.equals(claims.tokenType())) {
-      throw new JwtException(ErrorCode.INVALID_TOKEN, "refresh token이 아닙니다.");
-    }
+    validateTokenType(claims, TOKEN_TYPE_REFRESH, "refresh token이 아닙니다.");
     return new JwtRefreshClaims(claims.userId(), claims.jti(), claims.expiresAtEpochSeconds());
   }
 
@@ -151,9 +145,7 @@ public class JwtTokenProvider {
       }
 
       Map<String, Object> header = decodeJson(parts[0]);
-      if (!JWT_ALGORITHM.equals(header.get("alg"))) {
-        throw new IllegalArgumentException("JWT 알고리즘이 올바르지 않습니다.");
-      }
+      validateAlgorithm(header);
       validateSignature(parts);
 
       Map<String, Object> payload = decodeJson(parts[1]);
@@ -238,6 +230,18 @@ public class JwtTokenProvider {
   private void validateValiditySeconds(long validitySeconds, String tokenName) {
     if (validitySeconds <= 0) {
       throw new IllegalArgumentException(tokenName + " 만료 시간은 0보다 커야 합니다.");
+    }
+  }
+
+  private void validateTokenType(JwtClaims claims, String expectedTokenType, String message) {
+    if (!expectedTokenType.equals(claims.tokenType())) {
+      throw new JwtException(ErrorCode.INVALID_TOKEN, message);
+    }
+  }
+
+  private void validateAlgorithm(Map<String, Object> header) {
+    if (!JWT_ALGORITHM.equals(header.get("alg"))) {
+      throw new IllegalArgumentException("JWT 알고리즘이 올바르지 않습니다.");
     }
   }
 
