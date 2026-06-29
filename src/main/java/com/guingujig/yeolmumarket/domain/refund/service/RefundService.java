@@ -86,7 +86,7 @@ public class RefundService {
   /**
    * 로그인한 판매자가 REQUESTED 환불 요청을 승인하고 주문, 상품, 결제를 환불 결과로 전이한다.
    *
-   * <p>주문 row lock으로 동일 환불 요청 승인/거절을 직렬화하고, 상품이 ON_SALE로 복귀하면 검색 캐시 무효화 이벤트를 발행한다.
+   * <p>주문과 환불 요청 row lock으로 동일 환불 요청 승인/거절을 직렬화하고, 상품이 ON_SALE로 복귀하면 검색 캐시 무효화 이벤트를 발행한다.
    *
    * @throws BusinessException REFUND_REQUEST_NOT_FOUND - 환불 요청이 존재하지 않는 경우
    * @throws BusinessException REFUND_REQUEST_ACCESS_DENIED - 주문 판매자가 아닌 사용자의 요청
@@ -94,7 +94,7 @@ public class RefundService {
    */
   @Transactional
   public ApproveRefundRequestResponse approveRefundRequest(Long sellerId, Long refundId) {
-    RefundRequest refundRequest = fetchRefundRequestAfterOrderLock(refundId);
+    RefundRequest refundRequest = fetchRefundRequestForProcessing(refundId);
 
     if (!Objects.equals(refundRequest.getOrder().getSeller().getId(), sellerId)) {
       throw new BusinessException(ErrorCode.REFUND_REQUEST_ACCESS_DENIED);
@@ -120,7 +120,8 @@ public class RefundService {
   /**
    * 로그인한 판매자가 REQUESTED 환불 요청을 거절하고 주문과 환불 요청을 DISPUTED로 전이한다.
    *
-   * <p>거절 사유는 선택값이며 입력되면 trim 후 저장한다. 상품과 결제 상태는 변경하지 않는다.
+   * <p>주문과 환불 요청 row lock으로 동일 환불 요청 승인/거절을 직렬화한다. 거절 사유는 선택값이며 입력되면 trim 후 저장한다. 상품과 결제 상태는 변경하지
+   * 않는다.
    *
    * @throws BusinessException VALIDATION_FAILED - trim한 거절 사유가 255자를 초과하는 경우
    * @throws BusinessException REFUND_REQUEST_NOT_FOUND - 환불 요청이 존재하지 않는 경우
@@ -131,7 +132,7 @@ public class RefundService {
   public RejectRefundRequestResponse rejectRefundRequest(
       Long sellerId, Long refundId, String reason) {
     String normalizedReason = normalizeOptionalReason(reason);
-    RefundRequest refundRequest = fetchRefundRequestAfterOrderLock(refundId);
+    RefundRequest refundRequest = fetchRefundRequestForProcessing(refundId);
 
     if (!Objects.equals(refundRequest.getOrder().getSeller().getId(), sellerId)) {
       throw new BusinessException(ErrorCode.REFUND_REQUEST_ACCESS_DENIED);
@@ -171,7 +172,7 @@ public class RefundService {
     return normalizedReason;
   }
 
-  private RefundRequest fetchRefundRequestAfterOrderLock(Long refundId) {
+  private RefundRequest fetchRefundRequestForProcessing(Long refundId) {
     Long orderId =
         refundRequestRepository
             .findOrderIdById(refundId)
@@ -182,7 +183,7 @@ public class RefundService {
         .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_REQUEST_NOT_FOUND));
 
     return refundRequestRepository
-        .findWithOrderSellerAndProductById(refundId)
+        .findWithOrderSellerAndProductByIdForUpdate(refundId)
         .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_REQUEST_NOT_FOUND));
   }
 
