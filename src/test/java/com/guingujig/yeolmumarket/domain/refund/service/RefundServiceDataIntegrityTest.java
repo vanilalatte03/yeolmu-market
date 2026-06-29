@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import com.guingujig.yeolmumarket.domain.category.entity.Category;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
+import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.refund.entity.RefundRequest;
 import com.guingujig.yeolmumarket.domain.refund.repository.RefundRequestRepository;
@@ -23,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -31,12 +33,16 @@ class RefundServiceDataIntegrityTest {
 
   @Mock private OrderRepository orderRepository;
   @Mock private RefundRequestRepository refundRequestRepository;
+  @Mock private PaymentRepository paymentRepository;
+  @Mock private ApplicationEventPublisher eventPublisher;
 
   private RefundService refundService;
 
   @BeforeEach
   void setUp() {
-    refundService = new RefundService(orderRepository, refundRequestRepository);
+    refundService =
+        new RefundService(
+            orderRepository, refundRequestRepository, paymentRepository, eventPublisher);
   }
 
   @Test

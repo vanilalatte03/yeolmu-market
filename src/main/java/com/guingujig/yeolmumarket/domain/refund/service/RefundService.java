@@ -2,9 +2,14 @@ package com.guingujig.yeolmumarket.domain.refund.service;
 
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
+import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
+import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
+import com.guingujig.yeolmumarket.domain.refund.dto.ApproveRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.dto.CreateRefundRequestResponse;
+import com.guingujig.yeolmumarket.domain.refund.dto.RejectRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.entity.RefundRequest;
 import com.guingujig.yeolmumarket.domain.refund.repository.RefundRequestRepository;
+import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import java.time.LocalDateTime;
@@ -13,6 +18,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
@@ -26,6 +32,8 @@ public class RefundService {
 
   private final OrderRepository orderRepository;
   private final RefundRequestRepository refundRequestRepository;
+  private final PaymentRepository paymentRepository;
+  private final ApplicationEventPublisher eventPublisher;
 
   /**
    * 로그인한 구매자가 SHIPPING 상태 주문에 환불 요청을 생성하고 주문을 REFUND_REQUESTED로 전이한다.
@@ -75,6 +83,70 @@ public class RefundService {
     return CreateRefundRequestResponse.from(refundRequest);
   }
 
+  /**
+   * 로그인한 판매자가 REQUESTED 환불 요청을 승인하고 주문, 상품, 결제를 환불 결과로 전이한다.
+   *
+   * <p>주문과 환불 요청 row lock으로 동일 환불 요청 승인/거절을 직렬화하고, 상품이 ON_SALE로 복귀하면 검색 캐시 무효화 이벤트를 발행한다.
+   *
+   * @throws BusinessException REFUND_REQUEST_NOT_FOUND - 환불 요청이 존재하지 않는 경우
+   * @throws BusinessException REFUND_REQUEST_ACCESS_DENIED - 주문 판매자가 아닌 사용자의 요청
+   * @throws BusinessException INVALID_REFUND_REQUEST_STATUS - REQUESTED가 아닌 환불 요청 처리 또는 동시 처리 경합
+   */
+  @Transactional
+  public ApproveRefundRequestResponse approveRefundRequest(Long sellerId, Long refundId) {
+    RefundRequest refundRequest = fetchRefundRequestForProcessing(refundId);
+
+    if (!Objects.equals(refundRequest.getOrder().getSeller().getId(), sellerId)) {
+      throw new BusinessException(ErrorCode.REFUND_REQUEST_ACCESS_DENIED);
+    }
+
+    Payment payment =
+        paymentRepository
+            .findByOrder_Id(refundRequest.getOrder().getId())
+            .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+
+    LocalDateTime approvedAt = nowUtc();
+    refundRequest.approve(approvedAt);
+    refundRequest.getOrder().approveRefund();
+    refundRequest.getOrder().getProduct().cancelReservation();
+    payment.cancelPaid(approvedAt, "환불 요청 승인");
+
+    flushRefundRequestChanges();
+    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+
+    return ApproveRefundRequestResponse.from(refundRequest);
+  }
+
+  /**
+   * 로그인한 판매자가 REQUESTED 환불 요청을 거절하고 주문과 환불 요청을 DISPUTED로 전이한다.
+   *
+   * <p>주문과 환불 요청 row lock으로 동일 환불 요청 승인/거절을 직렬화한다. 거절 사유는 선택값이며 입력되면 trim 후 저장한다. 상품과 결제 상태는 변경하지
+   * 않는다.
+   *
+   * @throws BusinessException VALIDATION_FAILED - trim한 거절 사유가 255자를 초과하는 경우
+   * @throws BusinessException REFUND_REQUEST_NOT_FOUND - 환불 요청이 존재하지 않는 경우
+   * @throws BusinessException REFUND_REQUEST_ACCESS_DENIED - 주문 판매자가 아닌 사용자의 요청
+   * @throws BusinessException INVALID_REFUND_REQUEST_STATUS - REQUESTED가 아닌 환불 요청 처리 또는 동시 처리 경합
+   */
+  @Transactional
+  public RejectRefundRequestResponse rejectRefundRequest(
+      Long sellerId, Long refundId, String reason) {
+    String normalizedReason = normalizeOptionalReason(reason);
+    RefundRequest refundRequest = fetchRefundRequestForProcessing(refundId);
+
+    if (!Objects.equals(refundRequest.getOrder().getSeller().getId(), sellerId)) {
+      throw new BusinessException(ErrorCode.REFUND_REQUEST_ACCESS_DENIED);
+    }
+
+    LocalDateTime rejectedAt = nowUtc();
+    refundRequest.rejectToDispute(normalizedReason, rejectedAt);
+    refundRequest.getOrder().rejectRefund();
+
+    flushRefundRequestChanges();
+
+    return RejectRefundRequestResponse.from(refundRequest);
+  }
+
   private String normalizeReason(String reason) {
     if (reason == null) {
       throw new BusinessException(ErrorCode.VALIDATION_FAILED);
@@ -84,6 +156,47 @@ public class RefundService {
       throw new BusinessException(ErrorCode.VALIDATION_FAILED);
     }
     return normalizedReason;
+  }
+
+  private String normalizeOptionalReason(String reason) {
+    if (reason == null) {
+      return null;
+    }
+    String normalizedReason = reason.trim();
+    if (normalizedReason.isBlank()) {
+      return null;
+    }
+    if (normalizedReason.length() > 255) {
+      throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+    }
+    return normalizedReason;
+  }
+
+  private RefundRequest fetchRefundRequestForProcessing(Long refundId) {
+    Long orderId =
+        refundRequestRepository
+            .findOrderIdById(refundId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_REQUEST_NOT_FOUND));
+
+    orderRepository
+        .findByIdForUpdate(orderId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_REQUEST_NOT_FOUND));
+
+    return refundRequestRepository
+        .findWithOrderSellerAndProductByIdForUpdate(refundId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_REQUEST_NOT_FOUND));
+  }
+
+  private void flushRefundRequestChanges() {
+    try {
+      refundRequestRepository.flush();
+    } catch (ObjectOptimisticLockingFailureException e) {
+      throw new BusinessException(ErrorCode.INVALID_REFUND_REQUEST_STATUS);
+    }
+  }
+
+  private LocalDateTime nowUtc() {
+    return LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
   }
 
   private boolean isDuplicateRefundRequestConstraint(Throwable throwable) {
