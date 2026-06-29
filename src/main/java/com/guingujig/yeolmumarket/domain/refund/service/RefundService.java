@@ -56,10 +56,9 @@ public class RefundService {
     RefundRequest refundRequest =
         RefundRequest.create(
             order, order.getBuyer(), normalizedReason, LocalDateTime.now(ZoneOffset.UTC));
-    refundRequestRepository.save(refundRequest);
 
     try {
-      refundRequestRepository.flush();
+      refundRequestRepository.saveAndFlush(refundRequest);
     } catch (DataIntegrityViolationException e) {
       throw new BusinessException(ErrorCode.REFUND_REQUEST_ALREADY_EXISTS);
     } catch (ObjectOptimisticLockingFailureException e) {
