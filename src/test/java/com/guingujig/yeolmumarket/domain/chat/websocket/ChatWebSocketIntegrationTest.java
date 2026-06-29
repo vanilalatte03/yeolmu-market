@@ -17,7 +17,10 @@ import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
 import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -29,6 +32,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpHeaders;
@@ -43,10 +47,10 @@ import org.springframework.messaging.simp.stomp.StompSession;
 import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
+import tools.jackson.databind.ObjectMapper;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ChatWebSocketIntegrationTest {
@@ -55,6 +59,7 @@ class ChatWebSocketIntegrationTest {
 
   private static final Duration TIMEOUT = Duration.ofSeconds(3);
   private static final Duration SUBSCRIPTION_PROBE_INTERVAL = Duration.ofMillis(50);
+  private static final Instant EXPIRED_TOKEN_ISSUED_AT = Instant.EPOCH;
   private static final String USER_ERROR_DESTINATION = "/user/queue/errors";
   private static final String SERVER_ERROR_DESTINATION = "/queue/errors";
 
@@ -66,6 +71,8 @@ class ChatWebSocketIntegrationTest {
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
   private final SimpMessagingTemplate messagingTemplate;
+  private final ObjectMapper objectMapper;
+  private final String jwtSecret;
   private final List<StompSession> sessions = new ArrayList<>();
 
   @LocalServerPort private int port;
@@ -81,7 +88,9 @@ class ChatWebSocketIntegrationTest {
       ChatMessageRepository chatMessageRepository,
       PasswordEncoder passwordEncoder,
       JwtTokenProvider jwtTokenProvider,
-      SimpMessagingTemplate messagingTemplate) {
+      SimpMessagingTemplate messagingTemplate,
+      ObjectMapper objectMapper,
+      @Value("${jwt.secret}") String jwtSecret) {
     this.userRepository = userRepository;
     this.productRepository = productRepository;
     this.categoryRepository = categoryRepository;
@@ -90,6 +99,8 @@ class ChatWebSocketIntegrationTest {
     this.passwordEncoder = passwordEncoder;
     this.jwtTokenProvider = jwtTokenProvider;
     this.messagingTemplate = messagingTemplate;
+    this.objectMapper = objectMapper;
+    this.jwtSecret = jwtSecret;
   }
 
   @BeforeEach
@@ -415,7 +426,16 @@ class ChatWebSocketIntegrationTest {
   }
 
   private String issueExpiredAccessToken(User user) {
-    return ReflectionTestUtils.invokeMethod(jwtTokenProvider, "issueExpiredAccessToken", user);
+    return jwtTokenProviderAt(EXPIRED_TOKEN_ISSUED_AT).issueAccessToken(user);
+  }
+
+  private JwtTokenProvider jwtTokenProviderAt(Instant instant) {
+    return new JwtTokenProvider(
+        objectMapper,
+        Clock.fixed(instant, ZoneOffset.UTC),
+        jwtSecret,
+        jwtTokenProvider.getAccessTokenValiditySeconds(),
+        jwtTokenProvider.getRefreshTokenValiditySeconds());
   }
 
   private void deleteAll() {

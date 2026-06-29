@@ -5,6 +5,7 @@ import com.guingujig.yeolmumarket.domain.user.entity.UserRole;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
@@ -32,16 +33,19 @@ public class JwtTokenProvider {
   private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
   private final ObjectMapper objectMapper;
+  private final Clock clock;
   private final byte[] secret;
   private final long accessTokenValiditySeconds;
   private final long refreshTokenValiditySeconds;
 
   public JwtTokenProvider(
       ObjectMapper objectMapper,
+      Clock clock,
       @Value("${jwt.secret}") String secret,
       @Value("${jwt.access-token-validity-seconds}") long accessTokenValiditySeconds,
       @Value("${jwt.refresh-token-validity-seconds}") long refreshTokenValiditySeconds) {
     this.objectMapper = objectMapper;
+    this.clock = clock;
     validateSecret(secret);
     validateValiditySeconds(accessTokenValiditySeconds, "access token");
     validateValiditySeconds(refreshTokenValiditySeconds, "refresh token");
@@ -58,20 +62,10 @@ public class JwtTokenProvider {
     return generateToken(user, TOKEN_TYPE_REFRESH, refreshTokenValiditySeconds);
   }
 
-  /** 테스트 전용: 이미 만료된 토큰을 발급한다. */
-  String issueExpiredAccessToken(User user) {
-    return generateToken(user, TOKEN_TYPE_ACCESS, -1);
-  }
-
-  /** 테스트 전용: 이미 만료된 refresh token을 발급한다. */
-  String issueExpiredRefreshToken(User user) {
-    return generateToken(user, TOKEN_TYPE_REFRESH, -1);
-  }
-
   public Duration getAccessTokenRemainingTtl(String token) {
     JwtClaims claims = parseClaims(token);
     validateTokenType(claims, TOKEN_TYPE_ACCESS, "access token이 아닙니다.");
-    long remaining = claims.expiresAtEpochSeconds() - Instant.now().getEpochSecond();
+    long remaining = claims.expiresAtEpochSeconds() - clock.instant().getEpochSecond();
     if (remaining <= 0) {
       throw new JwtException(ErrorCode.EXPIRED_TOKEN, "JWT가 만료되었습니다.");
     }
@@ -109,7 +103,7 @@ public class JwtTokenProvider {
   }
 
   private String generateToken(User user, String tokenType, long validitySeconds) {
-    Instant now = Instant.now();
+    Instant now = clock.instant();
 
     Map<String, Object> header = new LinkedHashMap<>();
     header.put("typ", "JWT");
@@ -143,7 +137,7 @@ public class JwtTokenProvider {
 
       Map<String, Object> payload = decodeJson(parts[1]);
       long expiresAt = readLongClaim(payload, "exp");
-      if (Instant.now().getEpochSecond() >= expiresAt) {
+      if (clock.instant().getEpochSecond() >= expiresAt) {
         throw new JwtException(ErrorCode.EXPIRED_TOKEN, "JWT가 만료되었습니다.");
       }
 
