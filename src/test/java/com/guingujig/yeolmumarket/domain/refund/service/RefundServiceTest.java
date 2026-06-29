@@ -211,6 +211,23 @@ class RefundServiceTest {
   }
 
   @Test
+  void trim_후_255자인_환불_사유는_허용한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    savePaidPayment(order);
+    String reason = " " + "a".repeat(255) + " ";
+
+    CreateRefundRequestResponse response =
+        refundService.createRefundRequest(buyer.getId(), order.getId(), reason);
+
+    assertThat(response.status()).isEqualTo(RefundRequestStatus.REQUESTED);
+    assertThat(refundRequestRepository.findByOrder_Id(order.getId()).orElseThrow().getReason())
+        .hasSize(255);
+  }
+
+  @Test
   void 잘못된_환불_사유로_실패하면_데이터는_변경되지_않는다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
