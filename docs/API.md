@@ -45,13 +45,15 @@ Authorization: Bearer {accessToken}
 
 로그아웃된 access token은 Redis 블랙리스트에 등록한다.
 블랙리스트 TTL은 JWT 만료까지 남은 시간으로 설정하며, 만료 시간이 지나면 Redis에서 자동 제거된다.
-인증이 필요한 API는 토큰 서명과 만료 여부를 검증한 뒤 블랙리스트 등록 여부도 확인한다.
+인증이 필요한 API는 토큰 서명과 만료 여부를 검증한 뒤 Redis가 정상일 때 블랙리스트 등록 여부도 확인한다.
+Redis 블랙리스트 조회에 실패하면 access token 인증은 degraded mode로 전환되어 서명과 만료 검증만으로 진행할 수 있다.
+이 경우 Redis 장애 중에는 이미 로그아웃된 access token이 만료 전까지 일시적으로 사용될 수 있다.
 refresh token은 Redis에 활성 토큰 해시 또는 식별자를 저장해 서버에서 관리한다.
 이번 프로젝트는 사용자별 활성 refresh token을 1개만 허용한다.
 로그인 또는 refresh token 재발급 성공 시 기존 refresh token은 폐기되고 새 refresh token만 유효하다.
 로그아웃 시 요청에 사용된 access token을 블랙리스트에 등록하고, 인증된 회원의 활성 refresh token도 Redis에서 삭제한다.
-인증 및 토큰 관리 중 Redis 조회 또는 쓰기에 실패하면 `REDIS_UNAVAILABLE`로 응답한다.
-JWT 폐기와 refresh token 회전 정책은 `docs/adr/007-jwt-refresh-token-rotation.md`를 따른다.
+refresh token 관리와 로그아웃 처리 중 Redis 조회 또는 쓰기에 실패하면 `REDIS_UNAVAILABLE`로 응답한다.
+JWT 폐기, Redis 장애 시 degraded mode, refresh token 회전 정책은 `docs/adr/012-jwt-revocation-degraded-mode.md`를 따른다.
 
 인증이 필요 없는 API는 다음과 같다.
 
@@ -254,7 +256,7 @@ JWT 폐기와 refresh token 회전 정책은 `docs/adr/007-jwt-refresh-token-rot
 | `METHOD_NOT_ALLOWED` | 405 | 지원하지 않는 HTTP method |
 | `CONFLICT` | 409 | 현재 상태와 충돌하는 요청 |
 | `INTERNAL_SERVER_ERROR` | 500 | 서버 내부 오류 |
-| `REDIS_UNAVAILABLE` | 503 | Redis 조회 또는 쓰기 실패 |
+| `REDIS_UNAVAILABLE` | 503 | Redis 조회 또는 쓰기 실패. 보호 API access token 블랙리스트 조회 실패는 degraded mode로 인증을 계속할 수 있다. |
 
 ## 도메인 에러 코드 카탈로그
 
@@ -403,7 +405,8 @@ JWT 폐기와 refresh token 회전 정책은 `docs/adr/007-jwt-refresh-token-rot
 서버는 요청에 사용된 access token을 Redis 블랙리스트에 등록하고, JWT 만료까지 남은 시간을 TTL로 설정한다.
 서버는 인증된 회원의 활성 refresh token도 Redis에서 삭제한다.
 클라이언트는 성공 응답을 받은 뒤 보관 중인 access token과 refresh token을 삭제한다.
-블랙리스트에 등록된 토큰은 만료 전이라도 보호된 API 인증에 사용할 수 없다.
+블랙리스트에 등록된 토큰은 Redis가 정상일 때 만료 전이라도 보호된 API 인증에 사용할 수 없다.
+Redis 블랙리스트 조회가 실패하면 보호 API 인증은 access token 서명과 만료 검증만으로 진행될 수 있다.
 삭제된 refresh token은 만료 전이라도 재발급에 사용할 수 없다.
 
 - Method: `POST`
@@ -1748,8 +1751,7 @@ CONNECT 인증 실패 시 서버는 STOMP `ERROR` frame으로 아래 payload를 
 | `UNAUTHORIZED` | 토큰 누락 |
 | `INVALID_TOKEN` | 잘못된 토큰 |
 | `EXPIRED_TOKEN` | 만료된 토큰 |
-| `REVOKED_TOKEN` | 로그아웃되어 폐기된 토큰 |
-| `REDIS_UNAVAILABLE` | 폐기 토큰 조회 실패 |
+| `REVOKED_TOKEN` | Redis 정상 시 로그아웃되어 폐기된 토큰 |
 
 ### 채팅방 메시지 구독
 

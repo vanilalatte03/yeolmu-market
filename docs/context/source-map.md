@@ -6,7 +6,7 @@
 
 | 작업 영역 | 먼저 볼 위치 | 함께 확인할 정본 |
 | --- | --- | --- |
-| auth/security | `domain/auth`, `global/security` | `docs/API.md`, `docs/adr/007-jwt-refresh-token-rotation.md`, `docs/adr/004-jwt-logout-blacklist.md`, `.env.example` |
+| auth/security | `domain/auth`, `global/security` | `docs/API.md`, `docs/adr/012-jwt-revocation-degraded-mode.md`, `.env.example` |
 | user | `domain/user` | `docs/API.md`, `docs/ERD.md` |
 | product/admin | `domain/product`, `domain/category`, `domain/wish` | `docs/API.md`, `docs/ERD.md`, `docs/adr/006-product-hidden-flag.md`, `docs/adr/001-concurrent-order-control.md` |
 | search/product cache | `domain/search`, `domain/product` | `docs/API.md`, `docs/adr/002-redis-search-cache.md`, `docs/adr/011-product-search-cache-partial-eviction.md` |
