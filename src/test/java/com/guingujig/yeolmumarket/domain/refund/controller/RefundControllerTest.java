@@ -34,6 +34,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -248,6 +249,216 @@ class RefundControllerTest {
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
   }
 
+  @Test
+  void 판매자가_환불_요청을_승인하면_200으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    Payment payment = savePaidPayment(order);
+    RefundRequest refundRequest = saveRequestedRefund(order, "상품에 설명과 다른 하자가 있습니다.");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            post("/api/refund/{refundId}/approve", refundRequest.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.refundRequestId").value(refundRequest.getId()))
+        .andExpect(jsonPath("$.data.orderId").value(order.getId()))
+        .andExpect(jsonPath("$.data.status").value("APPROVED"))
+        .andExpect(jsonPath("$.data.orderStatus").value("REFUNDED"))
+        .andExpect(jsonPath("$.data.productStatus").value("ON_SALE"))
+        .andExpect(jsonPath("$.data.approvedAt", matchesPattern(".*(Z|\\+00:00)$")));
+
+    assertThat(refundRequestRepository.findById(refundRequest.getId()).orElseThrow().getStatus())
+        .isEqualTo(RefundRequestStatus.APPROVED);
+    assertThat(orderRepository.findById(order.getId()).orElseThrow().getOrderStatus())
+        .isEqualTo(OrderStatus.REFUNDED);
+    assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProductStatus.ON_SALE);
+    assertThat(paymentRepository.findById(payment.getId()).orElseThrow().getStatus())
+        .isEqualTo(PaymentStatus.REFUNDED);
+  }
+
+  @Test
+  void 판매자가_환불_요청을_거절하면_200으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    Payment payment = savePaidPayment(order);
+    RefundRequest refundRequest = saveRequestedRefund(order, "상품에 설명과 다른 하자가 있습니다.");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            post("/api/refund/{refundId}/reject", refundRequest.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"  정상 상품입니다.  \"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.refundRequestId").value(refundRequest.getId()))
+        .andExpect(jsonPath("$.data.orderId").value(order.getId()))
+        .andExpect(jsonPath("$.data.status").value("DISPUTED"))
+        .andExpect(jsonPath("$.data.orderStatus").value("DISPUTED"))
+        .andExpect(jsonPath("$.data.rejectedAt", matchesPattern(".*(Z|\\+00:00)$")));
+
+    RefundRequest rejectedRefund =
+        refundRequestRepository.findById(refundRequest.getId()).orElseThrow();
+    assertThat(rejectedRefund.getStatus()).isEqualTo(RefundRequestStatus.DISPUTED);
+    assertThat(rejectedRefund.getSellerResponse()).isEqualTo("정상 상품입니다.");
+    assertThat(orderRepository.findById(order.getId()).orElseThrow().getOrderStatus())
+        .isEqualTo(OrderStatus.DISPUTED);
+    assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProductStatus.RESERVED);
+    assertThat(paymentRepository.findById(payment.getId()).orElseThrow().getStatus())
+        .isEqualTo(PaymentStatus.PAID);
+  }
+
+  @Test
+  void 판매자가_body_없이_환불_요청을_거절하면_거절_사유는_null로_저장된다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    RefundRequest refundRequest = saveRequestedRefund(order, "상품에 설명과 다른 하자가 있습니다.");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            post("/api/refund/{refundId}/reject", refundRequest.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("DISPUTED"));
+
+    assertThat(
+            refundRequestRepository
+                .findById(refundRequest.getId())
+                .orElseThrow()
+                .getSellerResponse())
+        .isNull();
+  }
+
+  @Test
+  void 인증되지_않은_사용자가_환불_요청을_승인하거나_거절하면_401로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    RefundRequest refundRequest = saveRequestedRefund(order, "상품에 설명과 다른 하자가 있습니다.");
+
+    mockMvc
+        .perform(post("/api/refund/{refundId}/approve", refundRequest.getId()))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+
+    mockMvc
+        .perform(
+            post("/api/refund/{refundId}/reject", refundRequest.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"거절\"}"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+  }
+
+  @Test
+  void 구매자가_환불_요청을_승인하거나_거절하면_403으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    RefundRequest refundRequest = saveRequestedRefund(order, "상품에 설명과 다른 하자가 있습니다.");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
+
+    mockMvc
+        .perform(
+            post("/api/refund/{refundId}/approve", refundRequest.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REFUND_REQUEST_ACCESS_DENIED"));
+
+    mockMvc
+        .perform(
+            post("/api/refund/{refundId}/reject", refundRequest.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"거절\"}"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REFUND_REQUEST_ACCESS_DENIED"));
+  }
+
+  @Test
+  void 존재하지_않는_환불_요청을_승인하거나_거절하면_404로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            post("/api/refund/{refundId}/approve", Long.MAX_VALUE)
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REFUND_REQUEST_NOT_FOUND"));
+
+    mockMvc
+        .perform(
+            post("/api/refund/{refundId}/reject", Long.MAX_VALUE)
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"거절\"}"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REFUND_REQUEST_NOT_FOUND"));
+  }
+
+  @Test
+  void REQUESTED가_아닌_환불_요청을_승인하거나_거절하면_409로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    Product approveProduct = saveProduct(seller, "승인 실패 상품", 100000);
+    Order approveOrder = saveShippingOrder(buyer, approveProduct);
+    savePaidPayment(approveOrder);
+    RefundRequest approveRefund = saveRequestedRefund(approveOrder, "환불 요청");
+    ReflectionTestUtils.setField(approveRefund, "status", RefundRequestStatus.APPROVED);
+    refundRequestRepository.saveAndFlush(approveRefund);
+
+    mockMvc
+        .perform(
+            post("/api/refund/{refundId}/approve", approveRefund.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_REFUND_REQUEST_STATUS"));
+
+    Product rejectProduct = saveProduct(seller, "거절 실패 상품", 100000);
+    Order rejectOrder = saveShippingOrder(buyer, rejectProduct);
+    savePaidPayment(rejectOrder);
+    RefundRequest rejectRefund = saveRequestedRefund(rejectOrder, "환불 요청");
+    ReflectionTestUtils.setField(rejectRefund, "status", RefundRequestStatus.DISPUTED);
+    refundRequestRepository.saveAndFlush(rejectRefund);
+
+    mockMvc
+        .perform(
+            post("/api/refund/{refundId}/reject", rejectRefund.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"거절\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_REFUND_REQUEST_STATUS"));
+  }
+
   private User saveUser(String email, String nickname) {
     return userRepository.save(new User(email, passwordEncoder.encode("Password123!"), nickname));
   }
@@ -273,6 +484,14 @@ class RefundControllerTest {
     Order order = savePaidOrder(buyer, product);
     order.registerShipping("1234-5678-9012", LocalDateTime.of(2026, 6, 24, 10, 0));
     return orderRepository.saveAndFlush(order);
+  }
+
+  private RefundRequest saveRequestedRefund(Order order, String reason) {
+    order.requestRefund();
+    orderRepository.saveAndFlush(order);
+    return refundRequestRepository.saveAndFlush(
+        RefundRequest.create(
+            order, order.getBuyer(), reason, LocalDateTime.of(2026, 6, 24, 10, 10)));
   }
 
   private Payment savePaidPayment(Order order) {
