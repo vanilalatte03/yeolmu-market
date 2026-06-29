@@ -16,7 +16,9 @@ import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.refund.dto.ApproveRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.dto.CreateRefundRequestResponse;
+import com.guingujig.yeolmumarket.domain.refund.dto.RefundResolution;
 import com.guingujig.yeolmumarket.domain.refund.dto.RejectRefundRequestResponse;
+import com.guingujig.yeolmumarket.domain.refund.dto.ResolveRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.entity.RefundRequest;
 import com.guingujig.yeolmumarket.domain.refund.entity.RefundRequestStatus;
 import com.guingujig.yeolmumarket.domain.refund.repository.RefundRequestRepository;
@@ -397,6 +399,292 @@ class RefundServiceTest {
   }
 
   @Test
+  void 판매자가_DISPUTED_환불_요청을_REFUND로_종료하면_환불로_처리된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    Payment payment = savePaidPayment(order);
+    RefundRequest refundRequest = saveDisputedRefund(order, "상품에 설명과 다른 하자가 있습니다.", "정상 상품입니다.");
+    long cacheEvictionEventsBefore =
+        applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count();
+
+    ResolveRefundRequestResponse response =
+        refundService.resolveRefundRequest(
+            seller.getId(), refundRequest.getId(), RefundResolution.REFUND, "  구매자 환불로 종료  ");
+
+    assertThat(response.refundRequestId()).isEqualTo(refundRequest.getId());
+    assertThat(response.orderId()).isEqualTo(order.getId());
+    assertThat(response.status()).isEqualTo(RefundRequestStatus.CLOSED);
+    assertThat(response.orderStatus()).isEqualTo(OrderStatus.REFUNDED);
+    assertThat(response.productStatus()).isEqualTo(ProductStatus.ON_SALE);
+    assertThat(response.resolvedAt()).isNotNull();
+    assertThat(response.resolvedAt().getOffset().getTotalSeconds()).isZero();
+
+    RefundRequest resolvedRefund =
+        refundRequestRepository.findById(refundRequest.getId()).orElseThrow();
+    assertThat(resolvedRefund.getStatus()).isEqualTo(RefundRequestStatus.CLOSED);
+    assertThat(resolvedRefund.getSellerResponse()).isEqualTo("구매자 환불로 종료");
+    assertThat(response.resolvedAt())
+        .isEqualTo(resolvedRefund.getResolvedAt().atOffset(ZoneOffset.UTC));
+    assertThat(orderRepository.findById(order.getId()).orElseThrow().getOrderStatus())
+        .isEqualTo(OrderStatus.REFUNDED);
+    assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProductStatus.ON_SALE);
+    Payment refundedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+    assertThat(refundedPayment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
+    assertThat(refundedPayment.getCanceledAt()).isEqualTo(resolvedRefund.getResolvedAt());
+    assertThat(refundedPayment.getCancelReason()).isEqualTo("분쟁 환불 종료");
+    assertThat(applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count())
+        .isEqualTo(cacheEvictionEventsBefore + 1);
+  }
+
+  @Test
+  void 판매자가_DISPUTED_환불_요청을_COMPLETE로_종료하면_거래_완료로_처리된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    Payment payment = savePaidPayment(order);
+    RefundRequest refundRequest = saveDisputedRefund(order, "상품에 설명과 다른 하자가 있습니다.", "정상 상품입니다.");
+    long cacheEvictionEventsBefore =
+        applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count();
+
+    ResolveRefundRequestResponse response =
+        refundService.resolveRefundRequest(
+            seller.getId(), refundRequest.getId(), RefundResolution.COMPLETE, null);
+
+    assertThat(response.refundRequestId()).isEqualTo(refundRequest.getId());
+    assertThat(response.orderId()).isEqualTo(order.getId());
+    assertThat(response.status()).isEqualTo(RefundRequestStatus.CLOSED);
+    assertThat(response.orderStatus()).isEqualTo(OrderStatus.COMPLETED);
+    assertThat(response.productStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+    assertThat(response.resolvedAt()).isNotNull();
+    assertThat(response.resolvedAt().getOffset().getTotalSeconds()).isZero();
+
+    RefundRequest resolvedRefund =
+        refundRequestRepository.findById(refundRequest.getId()).orElseThrow();
+    assertThat(resolvedRefund.getStatus()).isEqualTo(RefundRequestStatus.CLOSED);
+    assertThat(resolvedRefund.getSellerResponse()).isEqualTo("정상 상품입니다.");
+    assertThat(response.resolvedAt())
+        .isEqualTo(resolvedRefund.getResolvedAt().atOffset(ZoneOffset.UTC));
+    assertThat(orderRepository.findById(order.getId()).orElseThrow().getOrderStatus())
+        .isEqualTo(OrderStatus.COMPLETED);
+    assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProductStatus.SOLD_OUT);
+    Payment paidPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+    assertThat(paidPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
+    assertThat(paidPayment.getCanceledAt()).isNull();
+    assertThat(applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count())
+        .isEqualTo(cacheEvictionEventsBefore + 1);
+  }
+
+  @Test
+  void 구매자와_타사용자는_분쟁을_종료할_수_없다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User other = saveUser("other@example.com", "타인");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    Payment payment = savePaidPayment(order);
+    RefundRequest refundRequest = saveDisputedRefund(order, "상품에 설명과 다른 하자가 있습니다.", "정상 상품입니다.");
+
+    assertThatThrownBy(
+            () ->
+                refundService.resolveRefundRequest(
+                    buyer.getId(), refundRequest.getId(), RefundResolution.REFUND, "환불"))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.REFUND_REQUEST_ACCESS_DENIED));
+
+    assertThatThrownBy(
+            () ->
+                refundService.resolveRefundRequest(
+                    other.getId(), refundRequest.getId(), RefundResolution.COMPLETE, "완료"))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.REFUND_REQUEST_ACCESS_DENIED));
+
+    assertDisputeUnchanged(refundRequest, order, product, payment);
+  }
+
+  @Test
+  void 존재하지_않는_환불_요청_분쟁_종료는_실패한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+
+    assertThatThrownBy(
+            () ->
+                refundService.resolveRefundRequest(
+                    seller.getId(), Long.MAX_VALUE, RefundResolution.REFUND, null))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.REFUND_REQUEST_NOT_FOUND));
+  }
+
+  @Test
+  void DISPUTED가_아닌_환불_요청_분쟁_종료는_실패한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+
+    for (RefundRequestStatus status :
+        new RefundRequestStatus[] {
+          RefundRequestStatus.REQUESTED, RefundRequestStatus.APPROVED, RefundRequestStatus.CLOSED
+        }) {
+      Product product = saveProduct(seller, "상품-" + status, 100000);
+      Order order = saveShippingOrder(buyer, product);
+      Payment payment = savePaidPayment(order);
+      RefundRequest refundRequest = saveRequestedRefund(order, "환불 요청");
+      ReflectionTestUtils.setField(refundRequest, "status", status);
+      refundRequestRepository.saveAndFlush(refundRequest);
+
+      assertThatThrownBy(
+              () ->
+                  refundService.resolveRefundRequest(
+                      seller.getId(), refundRequest.getId(), RefundResolution.REFUND, null))
+          .isInstanceOfSatisfying(
+              BusinessException.class,
+              e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_REFUND_REQUEST_STATUS));
+
+      assertRefundProcessingUnchanged(
+          refundRequest, order, product, payment, status, OrderStatus.REFUND_REQUESTED);
+    }
+  }
+
+  @Test
+  void 주문이_DISPUTED가_아닌_환불_요청_분쟁_종료는_실패한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    Payment payment = savePaidPayment(order);
+    RefundRequest refundRequest = saveDisputedRefund(order, "상품에 설명과 다른 하자가 있습니다.", "정상 상품입니다.");
+    ReflectionTestUtils.setField(order, "orderStatus", OrderStatus.REFUND_REQUESTED);
+    orderRepository.saveAndFlush(order);
+
+    assertThatThrownBy(
+            () ->
+                refundService.resolveRefundRequest(
+                    seller.getId(), refundRequest.getId(), RefundResolution.REFUND, null))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_REFUND_REQUEST_STATUS));
+
+    assertRefundProcessingUnchanged(
+        refundRequest,
+        order,
+        product,
+        payment,
+        RefundRequestStatus.DISPUTED,
+        OrderStatus.REFUND_REQUESTED);
+  }
+
+  @Test
+  void 잘못된_분쟁_종료_요청으로_실패하면_데이터는_변경되지_않는다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    Payment payment = savePaidPayment(order);
+    RefundRequest refundRequest = saveDisputedRefund(order, "상품에 설명과 다른 하자가 있습니다.", "정상 상품입니다.");
+
+    assertThatThrownBy(
+            () ->
+                refundService.resolveRefundRequest(
+                    seller.getId(), refundRequest.getId(), null, "종료"))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+
+    assertThatThrownBy(
+            () ->
+                refundService.resolveRefundRequest(
+                    seller.getId(),
+                    refundRequest.getId(),
+                    RefundResolution.REFUND,
+                    "a".repeat(256)))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+
+    assertDisputeUnchanged(refundRequest, order, product, payment);
+  }
+
+  @Test
+  void 동시에_같은_분쟁을_종료하면_한_요청만_성공한다() throws InterruptedException {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    Payment payment = savePaidPayment(order);
+    RefundRequest refundRequest = saveDisputedRefund(order, "상품에 설명과 다른 하자가 있습니다.", "정상 상품입니다.");
+    int threadCount = 2;
+
+    ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch doneLatch = new CountDownLatch(threadCount);
+    List<ResolveRefundRequestResponse> successes = new CopyOnWriteArrayList<>();
+    List<Throwable> failures = new CopyOnWriteArrayList<>();
+
+    executor.submit(
+        () -> {
+          try {
+            startLatch.await();
+            successes.add(
+                refundService.resolveRefundRequest(
+                    seller.getId(), refundRequest.getId(), RefundResolution.REFUND, "환불"));
+          } catch (Exception e) {
+            failures.add(e);
+          } finally {
+            doneLatch.countDown();
+          }
+        });
+    executor.submit(
+        () -> {
+          try {
+            startLatch.await();
+            successes.add(
+                refundService.resolveRefundRequest(
+                    seller.getId(), refundRequest.getId(), RefundResolution.COMPLETE, "완료"));
+          } catch (Exception e) {
+            failures.add(e);
+          } finally {
+            doneLatch.countDown();
+          }
+        });
+
+    startLatch.countDown();
+    boolean allDone = doneLatch.await(10, TimeUnit.SECONDS);
+    executor.shutdownNow();
+    executor.awaitTermination(5, TimeUnit.SECONDS);
+
+    assertThat(allDone).as("모든 분쟁 종료 스레드가 10초 내에 완료되어야 합니다").isTrue();
+    assertThat(successes).hasSize(1);
+    assertThat(failures).hasSize(1);
+    assertThat(failures.get(0))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_REFUND_REQUEST_STATUS));
+
+    RefundRequest resolvedRefund =
+        refundRequestRepository.findById(refundRequest.getId()).orElseThrow();
+    Order resolvedOrder = orderRepository.findById(order.getId()).orElseThrow();
+    Product resolvedProduct = productRepository.findById(product.getId()).orElseThrow();
+    Payment resolvedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
+
+    assertThat(resolvedRefund.getStatus()).isEqualTo(RefundRequestStatus.CLOSED);
+    if (successes.get(0).orderStatus() == OrderStatus.REFUNDED) {
+      assertThat(resolvedOrder.getOrderStatus()).isEqualTo(OrderStatus.REFUNDED);
+      assertThat(resolvedProduct.getStatus()).isEqualTo(ProductStatus.ON_SALE);
+      assertThat(resolvedPayment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
+    } else {
+      assertThat(successes.get(0).orderStatus()).isEqualTo(OrderStatus.COMPLETED);
+      assertThat(resolvedOrder.getOrderStatus()).isEqualTo(OrderStatus.COMPLETED);
+      assertThat(resolvedProduct.getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+      assertThat(resolvedPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
+    }
+  }
+
+  @Test
   void 구매자와_타사용자는_환불_요청을_승인하거나_거절할_수_없다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
@@ -607,6 +895,15 @@ class RefundServiceTest {
         .isEqualTo(PaymentStatus.PAID);
   }
 
+  private void assertDisputeUnchanged(
+      RefundRequest refundRequest, Order order, Product product, Payment payment) {
+    assertRefundProcessingUnchanged(
+        refundRequest, order, product, payment, RefundRequestStatus.DISPUTED, OrderStatus.DISPUTED);
+    assertThat(
+            refundRequestRepository.findById(refundRequest.getId()).orElseThrow().getResolvedAt())
+        .isNull();
+  }
+
   private void deleteAll() {
     refundRequestRepository.deleteAll();
     paymentRepository.deleteAll();
@@ -649,6 +946,14 @@ class RefundServiceTest {
     return refundRequestRepository.saveAndFlush(
         RefundRequest.create(
             order, order.getBuyer(), reason, LocalDateTime.of(2026, 6, 24, 10, 10)));
+  }
+
+  private RefundRequest saveDisputedRefund(Order order, String reason, String sellerResponse) {
+    RefundRequest refundRequest = saveRequestedRefund(order, reason);
+    refundRequest.rejectToDispute(sellerResponse, LocalDateTime.of(2026, 6, 24, 10, 20));
+    order.rejectRefund();
+    orderRepository.saveAndFlush(order);
+    return refundRequestRepository.saveAndFlush(refundRequest);
   }
 
   private Order saveOrderWithStatus(User buyer, Product product, OrderStatus status) {
