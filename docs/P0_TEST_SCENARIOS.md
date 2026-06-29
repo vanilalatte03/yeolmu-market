@@ -26,7 +26,7 @@ REST API는 [http/p0-api-flow.http](../http/p0-api-flow.http)로 실행하고, W
 | P0-E2E-10 | 주문 | 구매자2가 같은 상품을 주문한다. | `409`; `PRODUCT_NOT_ON_SALE` 또는 동일 의미의 충돌 에러가 반환된다. 성공 주문은 1건뿐이다. |
 | P0-E2E-11 | 주문 | 구매자1이 주문 상세과 내 구매 목록을 조회하고, 판매자가 내 판매 목록을 조회한다. | 참여자만 `200`; 비참여자는 `403`; 목록에 생성된 주문이 포함된다. |
 | P0-E2E-12 | 주문 | 구매자1이 주문을 취소한다. | `200`; 주문 상태는 `CANCELED`; 상품 상태는 `ON_SALE`로 돌아간다. |
-| P0-E2E-13 | 인증 | refresh token으로 토큰을 재발급하고, 로그아웃 후 Redis 정상 상태에서 보호 API를 호출한다. | refresh는 `200`이며 토큰이 회전된다. 로그아웃 후 기존 access token 보호 API는 `401 REVOKED_TOKEN`이다. |
+| P0-E2E-13 | 인증 | refresh token으로 토큰을 재발급하고, 로그아웃 후 보호 API를 호출한다. | refresh는 `200`이며 토큰이 회전된다. 로그아웃 후 기존 access token 보호 API는 `401 REVOKED_TOKEN`이다. |
 
 ## 권한/검증 실패 케이스
 
