@@ -1,5 +1,6 @@
 package com.guingujig.yeolmumarket.global.security;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -9,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -20,6 +22,7 @@ import com.guingujig.yeolmumarket.domain.user.entity.UserRole;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.config.LocalProductImageStorageProperties;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
+import jakarta.servlet.http.Cookie;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -99,15 +102,7 @@ class SecurityConfigTest {
   @Test
   void 리프레시_API는_인증_없이_호출할_수_있다() throws Exception {
     mockMvc
-        .perform(
-            post("/api/auth/refresh")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-                    {
-                      "refreshToken": ""
-                    }
-                    """))
+        .perform(post("/api/auth/refresh"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
   }
@@ -193,16 +188,7 @@ class SecurityConfigTest {
     String expiredRefreshToken = issueExpiredRefreshToken(user);
 
     mockMvc
-        .perform(
-            post("/api/auth/refresh")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-                    {
-                      "refreshToken": "%s"
-                    }
-                    """
-                        .formatted(expiredRefreshToken)))
+        .perform(post("/api/auth/refresh").cookie(new Cookie("refreshToken", expiredRefreshToken)))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("EXPIRED_TOKEN"));
@@ -236,7 +222,13 @@ class SecurityConfigTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.code").value("SUCCESS"))
-        .andExpect(jsonPath("$.data.loggedOut").value(true));
+        .andExpect(jsonPath("$.data.loggedOut").value(true))
+        .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("refreshToken=")))
+        .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("HttpOnly")))
+        .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("SameSite=Lax")))
+        .andExpect(
+            header().string(HttpHeaders.SET_COOKIE, containsString("Path=/api/auth/refresh")))
+        .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=0")));
 
     verify(revokedAccessTokenRepository).add(eq(expectedHash), any(Duration.class));
     verify(activeRefreshTokenRepository).deleteByUserId(user.getId());
@@ -299,16 +291,7 @@ class SecurityConfigTest {
         .andExpect(jsonPath("$.data.loggedOut").value(true));
 
     mockMvc
-        .perform(
-            post("/api/auth/refresh")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-                    {
-                      "refreshToken": "%s"
-                    }
-                    """
-                        .formatted(refreshToken)))
+        .perform(post("/api/auth/refresh").cookie(new Cookie("refreshToken", refreshToken)))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("REVOKED_TOKEN"));
