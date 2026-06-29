@@ -17,6 +17,7 @@ import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -63,4 +64,20 @@ public class RefundRequest extends BaseTimeEntity {
 
   @Column(name = "resolved_at")
   private LocalDateTime resolvedAt;
+
+  /**
+   * 구매자의 환불 요청을 REQUESTED 상태로 생성한다.
+   *
+   * <p>사유 정규화와 주문 상태 전이는 서비스 계층에서 선행한다.
+   */
+  public static RefundRequest create(
+      Order order, User requester, String reason, LocalDateTime requestedAt) {
+    RefundRequest refundRequest = new RefundRequest();
+    refundRequest.order = Objects.requireNonNull(order, "order는 필수입니다.");
+    refundRequest.requester = Objects.requireNonNull(requester, "requester는 필수입니다.");
+    refundRequest.reason = Objects.requireNonNull(reason, "reason은 필수입니다.");
+    refundRequest.status = RefundRequestStatus.REQUESTED;
+    refundRequest.requestedAt = Objects.requireNonNull(requestedAt, "requestedAt은 필수입니다.");
+    return refundRequest;
+  }
 }

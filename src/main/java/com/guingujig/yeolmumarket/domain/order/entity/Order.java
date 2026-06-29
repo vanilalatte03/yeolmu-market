@@ -133,4 +133,16 @@ public class Order extends BaseTimeEntity {
     }
     this.orderStatus = OrderStatus.COMPLETED;
   }
+
+  /**
+   * SHIPPING 상태의 주문을 환불 요청 상태로 전이한다.
+   *
+   * <p>SHIPPING이 아닌 상태에서 호출하면 {@link BusinessException}을 던져 잘못된 전이를 차단한다.
+   */
+  public void requestRefund() {
+    if (this.orderStatus != OrderStatus.SHIPPING) {
+      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+    }
+    this.orderStatus = OrderStatus.REFUND_REQUESTED;
+  }
 }
