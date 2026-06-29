@@ -60,9 +60,7 @@ public class RefundService {
             .findWithDetailsByIdForUpdate(orderId)
             .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
-    if (!Objects.equals(order.getBuyer().getId(), buyerId)) {
-      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
-    }
+    validateOrderBuyer(order, buyerId);
 
     if (refundRequestRepository.existsByOrder_Id(orderId)) {
       throw new BusinessException(ErrorCode.REFUND_REQUEST_ALREADY_EXISTS);
@@ -100,9 +98,7 @@ public class RefundService {
   public ApproveRefundRequestResponse approveRefundRequest(Long sellerId, Long refundId) {
     RefundRequest refundRequest = fetchRefundRequestForProcessing(refundId);
 
-    if (!Objects.equals(refundRequest.getOrder().getSeller().getId(), sellerId)) {
-      throw new BusinessException(ErrorCode.REFUND_REQUEST_ACCESS_DENIED);
-    }
+    validateRefundRequestSeller(refundRequest, sellerId);
 
     Payment payment =
         paymentRepository
@@ -138,9 +134,7 @@ public class RefundService {
     String normalizedReason = normalizeOptionalReason(reason);
     RefundRequest refundRequest = fetchRefundRequestForProcessing(refundId);
 
-    if (!Objects.equals(refundRequest.getOrder().getSeller().getId(), sellerId)) {
-      throw new BusinessException(ErrorCode.REFUND_REQUEST_ACCESS_DENIED);
-    }
+    validateRefundRequestSeller(refundRequest, sellerId);
 
     LocalDateTime rejectedAt = nowUtc();
     refundRequest.rejectToDispute(normalizedReason, rejectedAt);
@@ -172,9 +166,7 @@ public class RefundService {
     String normalizedReason = normalizeOptionalReason(reason);
     RefundRequest refundRequest = fetchRefundRequestForProcessing(refundId);
 
-    if (!Objects.equals(refundRequest.getOrder().getSeller().getId(), sellerId)) {
-      throw new BusinessException(ErrorCode.REFUND_REQUEST_ACCESS_DENIED);
-    }
+    validateRefundRequestSeller(refundRequest, sellerId);
 
     validateResolvableDispute(refundRequest);
 
@@ -258,6 +250,18 @@ public class RefundService {
 
   private LocalDateTime nowUtc() {
     return LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
+  }
+
+  private void validateOrderBuyer(Order order, Long buyerId) {
+    if (!Objects.equals(order.getBuyer().getId(), buyerId)) {
+      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
+    }
+  }
+
+  private void validateRefundRequestSeller(RefundRequest refundRequest, Long sellerId) {
+    if (!Objects.equals(refundRequest.getOrder().getSeller().getId(), sellerId)) {
+      throw new BusinessException(ErrorCode.REFUND_REQUEST_ACCESS_DENIED);
+    }
   }
 
   private boolean isDuplicateRefundRequestConstraint(Throwable throwable) {

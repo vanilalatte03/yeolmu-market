@@ -115,9 +115,7 @@ public class OrderService {
             .findWithDetailsById(orderId)
             .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
-    if (!Objects.equals(order.getBuyer().getId(), requesterId)) {
-      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
-    }
+    validateBuyer(order, requesterId);
 
     order.cancel();
     order.getProduct().cancelReservation();
@@ -157,9 +155,7 @@ public class OrderService {
             .findWithDetailsById(orderId)
             .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
-    if (!Objects.equals(order.getSeller().getId(), sellerId)) {
-      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
-    }
+    validateSeller(order, sellerId);
 
     order.registerShipping(normalizedTrackingNumber, LocalDateTime.now(ZoneOffset.UTC));
 
@@ -194,9 +190,7 @@ public class OrderService {
             .findWithDetailsById(orderId)
             .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
-    if (!Objects.equals(order.getBuyer().getId(), buyerId)) {
-      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
-    }
+    validateBuyer(order, buyerId);
 
     order.confirmPurchase();
     completeProductSale(order.getProduct());
@@ -255,11 +249,7 @@ public class OrderService {
             .findWithDetailsById(orderId)
             .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
-    boolean isBuyer = Objects.equals(order.getBuyer().getId(), requesterId);
-    boolean isSeller = Objects.equals(order.getSeller().getId(), requesterId);
-    if (!isBuyer && !isSeller) {
-      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
-    }
+    validateOrderParticipant(order, requesterId);
 
     return GetOrderResponse.from(order);
   }
@@ -304,5 +294,31 @@ public class OrderService {
 
   private void publishProductSearchCacheEviction() {
     eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+  }
+
+  private void validateBuyer(Order order, Long userId) {
+    if (!isBuyer(order, userId)) {
+      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
+    }
+  }
+
+  private void validateSeller(Order order, Long userId) {
+    if (!isSeller(order, userId)) {
+      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
+    }
+  }
+
+  private void validateOrderParticipant(Order order, Long userId) {
+    if (!isBuyer(order, userId) && !isSeller(order, userId)) {
+      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
+    }
+  }
+
+  private boolean isBuyer(Order order, Long userId) {
+    return Objects.equals(order.getBuyer().getId(), userId);
+  }
+
+  private boolean isSeller(Order order, Long userId) {
+    return Objects.equals(order.getSeller().getId(), userId);
   }
 }

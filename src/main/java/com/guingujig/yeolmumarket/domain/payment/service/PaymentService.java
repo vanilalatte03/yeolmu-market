@@ -64,9 +64,7 @@ public class PaymentService {
             .findWithDetailsById(orderId)
             .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
-    if (!Objects.equals(order.getBuyer().getId(), buyerId)) {
-      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
-    }
+    validateOrderBuyer(order, buyerId, ErrorCode.ORDER_ACCESS_DENIED);
 
     Optional<Payment> existingByOrder = paymentRepository.findByOrder_Id(orderId);
     if (existingByOrder.isPresent()) {
@@ -170,11 +168,7 @@ public class PaymentService {
             .findWithOrderAndUsersById(paymentId)
             .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
-    Long buyerId = payment.getOrder().getBuyer().getId();
-    Long sellerId = payment.getOrder().getSeller().getId();
-    if (!Objects.equals(buyerId, userId) && !Objects.equals(sellerId, userId)) {
-      throw new BusinessException(ErrorCode.PAYMENT_ACCESS_DENIED);
-    }
+    validatePaymentParticipant(payment, userId);
     return payment;
   }
 
@@ -194,10 +188,7 @@ public class PaymentService {
             .findWithOrderBuyerSellerAndProductByIdForUpdate(paymentId)
             .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
-    Long orderBuyerId = payment.getOrder().getBuyer().getId();
-    if (!Objects.equals(orderBuyerId, buyerId)) {
-      throw new BusinessException(ErrorCode.PAYMENT_ACCESS_DENIED);
-    }
+    validateOrderBuyer(payment.getOrder(), buyerId, ErrorCode.PAYMENT_ACCESS_DENIED);
     return payment;
   }
 
@@ -232,5 +223,26 @@ public class PaymentService {
       return MockPaymentResult.PAID;
     }
     return result;
+  }
+
+  private void validatePaymentParticipant(Payment payment, Long userId) {
+    Order order = payment.getOrder();
+    if (!isOrderBuyer(order, userId) && !isOrderSeller(order, userId)) {
+      throw new BusinessException(ErrorCode.PAYMENT_ACCESS_DENIED);
+    }
+  }
+
+  private void validateOrderBuyer(Order order, Long buyerId, ErrorCode errorCode) {
+    if (!isOrderBuyer(order, buyerId)) {
+      throw new BusinessException(errorCode);
+    }
+  }
+
+  private boolean isOrderBuyer(Order order, Long userId) {
+    return Objects.equals(order.getBuyer().getId(), userId);
+  }
+
+  private boolean isOrderSeller(Order order, Long userId) {
+    return Objects.equals(order.getSeller().getId(), userId);
   }
 }

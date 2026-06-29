@@ -89,9 +89,13 @@ public record SearchProductCondition(
   }
 
   private static void validateSort(String sort) {
-    if (!DEFAULT_SORT.equals(sort) && !"priceAsc".equals(sort) && !"priceDesc".equals(sort)) {
+    if (!isSupportedSort(sort)) {
       throw new BusinessException(ErrorCode.VALIDATION_FAILED, "지원하지 않는 정렬 조건입니다.");
     }
+  }
+
+  private static boolean isSupportedSort(String sort) {
+    return DEFAULT_SORT.equals(sort) || "priceAsc".equals(sort) || "priceDesc".equals(sort);
   }
 
   private static Sort resolveSort(String sort) {
