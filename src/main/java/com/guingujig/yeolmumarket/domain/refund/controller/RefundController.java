@@ -1,6 +1,6 @@
 package com.guingujig.yeolmumarket.domain.refund.controller;
 
-import com.guingujig.yeolmumarket.domain.refund.dto.CreateRefundRequestRequest;
+import com.guingujig.yeolmumarket.domain.refund.dto.CreateRefundRequest;
 import com.guingujig.yeolmumarket.domain.refund.dto.CreateRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.service.RefundService;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
@@ -25,7 +25,7 @@ public class RefundController {
   public ResponseEntity<ApiResponse<CreateRefundRequestResponse>> createRefundRequest(
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
       @PathVariable Long orderId,
-      @Valid @RequestBody CreateRefundRequestRequest request) {
+      @Valid @RequestBody CreateRefundRequest request) {
     CreateRefundRequestResponse response =
         refundService.createRefundRequest(authenticatedUser.userId(), orderId, request.reason());
     return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
