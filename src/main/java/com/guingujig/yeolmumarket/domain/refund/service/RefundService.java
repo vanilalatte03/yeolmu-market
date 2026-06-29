@@ -9,6 +9,7 @@ import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -53,9 +54,9 @@ public class RefundService {
     }
 
     order.requestRefund();
+    LocalDateTime requestedAt = LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
     RefundRequest refundRequest =
-        RefundRequest.create(
-            order, order.getBuyer(), normalizedReason, LocalDateTime.now(ZoneOffset.UTC));
+        RefundRequest.create(order, order.getBuyer(), normalizedReason, requestedAt);
 
     try {
       refundRequestRepository.saveAndFlush(refundRequest);
