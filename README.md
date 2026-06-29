@@ -13,16 +13,17 @@
 - [PRD](docs/PRD.md) — 제품 범위와 우선순위
 - [API](docs/API.md) — API 계약
 - [ERD](docs/ERD.md) — 데이터 모델
+- [DEVELOPMENT](docs/DEVELOPMENT.md) — 개발 환경과 실행·검증 명령
 - [CONVENTIONS](docs/CONVENTIONS.md) — 코드 컨벤션
 - [ADR](docs/adr/README.md) — 기술 결정 기록
 
 ## 개발
 
-[AGENTS.md](AGENTS.md)는 에이전트 작업 라우터다. 빌드·실행·테스트 명령과 필수 운영 게이트는 AGENTS.md를 보고, 세부 정본은 `docs/*` 문서를 따른다.
+[AGENTS.md](AGENTS.md)는 에이전트 작업 라우터다. 빌드·실행·테스트 명령과 필수 운영 게이트는 [DEVELOPMENT](docs/DEVELOPMENT.md)를 보고, 세부 정본은 `docs/*` 문서를 따른다.
 
 ### 환경 셋업
 
-클론 후 1회 `git config core.hooksPath .githooks`를 실행한다. pre-commit에서 Spotless 포맷 검사가 동작한다.
+로컬 인프라와 검증 명령은 [DEVELOPMENT](docs/DEVELOPMENT.md)를 따른다.
 
 ### 스킬
 

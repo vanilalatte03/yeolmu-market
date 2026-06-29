@@ -9,10 +9,12 @@
 | auth/security | `domain/auth`, `global/security` | `docs/API.md`, `docs/adr/007-jwt-refresh-token-rotation.md`, `docs/adr/004-jwt-logout-blacklist.md`, `.env.example` |
 | user | `domain/user` | `docs/API.md`, `docs/ERD.md` |
 | product/admin | `domain/product`, `domain/category`, `domain/wish` | `docs/API.md`, `docs/ERD.md`, `docs/adr/006-product-hidden-flag.md`, `docs/adr/001-concurrent-order-control.md` |
+| search/product cache | `domain/search`, `domain/product` | `docs/API.md`, `docs/adr/002-redis-search-cache.md`, `docs/adr/011-product-search-cache-partial-eviction.md` |
 | chat/websocket | `domain/chat`, `global/config/WebSocketConfig.java` | `docs/API.md`, `docs/ERD.md` |
-| order/payment/refund/review | `domain/order`, `domain/payment`, `domain/refund`, `domain/review` | `docs/API.md`, `docs/ERD.md`, `docs/adr/001-concurrent-order-control.md`, `docs/adr/005-mock-safe-payment-transaction-policy.md` |
+| order/payment/refund/review | `domain/order`, `domain/payment`, `domain/refund`, `domain/review` | `docs/API.md`, `docs/ERD.md`, `docs/adr/001-concurrent-order-control.md`, `docs/adr/005-mock-safe-payment-transaction-policy.md`, `docs/adr/010-redis-distributed-lock.md` |
 | global | `global/exception`, `global/response`, `global/config`, `global/security`, `global/entity` | `docs/API.md`, `docs/CONVENTIONS.md` |
-| test | `src/test/java/com/guingujig/yeolmumarket` | `docs/CONVENTIONS.md`, `AGENTS.md` 실행 게이트 |
+| development/validation | `build.gradle`, `docker-compose.yml`, `.githooks`, `gradlew.bat` | `docs/DEVELOPMENT.md` |
+| test | `src/test/java/com/guingujig/yeolmumarket` | `docs/CONVENTIONS.md`, `docs/DEVELOPMENT.md` |
 
 도메인 내부는 가능한 한 `controller / service / repository / dto / entity` 흐름을 따른다.
 새 파일을 추가할 때는 기존 같은 도메인의 이름·패키지·테스트 배치를 먼저 맞춘다.

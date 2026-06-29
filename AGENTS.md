@@ -1,21 +1,12 @@
 # AGENTS.md
 
-> 에이전트 작업용 루트 라우터. 세부 정책은 정본 문서로 보내고, 루트엔 실행 게이트와 반복 실수 방지만 남긴다.
+> 에이전트 작업용 루트 라우터. 세부 정책은 정본 문서로 보내고, 루트엔 필수 게이트와 반복 실수 방지만 남긴다.
 > `CLAUDE.md`는 `@AGENTS.md` 포인터만 두고 내용을 복제하지 않는다.
 
-## 명령어 (실행 게이트)
+## 필수 게이트
 
-| 작업 | macOS/Linux | Windows PowerShell |
-| --- | --- | --- |
-| 빌드 | `./gradlew build` | `.\gradlew.bat build` |
-| 실행 | `./gradlew bootRun` | `.\gradlew.bat bootRun` |
-| 테스트 | `./gradlew test` | `.\gradlew.bat test` |
-| 단일 테스트 | `./gradlew test --tests "패키지.클래스명"` | `.\gradlew.bat test --tests "패키지.클래스명"` |
-| 포맷 검사 | `./gradlew spotlessCheck` | `.\gradlew.bat spotlessCheck` |
-| 포맷 적용 | `./gradlew spotlessApply` | `.\gradlew.bat spotlessApply` |
-
-- 실행 전제: 로컬 MySQL/datasource·Redis. macOS/Linux `cp .env.example .env && docker compose up -d mysql redis` / PowerShell `Copy-Item .env.example .env; docker compose up -d mysql redis`
-- 완료 전 `test`·`spotlessCheck` 통과 필수(실패 시 `spotlessApply` 후 재확인). 확인하지 않은 검증을 완료로 표시하지 않는다.
+- 실행·검증 명령과 로컬 인프라 전제는 `docs/DEVELOPMENT.md`를 따른다.
+- 완료 전 `test`·`spotlessCheck` 통과 필수. 확인하지 않은 검증을 완료로 표시하지 않는다.
 
 ## 정본 라우팅
 
@@ -25,6 +16,7 @@
 | 제품 범위·우선순위 | `docs/PRD.md` |
 | API 계약·공통 응답·에러 | `docs/API.md` |
 | 데이터 모델 | `docs/ERD.md` |
+| 개발 환경·실행·검증 게이트 | `docs/DEVELOPMENT.md` |
 | 코드·커밋 컨벤션·Javadoc·시간 처리 | `docs/CONVENTIONS.md` |
 | 되돌리기 어려운 기술 결정 | `docs/adr/README.md` |
 | 패키지 탐색·수정 진입점 | `docs/context/source-map.md` |
