@@ -6,6 +6,7 @@ import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -18,7 +19,9 @@ import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductImage;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import com.guingujig.yeolmumarket.domain.product.repository.ProductImageRepository;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.review.entity.Review;
 import com.guingujig.yeolmumarket.domain.review.repository.ReviewRepository;
@@ -28,6 +31,7 @@ import com.guingujig.yeolmumarket.domain.wish.entity.Wish;
 import com.guingujig.yeolmumarket.domain.wish.repository.WishRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
 import com.guingujig.yeolmumarket.support.ProductTestFactory;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +39,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -51,6 +56,7 @@ class ProductControllerTest {
   private final MockMvc mockMvc;
   private final UserRepository userRepository;
   private final ProductRepository productRepository;
+  private final ProductImageRepository productImageRepository;
   private final CategoryRepository categoryRepository;
   private final WishRepository wishRepository;
   private final OrderRepository orderRepository;
@@ -63,6 +69,7 @@ class ProductControllerTest {
       MockMvc mockMvc,
       UserRepository userRepository,
       ProductRepository productRepository,
+      ProductImageRepository productImageRepository,
       CategoryRepository categoryRepository,
       WishRepository wishRepository,
       OrderRepository orderRepository,
@@ -72,6 +79,7 @@ class ProductControllerTest {
     this.mockMvc = mockMvc;
     this.userRepository = userRepository;
     this.productRepository = productRepository;
+    this.productImageRepository = productImageRepository;
     this.categoryRepository = categoryRepository;
     this.wishRepository = wishRepository;
     this.orderRepository = orderRepository;
@@ -199,7 +207,7 @@ class ProductControllerTest {
         .andExpect(jsonPath("$.data.createdAt", matchesPattern(".*(Z|\\+00:00)$")))
         .andExpect(jsonPath("$.data.updatedAt", matchesPattern(".*(Z|\\+00:00)$")))
         .andExpect(jsonPath("$.data.category").doesNotExist())
-        .andExpect(jsonPath("$.data.images").doesNotExist())
+        .andExpect(jsonPath("$.data.images", hasSize(0)))
         .andExpect(jsonPath("$.data.wishCount").value(0))
         .andExpect(jsonPath("$.data.wished").value(false))
         .andExpect(jsonPath("$.data.viewCount").doesNotExist())
@@ -256,6 +264,69 @@ class ProductControllerTest {
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("PRODUCT_NOT_FOUND"));
+  }
+
+  @Test
+  void 상품_이미지_업로드에_성공하면_201과_이미지_목록을_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            multipart("/api/products/{productId}/images", product.getId())
+                .file(image("ipad.png", "image/png"))
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.images", hasSize(1)))
+        .andExpect(jsonPath("$.data.images[0].imageId").isNumber())
+        .andExpect(jsonPath("$.data.images[0].url", matchesPattern("/uploads/products/.+\\.png")))
+        .andExpect(jsonPath("$.data.images[0].thumbnail").value(true))
+        .andExpect(jsonPath("$.data.images[0].uploadedAt", matchesPattern(".*(Z|\\+00:00)$")));
+
+    assertThat(productImageRepository.findByProductIdOrderByCreatedAtAscIdAsc(product.getId()))
+        .hasSize(1);
+  }
+
+  @Test
+  void 판매자가_아닌_사용자의_상품_이미지_업로드는_403으로_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User other = saveUser("other@example.com", "다른사용자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(other);
+
+    mockMvc
+        .perform(
+            multipart("/api/products/{productId}/images", product.getId())
+                .file(image("ipad.png", "image/png"))
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("PRODUCT_ACCESS_DENIED"));
+  }
+
+  @Test
+  void 상품_이미지_삭제에_성공하면_deleted_true를_응답한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    ProductImage image =
+        productImageRepository.saveAndFlush(
+            ProductImage.create(
+                product, "/uploads/products/%d/1.png".formatted(product.getId()), true));
+    String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(seller);
+
+    mockMvc
+        .perform(
+            delete("/api/products/{productId}/images/{imageId}", product.getId(), image.getId())
+                .header(HttpHeaders.AUTHORIZATION, accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.deleted").value(true));
+
+    assertThat(productImageRepository.findById(image.getId())).isEmpty();
   }
 
   @Test
@@ -711,5 +782,10 @@ class ProductControllerTest {
 
   private Category saveCategory(String name) {
     return categoryRepository.saveAndFlush(Category.create(name));
+  }
+
+  private MockMultipartFile image(String filename, String contentType) {
+    return new MockMultipartFile(
+        "images", filename, contentType, "image-content".getBytes(StandardCharsets.UTF_8));
   }
 }

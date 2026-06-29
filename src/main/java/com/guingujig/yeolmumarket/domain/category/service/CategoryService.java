@@ -12,9 +12,12 @@ import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.domain.product.service.ProductThumbnailQueryService;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -33,6 +36,7 @@ public class CategoryService {
 
   private final CategoryRepository categoryRepository;
   private final ProductRepository productRepository;
+  private final ProductThumbnailQueryService productThumbnailQueryService;
 
   /** 상품 등록과 탐색에 사용할 전체 카테고리 목록을 ID 오름차순으로 조회한다. */
   @Transactional(readOnly = true)
@@ -56,8 +60,13 @@ public class CategoryService {
             categoryId,
             ProductStatus.DELETED,
             PageRequest.of(page, size, resolveProductSort(sort)));
+    List<Long> productIds = products.getContent().stream().map(Product::getId).toList();
+    Map<Long, String> thumbnailUrls = productThumbnailQueryService.getThumbnailUrls(productIds);
 
-    return PageResponse.from(products.map(CategoryProductListItemResponse::from));
+    return PageResponse.from(
+        products.map(
+            product ->
+                CategoryProductListItemResponse.from(product, thumbnailUrls.get(product.getId()))));
   }
 
   /**

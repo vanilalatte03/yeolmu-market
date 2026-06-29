@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductImage;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import com.guingujig.yeolmumarket.domain.product.repository.ProductImageRepository;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
@@ -34,6 +36,7 @@ class WishServiceTest {
   private final WishService wishService;
   private final WishRepository wishRepository;
   private final ProductRepository productRepository;
+  private final ProductImageRepository productImageRepository;
   private final CategoryRepository categoryRepository;
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
@@ -44,6 +47,7 @@ class WishServiceTest {
       WishService wishService,
       WishRepository wishRepository,
       ProductRepository productRepository,
+      ProductImageRepository productImageRepository,
       CategoryRepository categoryRepository,
       UserRepository userRepository,
       PasswordEncoder passwordEncoder,
@@ -51,6 +55,7 @@ class WishServiceTest {
     this.wishService = wishService;
     this.wishRepository = wishRepository;
     this.productRepository = productRepository;
+    this.productImageRepository = productImageRepository;
     this.categoryRepository = categoryRepository;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
@@ -182,6 +187,22 @@ class WishServiceTest {
   }
 
   @Test
+  void 내_찜_목록은_대표_이미지를_thumbnailUrl로_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User user = saveUser("user@example.com", "열무유저");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+    saveProductImage(
+        product, "/uploads/products/%d/thumbnail.png".formatted(product.getId()), true);
+    saveWishAt(user, product, LocalDateTime.of(2026, 6, 27, 9, 0));
+
+    PageResponse<WishListItemResponse> response = wishService.getMyWishes(user.getId(), 0, 10);
+
+    assertThat(response.content()).hasSize(1);
+    assertThat(response.content().getFirst().thumbnailUrl())
+        .isEqualTo("/uploads/products/%d/thumbnail.png".formatted(product.getId()));
+  }
+
+  @Test
   void 찜한_시각이_같으면_찜_ID_내림차순으로_정렬한다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User user = saveUser("user@example.com", "열무유저");
@@ -262,6 +283,7 @@ class WishServiceTest {
 
   private void deleteAll() {
     wishRepository.deleteAll();
+    productImageRepository.deleteAll();
     productRepository.deleteAll();
     categoryRepository.deleteAll();
     userRepository.deleteAll();
@@ -288,5 +310,9 @@ class WishServiceTest {
 
   private User saveUser(String email, String nickname) {
     return userRepository.save(new User(email, passwordEncoder.encode("Password123!"), nickname));
+  }
+
+  private ProductImage saveProductImage(Product product, String url, boolean thumbnail) {
+    return productImageRepository.saveAndFlush(ProductImage.create(product, url, thumbnail));
   }
 }

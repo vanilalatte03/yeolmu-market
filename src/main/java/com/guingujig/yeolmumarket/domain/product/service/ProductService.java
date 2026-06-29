@@ -14,7 +14,9 @@ import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UserProductListItemResponse;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductImage;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import com.guingujig.yeolmumarket.domain.product.repository.ProductImageRepository;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.review.service.ReviewRatingQueryService;
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
@@ -46,8 +48,10 @@ public class ProductService {
   private static final int MAX_PAGE_SIZE = 100;
 
   private final ProductRepository productRepository;
+  private final ProductImageRepository productImageRepository;
   private final UserRepository userRepository;
   private final CategoryRepository categoryRepository;
+  private final ProductThumbnailQueryService productThumbnailQueryService;
   private final ProductWishSummaryService productWishSummaryService;
   private final ReviewRatingQueryService reviewRatingQueryService;
   private final ApplicationEventPublisher eventPublisher;
@@ -75,7 +79,7 @@ public class ProductService {
   /**
    * 일반 사용자에게 공개할 수 있는 상품 목록을 조회한다.
    *
-   * <p>숨김 상품과 삭제 상품은 공개 목록에 노출하지 않으며, P0에서는 썸네일을 항상 {@code null}로 반환한다.
+   * <p>숨김 상품과 삭제 상품은 공개 목록에 노출하지 않으며, 상품에 대표 이미지가 있으면 {@code thumbnailUrl}에 반영한다.
    */
   @Transactional(readOnly = true)
   public PageResponse<ProductListItemResponse> getProducts(
@@ -90,6 +94,7 @@ public class ProductService {
     List<Long> productIds = products.getContent().stream().map(Product::getId).toList();
     Map<Long, ProductWishSummary> wishSummaries =
         productWishSummaryService.getSummaries(productIds, authenticatedUserId);
+    Map<Long, String> thumbnailUrls = productThumbnailQueryService.getThumbnailUrls(productIds);
 
     return PageResponse.from(
         products.map(
@@ -97,7 +102,8 @@ public class ProductService {
                 ProductListItemResponse.from(
                     product,
                     wishSummaries.getOrDefault(
-                        product.getId(), ProductWishSummary.empty(product.getId())))));
+                        product.getId(), ProductWishSummary.empty(product.getId())),
+                    thumbnailUrls.get(product.getId()))));
   }
 
   /**
@@ -113,9 +119,14 @@ public class ProductService {
             .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
     ProductWishSummary wishSummary =
         productWishSummaryService.getSummary(productId, authenticatedUserId);
+    List<ProductImage> images =
+        productImageRepository.findByProductIdOrderByCreatedAtAscIdAsc(productId);
 
     return ProductDetailResponse.from(
-        product, wishSummary, reviewRatingQueryService.getSummary(product.getSeller().getId()));
+        product,
+        wishSummary,
+        images,
+        reviewRatingQueryService.getSummary(product.getSeller().getId()));
   }
 
   /**

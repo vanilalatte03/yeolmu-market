@@ -13,7 +13,9 @@ import com.guingujig.yeolmumarket.domain.category.dto.UpdateCategoryResponse;
 import com.guingujig.yeolmumarket.domain.category.entity.Category;
 import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductImage;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import com.guingujig.yeolmumarket.domain.product.repository.ProductImageRepository;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
@@ -35,6 +37,7 @@ class CategoryServiceTest {
   private final CategoryService categoryService;
   private final CategoryRepository categoryRepository;
   private final ProductRepository productRepository;
+  private final ProductImageRepository productImageRepository;
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
 
@@ -43,11 +46,13 @@ class CategoryServiceTest {
       CategoryService categoryService,
       CategoryRepository categoryRepository,
       ProductRepository productRepository,
+      ProductImageRepository productImageRepository,
       UserRepository userRepository,
       PasswordEncoder passwordEncoder) {
     this.categoryService = categoryService;
     this.categoryRepository = categoryRepository;
     this.productRepository = productRepository;
+    this.productImageRepository = productImageRepository;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
   }
@@ -100,6 +105,22 @@ class CategoryServiceTest {
         .containsExactly(ProductStatus.RESERVED, ProductStatus.ON_SALE);
     assertThat(response.totalElements()).isEqualTo(2);
     assertThat(response.hasNext()).isFalse();
+  }
+
+  @Test
+  void 카테고리별_상품_조회는_대표_이미지를_thumbnailUrl로_반환한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Category category = saveCategory("디지털기기");
+    Product product = saveProduct(seller, category, "아이패드 미니 6", 450000);
+    saveProductImage(
+        product, "/uploads/products/%d/thumbnail.png".formatted(product.getId()), true);
+
+    PageResponse<CategoryProductListItemResponse> response =
+        categoryService.getCategoryProducts(category.getId(), 0, 10, "latest");
+
+    assertThat(response.content()).hasSize(1);
+    assertThat(response.content().getFirst().thumbnailUrl())
+        .isEqualTo("/uploads/products/%d/thumbnail.png".formatted(product.getId()));
   }
 
   @Test
@@ -278,6 +299,7 @@ class CategoryServiceTest {
   }
 
   private void deleteAll() {
+    productImageRepository.deleteAll();
     productRepository.deleteAll();
     categoryRepository.deleteAll();
     userRepository.deleteAll();
@@ -318,5 +340,9 @@ class CategoryServiceTest {
     Product product = Product.create(seller, title, "생활기스 조금 있습니다.", price, category);
     ReflectionTestUtils.setField(product, "deletedAt", LocalDateTime.of(2026, 6, 24, 0, 0));
     return productRepository.saveAndFlush(product);
+  }
+
+  private ProductImage saveProductImage(Product product, String url, boolean thumbnail) {
+    return productImageRepository.saveAndFlush(ProductImage.create(product, url, thumbnail));
   }
 }
