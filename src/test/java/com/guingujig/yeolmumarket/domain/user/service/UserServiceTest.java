@@ -6,7 +6,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.guingujig.yeolmumarket.domain.review.dto.ReviewRatingSummary;
+import com.guingujig.yeolmumarket.domain.review.service.ReviewRatingQueryService;
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
+import com.guingujig.yeolmumarket.domain.user.dto.GetUserResponse;
 import com.guingujig.yeolmumarket.domain.user.dto.UpdateUserRequest;
 import com.guingujig.yeolmumarket.domain.user.dto.UpdateUserResponse;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
@@ -31,12 +34,27 @@ class UserServiceTest {
   @Mock private UserRepository userRepository;
   @Mock private PasswordEncoder passwordEncoder;
   @Mock private ApplicationEventPublisher eventPublisher;
+  @Mock private ReviewRatingQueryService reviewRatingQueryService;
 
   private UserService userService;
 
   @BeforeEach
   void setUp() {
-    userService = new UserService(userRepository, passwordEncoder, eventPublisher);
+    userService =
+        new UserService(userRepository, passwordEncoder, eventPublisher, reviewRatingQueryService);
+  }
+
+  @Test
+  void 공개_유저_정보는_받은_리뷰_평점과_리뷰_수를_반환한다() {
+    User user = user();
+    when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+    when(reviewRatingQueryService.getSummary(USER_ID)).thenReturn(new ReviewRatingSummary(4.75, 2));
+
+    GetUserResponse response = userService.getUser(USER_ID);
+
+    assertThat(response.userId()).isEqualTo(USER_ID);
+    assertThat(response.averageRating()).isEqualTo(4.8);
+    assertThat(response.reviewCount()).isEqualTo(2);
   }
 
   @Test
@@ -69,6 +87,7 @@ class UserServiceTest {
   private User user() {
     User user = new User("customer@example.com", "encoded-password", "열무구매자");
     ReflectionTestUtils.setField(user, "id", USER_ID);
+    ReflectionTestUtils.setField(user, "createdAt", BASE_TIME);
     ReflectionTestUtils.setField(user, "modifiedAt", BASE_TIME);
     return user;
   }
