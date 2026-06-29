@@ -319,7 +319,7 @@ class SecurityConfigTest {
   }
 
   @Test
-  void Redis_장애_시_JWT가_있는_요청은_503_REDIS_UNAVAILABLE로_응답한다() throws Exception {
+  void Redis_장애_시_유효한_JWT가_있는_요청은_degraded_mode로_인증된다() throws Exception {
     User user =
         userRepository.save(
             new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
@@ -330,9 +330,11 @@ class SecurityConfigTest {
     mockMvc
         .perform(
             get("/test/security/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
-        .andExpect(status().isServiceUnavailable())
-        .andExpect(jsonPath("$.success").value(false))
-        .andExpect(jsonPath("$.code").value("REDIS_UNAVAILABLE"));
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.userId").value(user.getId()))
+        .andExpect(jsonPath("$.data.email").value("customer@example.com"))
+        .andExpect(jsonPath("$.data.role").value("USER"));
   }
 
   @Test

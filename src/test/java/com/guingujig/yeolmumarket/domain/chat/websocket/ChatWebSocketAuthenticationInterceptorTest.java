@@ -90,7 +90,7 @@ class ChatWebSocketAuthenticationInterceptorTest {
   }
 
   @Test
-  void 폐기_토큰_조회_실패_CONNECT는_REDIS_UNAVAILABLE로_실패한다() {
+  void 폐기_토큰_조회_실패_CONNECT는_degraded_mode로_Principal을_설정한다() {
     User user = saveUser("buyer@example.com", "열무구매자");
     String accessToken = jwtTokenProvider.issueAccessToken(user);
     doThrow(new RedisConnectionFailureException("Redis unavailable"))
@@ -98,11 +98,12 @@ class ChatWebSocketAuthenticationInterceptorTest {
         .exists(jwtTokenProvider.hashToken(accessToken));
     Message<?> message = connectMessage("Bearer " + accessToken);
 
-    assertThatThrownBy(() -> interceptor.preSend(message, null))
-        .isInstanceOfSatisfying(
-            ChatWebSocketAuthenticationException.class,
-            exception ->
-                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.REDIS_UNAVAILABLE));
+    Message<?> result = interceptor.preSend(message, null);
+
+    StompHeaderAccessor accessor = StompHeaderAccessor.wrap(result);
+    assertThat(accessor.getUser()).isInstanceOf(Authentication.class);
+    Authentication authentication = (Authentication) accessor.getUser();
+    assertThat(authentication.getName()).isEqualTo(user.getId().toString());
   }
 
   private Message<?> connectMessage(String authorization) {
