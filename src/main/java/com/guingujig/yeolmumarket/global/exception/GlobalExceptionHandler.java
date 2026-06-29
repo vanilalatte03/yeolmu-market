@@ -114,12 +114,7 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(MethodArgumentTypeMismatchException.class)
   public ResponseEntity<ApiResponse<Void>> handleMethodArgumentTypeMismatchException(
       MethodArgumentTypeMismatchException exception) {
-    ErrorCode errorCode =
-        PAGINATION_PARAMETER_NAMES.contains(exception.getName())
-            ? ErrorCode.INVALID_PAGINATION
-            : exception.getRequiredType() != null && exception.getRequiredType().isEnum()
-                ? ErrorCode.INVALID_ENUM_VALUE
-                : ErrorCode.VALIDATION_FAILED;
+    ErrorCode errorCode = resolveTypeMismatchErrorCode(exception);
 
     return ResponseEntity.status(errorCode.getHttpStatus())
         .body(ApiResponse.failure(errorCode.name(), errorCode.getMessage()));
@@ -166,6 +161,19 @@ public class GlobalExceptionHandler {
 
   private String formatObjectError(ObjectError objectError) {
     return objectError.getObjectName() + ": " + objectError.getDefaultMessage();
+  }
+
+  private ErrorCode resolveTypeMismatchErrorCode(MethodArgumentTypeMismatchException exception) {
+    if (PAGINATION_PARAMETER_NAMES.contains(exception.getName())) {
+      return ErrorCode.INVALID_PAGINATION;
+    }
+
+    Class<?> requiredType = exception.getRequiredType();
+    if (requiredType != null && requiredType.isEnum()) {
+      return ErrorCode.INVALID_ENUM_VALUE;
+    }
+
+    return ErrorCode.VALIDATION_FAILED;
   }
 
   private String formatConstraintViolation(ConstraintViolation<?> violation) {

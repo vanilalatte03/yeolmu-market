@@ -5,7 +5,6 @@ import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
 import com.guingujig.yeolmumarket.domain.payment.entity.PaymentStatus;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 
 public record CancelPaymentResponse(
     Long paymentId,
@@ -22,6 +21,6 @@ public record CancelPaymentResponse(
         payment.getStatus(),
         payment.getOrder().getOrderStatus(),
         payment.getOrder().getProduct().getStatus(),
-        payment.getCanceledAt() != null ? payment.getCanceledAt().atOffset(ZoneOffset.UTC) : null);
+        PaymentDateTimes.toUtcOffset(payment.getCanceledAt()));
   }
 }

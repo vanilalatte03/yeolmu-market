@@ -162,7 +162,7 @@ public class ReviewService {
     if (hasScore) {
       validateScore(score);
     }
-    return new ReviewUpdateValues(score, hasContent ? normalizeContent(content) : null);
+    return new ReviewUpdateValues(score, normalizeUpdatedContent(content, hasContent));
   }
 
   private Review getReviewInOrder(Long orderId, Long reviewId) {
@@ -192,6 +192,13 @@ public class ReviewService {
       throw new BusinessException(ErrorCode.VALIDATION_FAILED);
     }
     return normalizedContent;
+  }
+
+  private String normalizeUpdatedContent(String content, boolean hasContent) {
+    if (!hasContent) {
+      return null;
+    }
+    return normalizeContent(content);
   }
 
   private void validatePagination(int page, int size) {

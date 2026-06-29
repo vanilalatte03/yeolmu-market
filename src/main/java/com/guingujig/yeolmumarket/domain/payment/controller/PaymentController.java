@@ -66,9 +66,16 @@ public class PaymentController {
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
       @PathVariable Long paymentId,
       @RequestBody(required = false) CancelPaymentRequest request) {
-    String reason = request != null ? request.reason() : null;
+    String reason = resolveCancelReason(request);
     CancelPaymentResponse response =
         paymentService.cancelPayment(authenticatedUser.userId(), paymentId, reason);
     return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
+  private String resolveCancelReason(CancelPaymentRequest request) {
+    if (request == null) {
+      return null;
+    }
+    return request.reason();
   }
 }

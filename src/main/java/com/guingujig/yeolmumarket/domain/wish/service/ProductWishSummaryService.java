@@ -34,10 +34,7 @@ public class ProductWishSummaryService {
                 Collectors.toMap(
                     WishRepository.ProductWishCount::getProductId,
                     WishRepository.ProductWishCount::getWishCount));
-    Set<Long> wishedProductIds =
-        authenticatedUserId == null
-            ? Set.of()
-            : wishRepository.findWishedProductIdsByUserId(authenticatedUserId, distinctProductIds);
+    Set<Long> wishedProductIds = findWishedProductIds(authenticatedUserId, distinctProductIds);
 
     return distinctProductIds.stream()
         .collect(
@@ -54,5 +51,12 @@ public class ProductWishSummaryService {
   public ProductWishSummary getSummary(Long productId, Long authenticatedUserId) {
     return getSummaries(List.of(productId), authenticatedUserId)
         .getOrDefault(productId, ProductWishSummary.empty(productId));
+  }
+
+  private Set<Long> findWishedProductIds(Long authenticatedUserId, List<Long> productIds) {
+    if (authenticatedUserId == null) {
+      return Set.of();
+    }
+    return wishRepository.findWishedProductIdsByUserId(authenticatedUserId, productIds);
   }
 }

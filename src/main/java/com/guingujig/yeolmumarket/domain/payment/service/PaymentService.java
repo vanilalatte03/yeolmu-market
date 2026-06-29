@@ -88,7 +88,7 @@ public class PaymentService {
       throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
     }
 
-    MockPaymentResult result = request.result() != null ? request.result() : MockPaymentResult.PAID;
+    MockPaymentResult result = resolvePaymentResult(request);
     LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
 
     Payment payment;
@@ -224,5 +224,13 @@ public class PaymentService {
       throw new BusinessException(ErrorCode.VALIDATION_FAILED);
     }
     return trimmedReason;
+  }
+
+  private MockPaymentResult resolvePaymentResult(CreatePaymentRequest request) {
+    MockPaymentResult result = request.result();
+    if (result == null) {
+      return MockPaymentResult.PAID;
+    }
+    return result;
   }
 }

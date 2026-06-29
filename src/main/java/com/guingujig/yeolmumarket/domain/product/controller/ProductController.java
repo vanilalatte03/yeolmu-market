@@ -110,6 +110,9 @@ public class ProductController {
   }
 
   private Long resolveUserId(AuthenticatedUser authenticatedUser) {
-    return authenticatedUser == null ? null : authenticatedUser.userId();
+    if (authenticatedUser == null) {
+      return null;
+    }
+    return authenticatedUser.userId();
   }
 }

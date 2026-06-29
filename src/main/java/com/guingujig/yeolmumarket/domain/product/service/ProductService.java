@@ -141,10 +141,7 @@ public class ProductService {
     validateSellerExists(sellerId);
 
     Pageable pageable = PageRequest.of(page, size, resolveSort(null));
-    Page<Product> products =
-        status == ProductStatus.DELETED
-            ? Page.empty(pageable)
-            : findPublicSellerProducts(sellerId, status, pageable);
+    Page<Product> products = findVisibleSellerProducts(sellerId, status, pageable);
 
     return PageResponse.from(products.map(UserProductListItemResponse::from));
   }
@@ -279,6 +276,14 @@ public class ProductService {
     }
     return productRepository.findBySellerIdAndHiddenFalseAndDeletedAtIsNullAndStatus(
         sellerId, status, pageable);
+  }
+
+  private Page<Product> findVisibleSellerProducts(
+      Long sellerId, ProductStatus status, Pageable pageable) {
+    if (status == ProductStatus.DELETED) {
+      return Page.empty(pageable);
+    }
+    return findPublicSellerProducts(sellerId, status, pageable);
   }
 
   private Page<Product> findMyProducts(Long sellerId, ProductStatus status, Pageable pageable) {

@@ -7,7 +7,6 @@ import com.guingujig.yeolmumarket.domain.payment.entity.PaymentMethod;
 import com.guingujig.yeolmumarket.domain.payment.entity.PaymentStatus;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record PaymentResponse(
@@ -30,7 +29,7 @@ public record PaymentResponse(
         payment.getStatus(),
         payment.getOrder().getOrderStatus(),
         payment.getOrder().getProduct().getStatus(),
-        payment.getPaidAt() != null ? payment.getPaidAt().atOffset(ZoneOffset.UTC) : null,
-        payment.getFailedAt() != null ? payment.getFailedAt().atOffset(ZoneOffset.UTC) : null);
+        PaymentDateTimes.toUtcOffset(payment.getPaidAt()),
+        PaymentDateTimes.toUtcOffset(payment.getFailedAt()));
   }
 }
