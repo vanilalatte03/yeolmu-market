@@ -29,8 +29,17 @@ public class SearchProductQueryService {
     List<Long> productIds = products.getContent().stream().map(Product::getId).toList();
     Map<Long, String> thumbnailUrls = productThumbnailQueryService.getThumbnailUrls(productIds);
 
-    return PageResponse.from(
-        products.map(
-            product -> SearchProductResponse.from(product, thumbnailUrls.get(product.getId()))));
+    Page<SearchProductResponse> searchProducts =
+        products.map(product -> toSearchProductResponse(product, thumbnailUrls));
+
+    return PageResponse.from(searchProducts);
+  }
+
+  private SearchProductResponse toSearchProductResponse(
+      Product product, Map<Long, String> thumbnailUrls) {
+    Long productId = product.getId();
+    String thumbnailUrl = thumbnailUrls.get(productId);
+
+    return SearchProductResponse.from(product, thumbnailUrl);
   }
 }
