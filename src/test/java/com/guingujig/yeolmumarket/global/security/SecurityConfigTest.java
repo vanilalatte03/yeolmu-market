@@ -22,9 +22,13 @@ import com.guingujig.yeolmumarket.global.config.LocalProductImageStorageProperti
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.redis.RedisConnectionFailureException;
@@ -37,11 +41,14 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import tools.jackson.databind.ObjectMapper;
 
 @SpringBootTest(classes = {YeolmuMarketApplication.class, SecurityConfigTest.TestController.class})
 @AutoConfigureMockMvc
 @Transactional
 class SecurityConfigTest {
+
+  private static final Instant EXPIRED_TOKEN_ISSUED_AT = Instant.EPOCH;
 
   @MockitoBean private ActiveRefreshTokenRepository activeRefreshTokenRepository;
   @MockitoBean private RevokedAccessTokenRepository revokedAccessTokenRepository;
@@ -51,6 +58,8 @@ class SecurityConfigTest {
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
   private final LocalProductImageStorageProperties storageProperties;
+  private final ObjectMapper objectMapper;
+  private final String jwtSecret;
 
   @Autowired
   SecurityConfigTest(
@@ -58,12 +67,16 @@ class SecurityConfigTest {
       UserRepository userRepository,
       PasswordEncoder passwordEncoder,
       JwtTokenProvider jwtTokenProvider,
-      LocalProductImageStorageProperties storageProperties) {
+      LocalProductImageStorageProperties storageProperties,
+      ObjectMapper objectMapper,
+      @Value("${jwt.secret}") String jwtSecret) {
     this.mockMvc = mockMvc;
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
     this.jwtTokenProvider = jwtTokenProvider;
     this.storageProperties = storageProperties;
+    this.objectMapper = objectMapper;
+    this.jwtSecret = jwtSecret;
   }
 
   @Test
@@ -125,6 +138,15 @@ class SecurityConfigTest {
   }
 
   @Test
+  void 내_상품_목록_API는_공개_사용자_상품_패턴보다_우선해_JWT를_요구한다() throws Exception {
+    mockMvc
+        .perform(get("/api/users/me/products"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+  }
+
+  @Test
   void 보호_API는_유효한_JWT로_인증_사용자를_식별한다() throws Exception {
     User user =
         userRepository.save(
@@ -154,7 +176,7 @@ class SecurityConfigTest {
     User user =
         userRepository.save(
             new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
-    String expiredToken = "Bearer " + jwtTokenProvider.issueExpiredAccessToken(user);
+    String expiredToken = "Bearer " + issueExpiredAccessToken(user);
 
     mockMvc
         .perform(get("/test/security/me").header(HttpHeaders.AUTHORIZATION, expiredToken))
@@ -168,7 +190,7 @@ class SecurityConfigTest {
     User user =
         userRepository.save(
             new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
-    String expiredRefreshToken = jwtTokenProvider.issueExpiredRefreshToken(user);
+    String expiredRefreshToken = issueExpiredRefreshToken(user);
 
     mockMvc
         .perform(
@@ -310,7 +332,7 @@ class SecurityConfigTest {
   }
 
   @Test
-  void Redis_장애_시_JWT가_있는_요청은_503_REDIS_UNAVAILABLE로_응답한다() throws Exception {
+  void Redis_장애_시_유효한_JWT가_있는_요청은_degraded_mode로_인증된다() throws Exception {
     User user =
         userRepository.save(
             new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
@@ -321,9 +343,11 @@ class SecurityConfigTest {
     mockMvc
         .perform(
             get("/test/security/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
-        .andExpect(status().isServiceUnavailable())
-        .andExpect(jsonPath("$.success").value(false))
-        .andExpect(jsonPath("$.code").value("REDIS_UNAVAILABLE"));
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.userId").value(user.getId()))
+        .andExpect(jsonPath("$.data.email").value("customer@example.com"))
+        .andExpect(jsonPath("$.data.role").value("USER"));
   }
 
   @Test
@@ -357,6 +381,23 @@ class SecurityConfigTest {
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+  }
+
+  private String issueExpiredAccessToken(User user) {
+    return jwtTokenProviderAt(EXPIRED_TOKEN_ISSUED_AT).issueAccessToken(user);
+  }
+
+  private String issueExpiredRefreshToken(User user) {
+    return jwtTokenProviderAt(EXPIRED_TOKEN_ISSUED_AT).issueRefreshToken(user);
+  }
+
+  private JwtTokenProvider jwtTokenProviderAt(Instant instant) {
+    return new JwtTokenProvider(
+        objectMapper,
+        Clock.fixed(instant, ZoneOffset.UTC),
+        jwtSecret,
+        jwtTokenProvider.getAccessTokenValiditySeconds(),
+        jwtTokenProvider.getRefreshTokenValiditySeconds());
   }
 
   @RestController

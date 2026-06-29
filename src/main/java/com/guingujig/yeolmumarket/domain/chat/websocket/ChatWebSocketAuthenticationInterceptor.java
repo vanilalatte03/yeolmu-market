@@ -5,7 +5,6 @@ import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.security.JwtAuthenticationService;
 import com.guingujig.yeolmumarket.global.security.JwtException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
@@ -51,8 +50,6 @@ public class ChatWebSocketAuthenticationInterceptor implements ChannelIntercepto
       throw new ChatWebSocketAuthenticationException(exception.getErrorCode());
     } catch (BusinessException exception) {
       throw new ChatWebSocketAuthenticationException(exception.getErrorCode());
-    } catch (DataAccessException exception) {
-      throw new ChatWebSocketAuthenticationException(ErrorCode.REDIS_UNAVAILABLE);
     }
   }
 

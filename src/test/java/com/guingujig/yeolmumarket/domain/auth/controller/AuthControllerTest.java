@@ -18,8 +18,8 @@ import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepos
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.entity.UserRole;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.global.security.JwtRefreshClaims;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
-import com.guingujig.yeolmumarket.global.security.JwtTokenProvider.JwtRefreshClaims;
 import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
