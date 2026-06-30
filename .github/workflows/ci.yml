@@ -15,6 +15,17 @@ jobs:
     name: Test and format
     runs-on: ubuntu-latest
 
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -30,6 +41,9 @@ jobs:
 
       - name: Run tests
         run: ./gradlew test --no-daemon
+        env:
+          # 분산 락의 실 Redisson wiring·동작 검증 테스트 활성화 (ADR-013, docs/DEVELOPMENT.md)
+          YEOLMU_REDIS_LOCK_TEST: "true"
 
       - name: Check formatting
         run: ./gradlew spotlessCheck --no-daemon
