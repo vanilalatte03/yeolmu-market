@@ -1,6 +1,8 @@
 package com.guingujig.yeolmumarket.domain.chat.websocket;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
 import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
@@ -35,6 +37,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.messaging.converter.ByteArrayMessageConverter;
 import org.springframework.messaging.converter.CompositeMessageConverter;
@@ -47,15 +50,18 @@ import org.springframework.messaging.simp.stomp.StompSession;
 import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ChatWebSocketIntegrationTest {
 
   @MockitoBean private RevokedAccessTokenRepository revokedAccessTokenRepository;
+  @MockitoSpyBean private ChatMessageRepository chatMessageRepository;
 
   private static final Duration TIMEOUT = Duration.ofSeconds(3);
   private static final Duration SUBSCRIPTION_PROBE_INTERVAL = Duration.ofMillis(50);
@@ -67,7 +73,6 @@ class ChatWebSocketIntegrationTest {
   private final ProductRepository productRepository;
   private final CategoryRepository categoryRepository;
   private final ChatRoomRepository chatRoomRepository;
-  private final ChatMessageRepository chatMessageRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
   private final SimpMessagingTemplate messagingTemplate;
@@ -85,7 +90,6 @@ class ChatWebSocketIntegrationTest {
       ProductRepository productRepository,
       CategoryRepository categoryRepository,
       ChatRoomRepository chatRoomRepository,
-      ChatMessageRepository chatMessageRepository,
       PasswordEncoder passwordEncoder,
       JwtTokenProvider jwtTokenProvider,
       SimpMessagingTemplate messagingTemplate,
@@ -95,7 +99,6 @@ class ChatWebSocketIntegrationTest {
     this.productRepository = productRepository;
     this.categoryRepository = categoryRepository;
     this.chatRoomRepository = chatRoomRepository;
-    this.chatMessageRepository = chatMessageRepository;
     this.passwordEncoder = passwordEncoder;
     this.jwtTokenProvider = jwtTokenProvider;
     this.messagingTemplate = messagingTemplate;
@@ -192,6 +195,21 @@ class ChatWebSocketIntegrationTest {
   }
 
   @Test
+  void 참여자는_채팅방_저장_실패_보정_destination을_구독할_수_있다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    ChatRoom chatRoom = saveChatRoom(seller, buyer);
+    StompSession session = connectWithToken(buyer);
+    ErrorQueueFrameHandler errorHandler = new ErrorQueueFrameHandler();
+    subscribeToErrorQueue(session, buyer, errorHandler);
+
+    session.subscribe("/sub/chat-rooms/" + chatRoom.getId() + "/errors", new NoopFrameHandler());
+
+    assertThat(session.isConnected()).isTrue();
+    assertThat(errorHandler.pollPayload()).isNull();
+  }
+
+  @Test
   void 없는_채팅방_SUBSCRIBE는_user_error_queue로_실패하고_연결을_유지한다() throws Exception {
     User user = saveUser("buyer@example.com", "열무구매자");
     StompSession session = connectWithToken(user);
@@ -225,6 +243,24 @@ class ChatWebSocketIntegrationTest {
   }
 
   @Test
+  void 참여자가_아닌_저장_실패_보정_SUBSCRIBE는_user_error_queue로_실패한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    User otherUser = saveUser("other@example.com", "열무구경꾼");
+    ChatRoom chatRoom = saveChatRoom(seller, buyer);
+    StompSession session = connectWithToken(otherUser);
+    ErrorQueueFrameHandler errorHandler = new ErrorQueueFrameHandler();
+    subscribeToErrorQueue(session, otherUser, errorHandler);
+
+    session.subscribe("/sub/chat-rooms/" + chatRoom.getId() + "/errors", new NoopFrameHandler());
+
+    String payload = errorHandler.pollPayload();
+    assertThat(payload).contains("\"code\":\"CHAT_ROOM_ACCESS_DENIED\"");
+    assertThat(payload).contains("\"roomId\":" + chatRoom.getId());
+    assertThat(session.isConnected()).isTrue();
+  }
+
+  @Test
   void 참여자는_SEND로_메시지를_저장하고_구독자에게_발행한다() throws Exception {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
@@ -236,19 +272,69 @@ class ChatWebSocketIntegrationTest {
     session.send("/pub/chat-rooms/" + chatRoom.getId() + "/message", "{\"content\":\"거래 가능할까요?\"}");
 
     String payload = messageHandler.pollPayload();
+    assertThat(payload).contains("\"messageId\":null");
+    assertThat(payload).contains("\"acceptedMessageId\":");
     assertThat(payload).contains("\"roomId\":" + chatRoom.getId());
     assertThat(payload).contains("\"senderId\":" + buyer.getId());
     assertThat(payload).contains("\"senderNickname\":\"열무구매자\"");
     assertThat(payload).contains("\"content\":\"거래 가능할까요?\"");
     assertThat(payload).contains("\"createdAt\":");
-    List<ChatMessage> savedMessages = chatMessageRepository.findAll();
+    List<ChatMessage> savedMessages = waitForSavedMessages(1);
     assertThat(savedMessages).hasSize(1);
     ChatMessage savedMessage = savedMessages.getFirst();
     assertThat(savedMessage.getChatRoom().getId()).isEqualTo(chatRoom.getId());
     assertThat(savedMessage.getSender().getId()).isEqualTo(buyer.getId());
     assertThat(savedMessage.getContent()).isEqualTo("거래 가능할까요?");
+    assertThat(savedMessage.getAcceptedMessageId()).isNotBlank();
+    assertThat(payload)
+        .contains("\"acceptedMessageId\":\"" + savedMessage.getAcceptedMessageId() + "\"");
     ChatRoom updatedRoom = chatRoomRepository.findById(chatRoom.getId()).orElseThrow();
     assertThat(updatedRoom.getLastMessageAt()).isEqualTo(savedMessage.getCreatedAt());
+  }
+
+  @Test
+  void 발행_이후_비동기_저장에_실패하면_방_보정_destination과_user_error_queue로_알린다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    ChatRoom chatRoom = saveChatRoom(seller, buyer);
+    doThrow(new DataIntegrityViolationException("save failed"))
+        .when(chatMessageRepository)
+        .saveAndFlush(any(ChatMessage.class));
+    StompSession buyerSession = connectWithToken(buyer);
+    StompSession sellerSession = connectWithToken(seller);
+    MessageFrameHandler messageHandler = new MessageFrameHandler();
+    MessageFrameHandler roomErrorHandler = new MessageFrameHandler();
+    ErrorQueueFrameHandler userErrorHandler = new ErrorQueueFrameHandler();
+    subscribeToChatRoom(buyerSession, chatRoom.getId(), messageHandler);
+    subscribeToErrorQueue(buyerSession, buyer, userErrorHandler);
+    String roomErrorDestination = "/sub/chat-rooms/" + chatRoom.getId() + "/errors";
+    sellerSession.subscribe(roomErrorDestination, roomErrorHandler);
+    waitForChatRoomSubscriptionReady(roomErrorDestination, roomErrorHandler);
+
+    buyerSession.send(
+        "/pub/chat-rooms/" + chatRoom.getId() + "/message", "{\"content\":\"거래 가능할까요?\"}");
+
+    String messagePayload = messageHandler.pollPayload();
+    assertThat(messagePayload).contains("\"messageId\":null");
+    String acceptedMessageId =
+        readPayload(messagePayload).requiredAt("/acceptedMessageId").asString();
+    String expectedAcceptedMessageId = "\"acceptedMessageId\":\"" + acceptedMessageId + "\"";
+    String expectedRoomId = "\"roomId\":" + chatRoom.getId();
+
+    String roomErrorPayload = roomErrorHandler.pollPayload();
+    assertThat(roomErrorPayload)
+        .contains("\"code\":\"CHAT_MESSAGE_SAVE_FAILED\"")
+        .contains(expectedRoomId)
+        .contains(expectedAcceptedMessageId);
+
+    String userErrorPayload = userErrorHandler.pollPayload();
+    assertThat(userErrorPayload)
+        .contains("\"code\":\"CHAT_MESSAGE_SAVE_FAILED\"")
+        .contains(expectedRoomId)
+        .contains(expectedAcceptedMessageId);
+    assertThat(chatMessageRepository.findAll()).isEmpty();
+    assertThat(buyerSession.isConnected()).isTrue();
+    assertThat(sellerSession.isConnected()).isTrue();
   }
 
   @Test
@@ -423,6 +509,20 @@ class ChatWebSocketIntegrationTest {
           .isNull();
     }
     assertThat(false).as("chat room subscription should receive probe").isTrue();
+  }
+
+  private List<ChatMessage> waitForSavedMessages(int expectedSize) throws InterruptedException {
+    long deadline = System.nanoTime() + TIMEOUT.toNanos();
+    List<ChatMessage> messages = chatMessageRepository.findAll();
+    while (messages.size() != expectedSize && System.nanoTime() < deadline) {
+      Thread.sleep(SUBSCRIPTION_PROBE_INTERVAL.toMillis());
+      messages = chatMessageRepository.findAll();
+    }
+    return messages;
+  }
+
+  private JsonNode readPayload(String payload) throws Exception {
+    return objectMapper.readTree(payload);
   }
 
   private String issueExpiredAccessToken(User user) {

@@ -28,6 +28,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -334,6 +335,36 @@ class ChatRoomServiceTest {
   }
 
   @Test
+  void 저장_ID와_접수_시각_순서가_엇갈려도_이전_메시지는_접수_시각_기준으로_조회한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Long roomId = chatRoomService.createChatRoom(buyer.getId(), product.getId()).roomId();
+    ChatRoom chatRoom = chatRoomRepository.findById(roomId).orElseThrow();
+    LocalDateTime baseTime = LocalDateTime.of(2026, 6, 29, 10, 0);
+    ChatMessage newerMessage =
+        chatMessageRepository.saveAndFlush(
+            ChatMessage.create(chatRoom, seller, "나중에 접수된 메시지", baseTime.plusSeconds(1)));
+    ChatMessage olderMessage =
+        chatMessageRepository.saveAndFlush(
+            ChatMessage.create(chatRoom, buyer, "먼저 접수된 메시지", baseTime));
+
+    ChatMessagesResponse firstPage =
+        chatRoomService.getPreviousMessages(buyer.getId(), roomId, null, 1);
+
+    assertThat(firstPage.messages()).hasSize(1);
+    assertThat(firstPage.messages().getFirst().messageId()).isEqualTo(newerMessage.getId());
+    assertThat(firstPage.hasNext()).isTrue();
+
+    ChatMessagesResponse secondPage =
+        chatRoomService.getPreviousMessages(buyer.getId(), roomId, newerMessage.getId(), 1);
+
+    assertThat(secondPage.messages()).hasSize(1);
+    assertThat(secondPage.messages().getFirst().messageId()).isEqualTo(olderMessage.getId());
+    assertThat(secondPage.hasNext()).isFalse();
+  }
+
+  @Test
   void 메시지가_없는_채팅방은_빈_목록을_반환한다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
@@ -345,6 +376,41 @@ class ChatRoomServiceTest {
 
     assertThat(response.messages()).isEmpty();
     assertThat(response.hasNext()).isFalse();
+  }
+
+  @Test
+  void 메시지_전송은_저장을_비동기로_처리하고_접수_응답을_반환한다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller);
+    Long roomId = chatRoomService.createChatRoom(buyer.getId(), product.getId()).roomId();
+
+    var response = chatRoomService.sendMessage(buyer.getId(), roomId, "거래 가능할까요?");
+
+    assertThat(response.messageId()).isNull();
+    assertThat(response.acceptedMessageId()).isNotBlank();
+    assertThat(response.roomId()).isEqualTo(roomId);
+    assertThat(response.senderId()).isEqualTo(buyer.getId());
+    assertThat(response.senderNickname()).isEqualTo("열무구매자");
+    assertThat(response.content()).isEqualTo("거래 가능할까요?");
+
+    List<ChatMessage> savedMessages = waitForSavedMessages(1);
+    assertThat(savedMessages).hasSize(1);
+    ChatMessage savedMessage = savedMessages.getFirst();
+    assertThat(savedMessage.getChatRoom().getId()).isEqualTo(roomId);
+    assertThat(savedMessage.getSender().getId()).isEqualTo(buyer.getId());
+    assertThat(savedMessage.getContent()).isEqualTo("거래 가능할까요?");
+    assertThat(savedMessage.getCreatedAt()).isEqualTo(response.createdAt().toLocalDateTime());
+    assertThat(savedMessage.getAcceptedMessageId()).isEqualTo(response.acceptedMessageId());
+
+    ChatRoom updatedRoom = chatRoomRepository.findById(roomId).orElseThrow();
+    assertThat(updatedRoom.getLastMessageAt()).isEqualTo(savedMessage.getCreatedAt());
+
+    ChatMessagesResponse history =
+        chatRoomService.getPreviousMessages(buyer.getId(), roomId, null, 30);
+    assertThat(history.messages().getFirst().messageId()).isEqualTo(savedMessage.getId());
+    assertThat(history.messages().getFirst().acceptedMessageId())
+        .isEqualTo(response.acceptedMessageId());
   }
 
   @Test
@@ -449,5 +515,15 @@ class ChatRoomServiceTest {
 
   private User saveUser(String email, String nickname) {
     return userRepository.save(new User(email, passwordEncoder.encode("Password123!"), nickname));
+  }
+
+  private List<ChatMessage> waitForSavedMessages(int expectedSize) throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+    List<ChatMessage> messages = chatMessageRepository.findAll();
+    while (messages.size() != expectedSize && System.nanoTime() < deadline) {
+      Thread.sleep(50);
+      messages = chatMessageRepository.findAll();
+    }
+    return messages;
   }
 }

@@ -18,6 +18,7 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
 import com.guingujig.yeolmumarket.support.ProductTestFactory;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -130,9 +131,12 @@ class ChatRoomControllerTest {
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller);
     ChatRoom chatRoom = chatRoomRepository.saveAndFlush(ChatRoom.create(product, buyer, seller));
-    chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, buyer, "거래 가능할까요?"));
+    LocalDateTime baseTime = LocalDateTime.of(2026, 6, 30, 10, 0);
+    chatMessageRepository.saveAndFlush(
+        ChatMessage.create(chatRoom, buyer, "거래 가능할까요?", baseTime.minusMinutes(1)));
     ChatMessage secondMessage =
-        chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, seller, "네 가능합니다."));
+        chatMessageRepository.saveAndFlush(
+            ChatMessage.create(chatRoom, seller, "네 가능합니다.", baseTime, "accepted-message-1"));
     String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
 
     mockMvc
@@ -144,6 +148,7 @@ class ChatRoomControllerTest {
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.code").value("SUCCESS"))
         .andExpect(jsonPath("$.data.messages[0].messageId").value(secondMessage.getId()))
+        .andExpect(jsonPath("$.data.messages[0].acceptedMessageId").value("accepted-message-1"))
         .andExpect(jsonPath("$.data.messages[0].roomId").value(chatRoom.getId()))
         .andExpect(jsonPath("$.data.messages[0].senderId").value(seller.getId()))
         .andExpect(jsonPath("$.data.messages[0].senderNickname").value("열무판매자"))
