@@ -18,6 +18,14 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 public class SecurityConfig {
 
   private static final RequestMatcher[] PUBLIC_REQUEST_MATCHERS = {
+    pathPattern(HttpMethod.GET, "/"),
+    pathPattern(HttpMethod.GET, "/index.html"),
+    pathPattern(HttpMethod.GET, "/styles.css"),
+    pathPattern(HttpMethod.GET, "/app.js"),
+    pathPattern(HttpMethod.GET, "/api.js"),
+    pathPattern(HttpMethod.GET, "/stomp-client.js"),
+    pathPattern(HttpMethod.GET, "/assets/**"),
+    pathPattern(HttpMethod.GET, "/favicon.ico"),
     pathPattern(HttpMethod.POST, "/api/auth/signup"),
     pathPattern(HttpMethod.POST, "/api/auth/login"),
     pathPattern(HttpMethod.POST, "/api/auth/refresh"),
