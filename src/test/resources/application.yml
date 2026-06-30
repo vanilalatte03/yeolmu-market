@@ -1,4 +1,8 @@
 spring:
+  autoconfigure:
+    exclude:
+      - org.redisson.spring.starter.RedissonAutoConfigurationV2
+      - org.redisson.spring.starter.RedissonAutoConfigurationV4
   servlet:
     multipart:
       max-file-size: 5MB
@@ -35,12 +39,21 @@ auth:
     secure: false
 
 yeolmu:
+<<<<<<< feature/async-chat-message-save
   async:
     chat-message:
       core-pool-size: 2
       max-pool-size: 8
       queue-capacity: 1000
       await-termination-seconds: 10
+=======
+  lock:
+    wait-time: 10ms
+    lease-time: 2s
+    tx-timeout-seconds: 1
+    redisson:
+      enabled: false
+>>>>>>> develop
   cache:
     search:
       products-v2:

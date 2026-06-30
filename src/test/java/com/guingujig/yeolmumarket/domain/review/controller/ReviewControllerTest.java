@@ -23,6 +23,9 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
 import com.guingujig.yeolmumarket.support.ProductTestFactory;
+import com.guingujig.yeolmumarket.support.TestDataCleaner;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -33,11 +36,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@Transactional
 class ReviewControllerTest {
 
   @MockitoBean private RevokedAccessTokenRepository revokedAccessTokenRepository;
@@ -50,6 +51,7 @@ class ReviewControllerTest {
   private final OrderRepository orderRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
+  private final TestDataCleaner testDataCleaner;
 
   @Autowired
   ReviewControllerTest(
@@ -60,7 +62,8 @@ class ReviewControllerTest {
       CategoryRepository categoryRepository,
       OrderRepository orderRepository,
       PasswordEncoder passwordEncoder,
-      JwtTokenProvider jwtTokenProvider) {
+      JwtTokenProvider jwtTokenProvider,
+      TestDataCleaner testDataCleaner) {
     this.mockMvc = mockMvc;
     this.reviewRepository = reviewRepository;
     this.userRepository = userRepository;
@@ -69,6 +72,17 @@ class ReviewControllerTest {
     this.orderRepository = orderRepository;
     this.passwordEncoder = passwordEncoder;
     this.jwtTokenProvider = jwtTokenProvider;
+    this.testDataCleaner = testDataCleaner;
+  }
+
+  @BeforeEach
+  void setUp() {
+    testDataCleaner.deleteAll();
+  }
+
+  @AfterEach
+  void tearDown() {
+    testDataCleaner.deleteAll();
   }
 
   @Test

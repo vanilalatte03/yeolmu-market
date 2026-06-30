@@ -23,8 +23,11 @@ import com.guingujig.yeolmumarket.domain.refund.entity.RefundRequest;
 import com.guingujig.yeolmumarket.domain.refund.entity.RefundRequestStatus;
 import com.guingujig.yeolmumarket.domain.refund.repository.RefundRequestRepository;
 import com.guingujig.yeolmumarket.domain.review.repository.ReviewRepository;
+import com.guingujig.yeolmumarket.support.TestDataCleaner;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -34,13 +37,11 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultMatcher;
-import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@Transactional
 abstract class IntegrationTestSupport {
 
   protected static final String PASSWORD = "Password123!";
@@ -59,6 +60,17 @@ abstract class IntegrationTestSupport {
   @Autowired protected PaymentRepository paymentRepository;
   @Autowired protected RefundRequestRepository refundRequestRepository;
   @Autowired protected ReviewRepository reviewRepository;
+  @Autowired protected TestDataCleaner testDataCleaner;
+
+  @BeforeEach
+  void setUp() {
+    testDataCleaner.deleteAll();
+  }
+
+  @AfterEach
+  void tearDown() {
+    testDataCleaner.deleteAll();
+  }
 
   protected TestUser signupAndLogin(String emailPrefix, String nickname) throws Exception {
     String email = emailPrefix + "-" + nextSequence() + "@example.com";

@@ -1,7 +1,5 @@
 package com.guingujig.yeolmumarket.domain.review.service;
 
-import com.guingujig.yeolmumarket.domain.order.entity.Order;
-import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.review.dto.DeleteReviewResponse;
 import com.guingujig.yeolmumarket.domain.review.dto.PublicReceivedReviewListItemResponse;
 import com.guingujig.yeolmumarket.domain.review.dto.ReceivedReviewListItemResponse;
@@ -13,11 +11,14 @@ import com.guingujig.yeolmumarket.domain.review.repository.ReviewRepository;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.lock.DistributedLockExecutor;
+import com.guingujig.yeolmumarket.global.lock.LockKeys;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -25,8 +26,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReviewService {
 
   private final ReviewRepository reviewRepository;
-  private final OrderRepository orderRepository;
   private final UserRepository userRepository;
+  private final DistributedLockExecutor distributedLockExecutor;
+  private final ReviewLockedCommandService reviewLockedCommandService;
 
   private static final int MAX_PAGE_SIZE = 100;
 
@@ -39,28 +41,15 @@ public class ReviewService {
    * @throws BusinessException REVIEW_NOT_ALLOWED - COMPLETED가 아닌 주문에 리뷰 작성 요청
    * @throws BusinessException REVIEW_ALREADY_EXISTS - 같은 주문에 이미 리뷰를 작성한 경우
    */
-  @Transactional
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public ReviewResponse createReview(Long reviewerId, Long orderId, Integer score, String content) {
     validateScore(score);
     String normalizedContent = normalizeContent(content);
 
-    Order order =
-        orderRepository
-            .findWithDetailsByIdForUpdate(orderId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
-
-    Order.ReviewParticipants participants = order.resolveReviewParticipants(reviewerId);
-    if (reviewRepository.existsByOrderIdAndReviewerId(orderId, reviewerId)) {
-      throw new BusinessException(ErrorCode.REVIEW_ALREADY_EXISTS);
-    }
-
-    Review review =
-        Review.create(
-            order, participants.reviewer(), participants.reviewee(), score, normalizedContent);
-
-    reviewRepository.save(review);
-
-    return ReviewResponse.from(review);
+    return distributedLockExecutor.execute(
+        LockKeys.order(orderId),
+        () ->
+            reviewLockedCommandService.createReview(reviewerId, orderId, score, normalizedContent));
   }
 
   /**
