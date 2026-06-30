@@ -176,6 +176,12 @@ class ProductImageServiceTest {
             BusinessException.class,
             exception ->
                 assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_ACCESS_DENIED));
+    assertThatThrownBy(
+            () -> productImageService.deleteImage(other.getId(), product.getId(), Long.MAX_VALUE))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_ACCESS_DENIED));
   }
 
   @Test
