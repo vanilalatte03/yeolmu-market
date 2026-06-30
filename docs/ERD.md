@@ -95,6 +95,7 @@ erDiagram
         BIGINT sender_id FK "발신자 ID"
         TEXT content "대화내용"
         DATETIME created_at "생성일"
+        VARCHAR accepted_message_id "실시간 접수 ID, nullable"
     }
 
     orders {
@@ -249,6 +250,7 @@ erDiagram
 | 발신자 ID | sender_id | BIGINT | NOT NULL | FK: users.id. 채팅방 참여자만 허용 |
 | 대화내용 | content | TEXT | NOT NULL | 빈 메시지 불가 |
 | 생성일 | created_at | DATETIME | NOT NULL | |
+| 실시간 접수 ID | accepted_message_id | VARCHAR(36) | NULL | 비동기 발행 payload와 저장 이력 매칭용. UNIQUE |
 
 ### orders
 
