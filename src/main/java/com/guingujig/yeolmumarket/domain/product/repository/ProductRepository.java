@@ -1,5 +1,6 @@
 package com.guingujig.yeolmumarket.domain.product.repository;
 
+import com.guingujig.yeolmumarket.domain.product.dto.ProductListItemProjection;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import jakarta.persistence.LockModeType;
@@ -24,9 +25,37 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
   @Query("SELECT p FROM Product p WHERE p.id = :id")
   Optional<Product> findWithSellerByIdForUpdate(@Param("id") Long id);
 
-  @EntityGraph(attributePaths = "seller")
-  Page<Product> findByHiddenFalseAndDeletedAtIsNullAndStatus(
-      ProductStatus status, Pageable pageable);
+  @Query(
+      value =
+          """
+          select new com.guingujig.yeolmumarket.domain.product.dto.ProductListItemProjection(
+            product.id,
+            product.title,
+            product.price,
+            product.status,
+            thumbnail.url,
+            seller.nickname,
+            product.createdAt
+          )
+          from Product product
+          join product.seller seller
+          left join ProductImage thumbnail
+            on thumbnail.product = product
+           and thumbnail.thumbnail = true
+          where product.hidden = false
+            and product.deletedAt is null
+            and product.status = :status
+          """,
+      countQuery =
+          """
+          select count(product)
+          from Product product
+          where product.hidden = false
+            and product.deletedAt is null
+            and product.status = :status
+          """)
+  Page<ProductListItemProjection> findPublicListItemsByStatus(
+      @Param("status") ProductStatus status, Pageable pageable);
 
   @EntityGraph(attributePaths = "seller")
   Page<Product> findByCategoryIdAndHiddenFalseAndDeletedAtIsNullAndStatusNot(
