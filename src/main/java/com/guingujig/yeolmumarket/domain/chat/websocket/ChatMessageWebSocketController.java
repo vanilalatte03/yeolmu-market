@@ -99,6 +99,7 @@ public class ChatMessageWebSocketController {
 
   private boolean isSendBusinessError(ErrorCode errorCode) {
     return errorCode == ErrorCode.CHAT_ROOM_NOT_FOUND
-        || errorCode == ErrorCode.CHAT_ROOM_ACCESS_DENIED;
+        || errorCode == ErrorCode.CHAT_ROOM_ACCESS_DENIED
+        || errorCode == ErrorCode.CHAT_MESSAGE_SAVE_FAILED;
   }
 }

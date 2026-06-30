@@ -4,13 +4,20 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public record ChatWebSocketErrorResponse(String code, String message, Long roomId) {
+public record ChatWebSocketErrorResponse(
+    String code, String message, Long roomId, String acceptedMessageId) {
 
   public static ChatWebSocketErrorResponse of(ErrorCode errorCode) {
-    return new ChatWebSocketErrorResponse(errorCode.name(), errorCode.getMessage(), null);
+    return new ChatWebSocketErrorResponse(errorCode.name(), errorCode.getMessage(), null, null);
   }
 
   public static ChatWebSocketErrorResponse of(ErrorCode errorCode, Long roomId) {
-    return new ChatWebSocketErrorResponse(errorCode.name(), errorCode.getMessage(), roomId);
+    return of(errorCode, roomId, null);
+  }
+
+  public static ChatWebSocketErrorResponse of(
+      ErrorCode errorCode, Long roomId, String acceptedMessageId) {
+    return new ChatWebSocketErrorResponse(
+        errorCode.name(), errorCode.getMessage(), roomId, acceptedMessageId);
   }
 }

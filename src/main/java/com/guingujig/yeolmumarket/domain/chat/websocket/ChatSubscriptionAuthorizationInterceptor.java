@@ -28,7 +28,7 @@ import org.springframework.stereotype.Component;
 public class ChatSubscriptionAuthorizationInterceptor implements ChannelInterceptor {
 
   private static final Pattern CHAT_ROOM_SUBSCRIPTION_PATTERN =
-      Pattern.compile("^/sub/chat-rooms/(\\d+)$");
+      Pattern.compile("^/sub/chat-rooms/(\\d+)(?:/errors)?$");
 
   private final ChatRoomAuthorizationService chatRoomAuthorizationService;
   private final ChatWebSocketErrorSender chatWebSocketErrorSender;

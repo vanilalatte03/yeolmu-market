@@ -15,16 +15,23 @@ import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ChatRoomService {
@@ -36,6 +43,7 @@ public class ChatRoomService {
   private final ProductRepository productRepository;
   private final UserRepository userRepository;
   private final ChatRoomAuthorizationService chatRoomAuthorizationService;
+  private final ChatMessagePersistenceService chatMessagePersistenceService;
 
   /**
    * 구매자와 상품 판매자 사이의 채팅방을 생성하거나 기존 방을 반환한다.
@@ -81,7 +89,7 @@ public class ChatRoomService {
   /**
    * 채팅방 참여자가 저장된 메시지를 최신 메시지부터 커서 방식으로 조회한다.
    *
-   * <p>{@code beforeMessageId}가 있으면 해당 메시지 ID보다 오래된 메시지만 조회한다.
+   * <p>{@code beforeMessageId}가 있으면 해당 메시지의 생성 시각보다 오래된 메시지만 조회한다. 같은 생성 시각에서는 ID를 보조 정렬 기준으로 사용한다.
    */
   @Transactional(readOnly = true)
   public ChatMessagesResponse getPreviousMessages(
@@ -103,22 +111,34 @@ public class ChatRoomService {
   }
 
   /**
-   * 채팅방 참여자의 메시지를 저장하고, 같은 트랜잭션에서 채팅방의 마지막 대화 시각을 갱신한다.
+   * 채팅방 참여자의 메시지 전송 권한을 확인하고, DB 저장은 비동기로 위임한다.
    *
-   * <p>메시지 발행은 트랜잭션 성공 이후 호출자가 수행한다.
+   * <p>저장 작업 등록에 성공하면 호출자가 저장 완료를 기다리지 않고 메시지를 즉시 발행한다.
    */
-  @Transactional
+  @Transactional(readOnly = true)
   public ChatMessageResponse sendMessage(Long senderId, Long roomId, String content) {
     ChatRoom chatRoom =
         chatRoomRepository
-            .findWithParticipantsByIdForUpdate(roomId)
+            .findWithParticipantsById(roomId)
             .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
     chatRoomAuthorizationService.validateParticipant(chatRoom, senderId);
 
     User sender = chatRoom.getParticipant(senderId);
-    ChatMessage message = chatMessageRepository.save(ChatMessage.create(chatRoom, sender, content));
-    chatRoom.updateLastMessageAt(message.getCreatedAt());
-    return ChatMessageResponse.from(message);
+    LocalDateTime acceptedAt = LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
+    String acceptedMessageId = UUID.randomUUID().toString();
+    try {
+      chatMessagePersistenceService.saveAsync(
+          senderId, roomId, content, acceptedAt, acceptedMessageId);
+    } catch (TaskRejectedException exception) {
+      log.warn(
+          "비동기 채팅 메시지 저장 작업 등록에 실패했습니다. roomId={}, senderId={}, acceptedMessageId={}",
+          roomId,
+          senderId,
+          acceptedMessageId,
+          exception);
+      throw new BusinessException(ErrorCode.CHAT_MESSAGE_SAVE_FAILED);
+    }
+    return ChatMessageResponse.accepted(acceptedMessageId, roomId, sender, content, acceptedAt);
   }
 
   private ChatRoom findOrCreateChatRoom(Product product, User buyer, User seller) {
