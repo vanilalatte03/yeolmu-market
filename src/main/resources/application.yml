@@ -32,6 +32,13 @@ jwt:
   access-token-validity-seconds: ${JWT_ACCESS_TOKEN_VALIDITY_SECONDS}
   refresh-token-validity-seconds: ${JWT_REFRESH_TOKEN_VALIDITY_SECONDS}
 
+auth:
+  refresh-token-cookie:
+    name: refreshToken
+    path: /api/auth/refresh
+    same-site: Lax
+    secure: ${AUTH_REFRESH_TOKEN_COOKIE_SECURE:false}
+
 yeolmu:
   cache:
     search:

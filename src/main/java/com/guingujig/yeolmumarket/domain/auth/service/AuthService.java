@@ -1,9 +1,9 @@
 package com.guingujig.yeolmumarket.domain.auth.service;
 
 import com.guingujig.yeolmumarket.domain.auth.dto.LoginRequest;
-import com.guingujig.yeolmumarket.domain.auth.dto.LoginResponse;
-import com.guingujig.yeolmumarket.domain.auth.dto.RefreshTokenRequest;
-import com.guingujig.yeolmumarket.domain.auth.dto.RefreshTokenResponse;
+import com.guingujig.yeolmumarket.domain.auth.dto.LoginTokenResult;
+import com.guingujig.yeolmumarket.domain.auth.dto.LoginUserInfo;
+import com.guingujig.yeolmumarket.domain.auth.dto.RefreshTokenResult;
 import com.guingujig.yeolmumarket.domain.auth.dto.SignupRequest;
 import com.guingujig.yeolmumarket.domain.auth.dto.SignupResponse;
 import com.guingujig.yeolmumarket.domain.auth.repository.ActiveRefreshTokenRepository;
@@ -52,11 +52,11 @@ public class AuthService {
   /**
    * 이메일과 비밀번호를 검증하고 access token과 refresh token을 함께 발급한다.
    *
-   * <p>발급한 refresh token은 원문을 저장하지 않고 jti만 Redis에 저장한다. 사용자별 활성 refresh token은 하나만 유지되므로 새 로그인은 기존
-   * refresh token을 대체한다.
+   * <p>refresh token 원문은 쿠키 설정을 위해 호출자에게만 전달하고, Redis에는 jti만 저장한다. 사용자별 활성 refresh token은 하나만 유지되므로
+   * 새 로그인은 기존 refresh token을 대체한다.
    */
   @Transactional
-  public LoginResponse login(LoginRequest request) {
+  public LoginTokenResult login(LoginRequest request) {
     User user =
         userRepository
             .findByEmail(request.email())
@@ -76,13 +76,12 @@ public class AuthService {
       throw new BusinessException(ErrorCode.REDIS_UNAVAILABLE);
     }
 
-    return new LoginResponse(
+    return new LoginTokenResult(
         "Bearer",
         accessToken,
         refreshToken,
         jwtTokenProvider.getAccessTokenValiditySeconds(),
-        jwtTokenProvider.getRefreshTokenValiditySeconds(),
-        LoginResponse.LoginUserInfo.from(user));
+        LoginUserInfo.from(user));
   }
 
   /**
@@ -92,16 +91,16 @@ public class AuthService {
    * 막는다.
    */
   @Transactional
-  public RefreshTokenResponse refreshToken(RefreshTokenRequest request) {
-    JwtRefreshClaims claims = parseRefreshClaims(request.refreshToken());
+  public RefreshTokenResult refreshToken(String currentRefreshToken) {
+    JwtRefreshClaims claims = parseRefreshClaims(currentRefreshToken);
 
     User user =
         userRepository
             .findById(claims.userId())
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
     String accessToken = jwtTokenProvider.issueAccessToken(user);
-    String refreshToken = jwtTokenProvider.issueRefreshToken(user);
-    JwtRefreshClaims newRefreshClaims = parseRefreshClaims(refreshToken);
+    String newRefreshToken = jwtTokenProvider.issueRefreshToken(user);
+    JwtRefreshClaims newRefreshClaims = parseRefreshClaims(newRefreshToken);
     boolean rotated;
     try {
       rotated =
@@ -116,12 +115,8 @@ public class AuthService {
 
     validateRefreshTokenRotated(rotated);
 
-    return new RefreshTokenResponse(
-        "Bearer",
-        accessToken,
-        refreshToken,
-        jwtTokenProvider.getAccessTokenValiditySeconds(),
-        jwtTokenProvider.getRefreshTokenValiditySeconds());
+    return new RefreshTokenResult(
+        "Bearer", accessToken, newRefreshToken, jwtTokenProvider.getAccessTokenValiditySeconds());
   }
 
   /**
