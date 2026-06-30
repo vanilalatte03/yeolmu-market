@@ -1,28 +1,21 @@
 package com.guingujig.yeolmumarket.domain.payment.service;
 
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
-import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
-import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.payment.dto.CancelPaymentResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.CreatePaymentRequest;
-import com.guingujig.yeolmumarket.domain.payment.dto.MockPaymentResult;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentDetailResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentStatusResponse;
 import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
-import com.guingujig.yeolmumarket.domain.payment.entity.PaymentStatus;
 import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import com.guingujig.yeolmumarket.global.lock.DistributedLockExecutor;
+import com.guingujig.yeolmumarket.global.lock.LockKeys;
 import java.util.Objects;
-import java.util.Optional;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -30,8 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class PaymentService {
 
   private final PaymentRepository paymentRepository;
-  private final OrderRepository orderRepository;
-  private final ApplicationEventPublisher eventPublisher;
+  private final DistributedLockExecutor distributedLockExecutor;
+  private final PaymentLockedCommandService paymentLockedCommandService;
 
   /**
    * 구매자가 CREATED 상태의 주문에 대해 모의 결제를 요청한다.
@@ -46,7 +39,7 @@ public class PaymentService {
    * @throws BusinessException PAYMENT_ALREADY_EXISTS - 다른 멱등키로 같은 주문 재요청 또는 이미 사용된 멱등키
    * @throws BusinessException INVALID_ORDER_STATUS - CREATED가 아닌 주문에 결제 요청
    */
-  @Transactional
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public ProcessPaymentResult processPayment(
       Long buyerId, Long orderId, String idempotencyKey, CreatePaymentRequest request) {
 
@@ -54,53 +47,10 @@ public class PaymentService {
       throw new BusinessException(ErrorCode.VALIDATION_FAILED);
     }
 
-    orderRepository
-        .findByIdForUpdate(orderId)
-        .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
-
-    Order order =
-        orderRepository
-            .findWithDetailsById(orderId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
-
-    validateOrderBuyer(order, buyerId, ErrorCode.ORDER_ACCESS_DENIED);
-
-    Optional<Payment> existingByOrder = paymentRepository.findByOrder_Id(orderId);
-    if (existingByOrder.isPresent()) {
-      Payment existing = existingByOrder.get();
-      if (existing.getIdempotencyKey().equals(idempotencyKey)) {
-        return new ProcessPaymentResult(PaymentResponse.from(existing), false);
-      }
-      throw new BusinessException(ErrorCode.PAYMENT_ALREADY_EXISTS);
-    }
-
-    paymentRepository
-        .findByIdempotencyKey(idempotencyKey)
-        .ifPresent(
-            p -> {
-              throw new BusinessException(ErrorCode.PAYMENT_ALREADY_EXISTS);
-            });
-
-    if (order.getOrderStatus() != OrderStatus.CREATED) {
-      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
-    }
-
-    MockPaymentResult result = resolvePaymentResult(request);
-    LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
-
-    Payment payment;
-    if (result == MockPaymentResult.PAID) {
-      payment = Payment.createPaid(order, request.method(), idempotencyKey, now);
-      order.markAsPaid();
-    } else {
-      payment = Payment.createFailed(order, request.method(), idempotencyKey, now);
-      order.cancel();
-      order.getProduct().cancelReservation();
-      eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
-    }
-
-    paymentRepository.save(payment);
-    return new ProcessPaymentResult(PaymentResponse.from(payment), true);
+    return distributedLockExecutor.execute(
+        LockKeys.order(orderId),
+        () ->
+            paymentLockedCommandService.processPayment(buyerId, orderId, idempotencyKey, request));
   }
 
   public record ProcessPaymentResult(PaymentResponse response, boolean created) {}
@@ -128,33 +78,17 @@ public class PaymentService {
    * @throws BusinessException PAYMENT_ACCESS_DENIED - 주문 구매자가 아닌 사용자의 취소 요청
    * @throws BusinessException INVALID_PAYMENT_STATUS - 취소할 수 없는 결제 또는 주문 상태, 또는 동시 취소 경합
    */
-  @Transactional
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public CancelPaymentResponse cancelPayment(Long buyerId, Long paymentId, String reason) {
     String normalizedReason = normalizeCancelReason(reason);
-    Payment payment = fetchWithBuyerAuthCheckAfterOrderLock(buyerId, paymentId);
-    Order order = payment.getOrder();
+    Long orderId =
+        paymentRepository
+            .findOrderIdById(paymentId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
-    validateCancelable(payment, order);
-
-    LocalDateTime canceledAt = LocalDateTime.now(ZoneOffset.UTC);
-    if (payment.getStatus() == PaymentStatus.PENDING) {
-      payment.cancelPending(canceledAt, normalizedReason);
-      order.cancel();
-    } else {
-      payment.cancelPaid(canceledAt, normalizedReason);
-      order.cancelPaidPayment();
-    }
-    order.getProduct().cancelReservation();
-
-    try {
-      paymentRepository.flush();
-    } catch (ObjectOptimisticLockingFailureException e) {
-      throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
-    }
-
-    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
-
-    return CancelPaymentResponse.from(payment);
+    return distributedLockExecutor.execute(
+        LockKeys.order(orderId),
+        () -> paymentLockedCommandService.cancelPayment(buyerId, paymentId, normalizedReason));
   }
 
   private Payment fetchWithAuthCheck(Long userId, Long paymentId) {
@@ -165,37 +99,6 @@ public class PaymentService {
 
     validatePaymentParticipant(payment, userId);
     return payment;
-  }
-
-  private Payment fetchWithBuyerAuthCheckAfterOrderLock(Long buyerId, Long paymentId) {
-    // 주문 락 전에 Order 엔티티를 올리면 persistence context에 stale 상태가 남을 수 있다.
-    Long orderId =
-        paymentRepository
-            .findOrderIdById(paymentId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
-
-    orderRepository
-        .findByIdForUpdate(orderId)
-        .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
-
-    Payment payment =
-        paymentRepository
-            .findWithOrderBuyerSellerAndProductByIdForUpdate(paymentId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
-
-    validateOrderBuyer(payment.getOrder(), buyerId, ErrorCode.PAYMENT_ACCESS_DENIED);
-    return payment;
-  }
-
-  private void validateCancelable(Payment payment, Order order) {
-    boolean pendingCancel =
-        payment.getStatus() == PaymentStatus.PENDING
-            && order.getOrderStatus() == OrderStatus.CREATED;
-    boolean paidCancel =
-        payment.getStatus() == PaymentStatus.PAID && order.getOrderStatus() == OrderStatus.PAID;
-    if (!pendingCancel && !paidCancel) {
-      throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
-    }
   }
 
   private String normalizeCancelReason(String reason) {
@@ -212,24 +115,10 @@ public class PaymentService {
     return trimmedReason;
   }
 
-  private MockPaymentResult resolvePaymentResult(CreatePaymentRequest request) {
-    MockPaymentResult result = request.result();
-    if (result == null) {
-      return MockPaymentResult.PAID;
-    }
-    return result;
-  }
-
   private void validatePaymentParticipant(Payment payment, Long userId) {
     Order order = payment.getOrder();
     if (!isOrderBuyer(order, userId) && !isOrderSeller(order, userId)) {
       throw new BusinessException(ErrorCode.PAYMENT_ACCESS_DENIED);
-    }
-  }
-
-  private void validateOrderBuyer(Order order, Long buyerId, ErrorCode errorCode) {
-    if (!isOrderBuyer(order, buyerId)) {
-      throw new BusinessException(errorCode);
     }
   }
 

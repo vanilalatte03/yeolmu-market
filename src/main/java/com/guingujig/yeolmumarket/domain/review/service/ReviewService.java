@@ -1,8 +1,5 @@
 package com.guingujig.yeolmumarket.domain.review.service;
 
-import com.guingujig.yeolmumarket.domain.order.entity.Order;
-import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
-import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.review.dto.DeleteReviewResponse;
 import com.guingujig.yeolmumarket.domain.review.dto.PublicReceivedReviewListItemResponse;
 import com.guingujig.yeolmumarket.domain.review.dto.ReceivedReviewListItemResponse;
@@ -11,16 +8,18 @@ import com.guingujig.yeolmumarket.domain.review.dto.UpdateReviewResponse;
 import com.guingujig.yeolmumarket.domain.review.dto.WrittenReviewListItemResponse;
 import com.guingujig.yeolmumarket.domain.review.entity.Review;
 import com.guingujig.yeolmumarket.domain.review.repository.ReviewRepository;
-import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.lock.DistributedLockExecutor;
+import com.guingujig.yeolmumarket.global.lock.LockKeys;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -28,8 +27,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReviewService {
 
   private final ReviewRepository reviewRepository;
-  private final OrderRepository orderRepository;
   private final UserRepository userRepository;
+  private final DistributedLockExecutor distributedLockExecutor;
+  private final ReviewLockedCommandService reviewLockedCommandService;
 
   private static final int MAX_PAGE_SIZE = 100;
 
@@ -42,31 +42,15 @@ public class ReviewService {
    * @throws BusinessException REVIEW_NOT_ALLOWED - COMPLETED가 아닌 주문에 리뷰 작성 요청
    * @throws BusinessException REVIEW_ALREADY_EXISTS - 같은 주문에 이미 리뷰를 작성한 경우
    */
-  @Transactional
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public ReviewResponse createReview(Long reviewerId, Long orderId, Integer score, String content) {
     validateScore(score);
     String normalizedContent = normalizeContent(content);
 
-    Order order =
-        orderRepository
-            .findWithDetailsByIdForUpdate(orderId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
-
-    ReviewParticipants participants = resolveParticipants(order, reviewerId);
-    if (order.getOrderStatus() != OrderStatus.COMPLETED) {
-      throw new BusinessException(ErrorCode.REVIEW_NOT_ALLOWED);
-    }
-    if (reviewRepository.existsByOrderIdAndReviewerId(orderId, reviewerId)) {
-      throw new BusinessException(ErrorCode.REVIEW_ALREADY_EXISTS);
-    }
-
-    Review review =
-        Review.create(
-            order, participants.reviewer(), participants.reviewee(), score, normalizedContent);
-
-    reviewRepository.save(review);
-
-    return ReviewResponse.from(review);
+    return distributedLockExecutor.execute(
+        LockKeys.order(orderId),
+        () ->
+            reviewLockedCommandService.createReview(reviewerId, orderId, score, normalizedContent));
   }
 
   /**
@@ -211,20 +195,6 @@ public class ReviewService {
   private Sort reviewSort() {
     return Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
   }
-
-  private ReviewParticipants resolveParticipants(Order order, Long reviewerId) {
-    User buyer = order.getBuyer();
-    User seller = order.getSeller();
-    if (Objects.equals(buyer.getId(), reviewerId)) {
-      return new ReviewParticipants(buyer, seller);
-    }
-    if (Objects.equals(seller.getId(), reviewerId)) {
-      return new ReviewParticipants(seller, buyer);
-    }
-    throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
-  }
-
-  private record ReviewParticipants(User reviewer, User reviewee) {}
 
   private record ReviewUpdateValues(Integer score, String content) {}
 

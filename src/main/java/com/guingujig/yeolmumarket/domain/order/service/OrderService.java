@@ -18,10 +18,9 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.lock.DistributedLockExecutor;
+import com.guingujig.yeolmumarket.global.lock.LockKeys;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
-import jakarta.persistence.EntityManager;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -30,6 +29,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -41,8 +41,9 @@ public class OrderService {
   private final OrderRepository orderRepository;
   private final ProductRepository productRepository;
   private final UserRepository userRepository;
-  private final EntityManager entityManager;
   private final ApplicationEventPublisher eventPublisher;
+  private final DistributedLockExecutor distributedLockExecutor;
+  private final OrderLockedCommandService orderLockedCommandService;
 
   /**
    * 로그인한 구매자가 판매 중인 상품을 주문한다.
@@ -104,31 +105,10 @@ public class OrderService {
    * @throws BusinessException ORDER_ACCESS_DENIED - 구매자가 아닌 사용자가 취소하는 경우
    * @throws BusinessException INVALID_ORDER_STATUS - CREATED가 아닌 주문을 취소하는 경우, 또는 동시 취소 경합 시
    */
-  @Transactional
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public CancelOrderResponse cancelOrder(Long requesterId, Long orderId) {
-    orderRepository
-        .findByIdForUpdate(orderId)
-        .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
-
-    Order order =
-        orderRepository
-            .findWithDetailsById(orderId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
-
-    validateBuyer(order, requesterId);
-
-    order.cancel();
-    order.getProduct().cancelReservation();
-
-    try {
-      orderRepository.flush();
-    } catch (ObjectOptimisticLockingFailureException e) {
-      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
-    }
-    entityManager.refresh(order);
-
-    publishProductSearchCacheEviction();
-    return CancelOrderResponse.from(order);
+    return distributedLockExecutor.execute(
+        LockKeys.order(orderId), () -> orderLockedCommandService.cancelOrder(requesterId, orderId));
   }
 
   /**
@@ -141,32 +121,16 @@ public class OrderService {
    * @throws BusinessException ORDER_ACCESS_DENIED - 주문 판매자가 아닌 사용자의 요청
    * @throws BusinessException INVALID_ORDER_STATUS - PAID가 아닌 주문에 배송 증빙 등록 요청
    */
-  @Transactional
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public RegisterOrderShippingResponse registerShipping(
       Long sellerId, Long orderId, String trackingNumber) {
     String normalizedTrackingNumber = normalizeTrackingNumber(trackingNumber);
 
-    orderRepository
-        .findByIdForUpdate(orderId)
-        .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
-
-    Order order =
-        orderRepository
-            .findWithDetailsById(orderId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
-
-    validateSeller(order, sellerId);
-
-    order.registerShipping(normalizedTrackingNumber, LocalDateTime.now(ZoneOffset.UTC));
-
-    try {
-      orderRepository.flush();
-    } catch (ObjectOptimisticLockingFailureException e) {
-      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
-    }
-    entityManager.refresh(order);
-
-    return RegisterOrderShippingResponse.from(order);
+    return distributedLockExecutor.execute(
+        LockKeys.order(orderId),
+        () ->
+            orderLockedCommandService.registerShipping(
+                sellerId, orderId, normalizedTrackingNumber));
   }
 
   /**
@@ -179,31 +143,10 @@ public class OrderService {
    * @throws BusinessException ORDER_ACCESS_DENIED - 주문 구매자가 아닌 사용자의 요청
    * @throws BusinessException INVALID_ORDER_STATUS - SHIPPING이 아닌 주문 또는 판매 완료 처리할 수 없는 상품 상태
    */
-  @Transactional
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public ConfirmOrderResponse confirmOrder(Long buyerId, Long orderId) {
-    orderRepository
-        .findByIdForUpdate(orderId)
-        .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
-
-    Order order =
-        orderRepository
-            .findWithDetailsById(orderId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
-
-    validateBuyer(order, buyerId);
-
-    order.confirmPurchase();
-    completeProductSale(order.getProduct());
-
-    try {
-      orderRepository.flush();
-    } catch (ObjectOptimisticLockingFailureException e) {
-      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
-    }
-    entityManager.refresh(order);
-
-    publishProductSearchCacheEviction();
-    return ConfirmOrderResponse.from(order);
+    return distributedLockExecutor.execute(
+        LockKeys.order(orderId), () -> orderLockedCommandService.confirmOrder(buyerId, orderId));
   }
 
   /**
@@ -285,27 +228,8 @@ public class OrderService {
     return normalizedTrackingNumber;
   }
 
-  private void completeProductSale(Product product) {
-    if (product.getStatus() != ProductStatus.RESERVED) {
-      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
-    }
-    product.completeSale();
-  }
-
   private void publishProductSearchCacheEviction() {
     eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
-  }
-
-  private void validateBuyer(Order order, Long userId) {
-    if (!isBuyer(order, userId)) {
-      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
-    }
-  }
-
-  private void validateSeller(Order order, Long userId) {
-    if (!isSeller(order, userId)) {
-      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
-    }
   }
 
   private void validateOrderParticipant(Order order, Long userId) {
