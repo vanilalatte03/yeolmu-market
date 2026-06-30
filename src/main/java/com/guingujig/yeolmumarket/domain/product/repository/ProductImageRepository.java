@@ -1,11 +1,9 @@
 package com.guingujig.yeolmumarket.domain.product.repository;
 
 import com.guingujig.yeolmumarket.domain.product.entity.ProductImage;
-import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
-import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -17,20 +15,7 @@ public interface ProductImageRepository
 
   List<ProductImage> findByProductIdOrderByCreatedAtAscIdAsc(Long productId);
 
-  @EntityGraph(attributePaths = {"product", "product.seller"})
-  @Query(
-      """
-      select image
-      from ProductImage image
-      where image.id = :imageId
-        and image.product.id = :productId
-        and image.product.deletedAt is null
-        and image.product.status <> :deletedStatus
-      """)
-  Optional<ProductImage> findExistingImageWithProductAndSeller(
-      @Param("imageId") Long imageId,
-      @Param("productId") Long productId,
-      @Param("deletedStatus") ProductStatus deletedStatus);
+  Optional<ProductImage> findByIdAndProductId(Long imageId, Long productId);
 
   @Query(
       """

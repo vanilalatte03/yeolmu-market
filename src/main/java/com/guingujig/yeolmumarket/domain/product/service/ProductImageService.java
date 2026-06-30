@@ -4,7 +4,6 @@ import com.guingujig.yeolmumarket.domain.product.dto.DeleteProductImageResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UploadProductImagesResponse;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductImage;
-import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductImageRepository;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
@@ -85,8 +84,10 @@ public class ProductImageService {
    */
   @Transactional
   public DeleteProductImageResponse deleteImage(Long sellerId, Long productId, Long imageId) {
+    Product product = getExistingProduct(productId);
+    validateOwner(product, sellerId);
+
     ProductImage image = getExistingProductImage(productId, imageId);
-    validateOwner(image.getProduct(), sellerId);
     String deletedImageUrl = image.getUrl();
 
     productImageRepository.deleteAndPromoteNextThumbnail(image);
@@ -105,16 +106,8 @@ public class ProductImageService {
 
   private ProductImage getExistingProductImage(Long productId, Long imageId) {
     return productImageRepository
-        .findExistingImageWithProductAndSeller(imageId, productId, ProductStatus.DELETED)
-        .orElseGet(
-            () -> {
-              validateProductExists(productId);
-              throw new BusinessException(ErrorCode.IMAGE_NOT_FOUND);
-            });
-  }
-
-  private void validateProductExists(Long productId) {
-    getExistingProduct(productId);
+        .findByIdAndProductId(imageId, productId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.IMAGE_NOT_FOUND));
   }
 
   private void validateOwner(Product product, Long sellerId) {
