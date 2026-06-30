@@ -34,9 +34,11 @@ public class CacheConfig implements CachingConfigurer {
     BasicPolymorphicTypeValidator cacheTypeValidator =
         BasicPolymorphicTypeValidator.builder()
             .allowIfSubType("com.guingujig.yeolmumarket.")
+            .allowIfSubType("java.lang.")
+            .allowIfSubType("java.time.")
             .allowIfSubType("java.util.")
             .build();
-    RedisCacheConfiguration productSearchCacheConfiguration =
+    RedisCacheConfiguration searchCacheConfiguration =
         RedisCacheConfiguration.defaultCacheConfig()
             .entryTtl(properties.productsV2().ttl())
             .prefixCacheNameWith(SEARCH_CACHE_KEY_PREFIX)
@@ -52,7 +54,11 @@ public class CacheConfig implements CachingConfigurer {
 
     return RedisCacheManager.builder(redisConnectionFactory)
         .withInitialCacheConfigurations(
-            Map.of(SearchCacheNames.PRODUCT_SEARCH_V2, productSearchCacheConfiguration))
+            Map.of(
+                SearchCacheNames.PRODUCT_SEARCH_LIST_V2,
+                searchCacheConfiguration,
+                SearchCacheNames.PRODUCT_DISPLAY_V2,
+                searchCacheConfiguration))
         .disableCreateOnMissingCache()
         .build();
   }
