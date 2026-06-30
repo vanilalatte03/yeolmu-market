@@ -138,7 +138,7 @@ public class PaymentService {
     }
 
     publishProductStatusChanged(
-        order.getProduct().getId(), ProductStatus.RESERVED, ProductStatus.ON_SALE);
+        payment.getOrder().getProduct().getId(), ProductStatus.RESERVED, ProductStatus.ON_SALE);
 
     return CancelPaymentResponse.from(payment);
   }
