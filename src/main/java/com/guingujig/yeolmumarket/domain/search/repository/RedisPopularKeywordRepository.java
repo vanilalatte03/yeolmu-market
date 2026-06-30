@@ -1,8 +1,8 @@
 package com.guingujig.yeolmumarket.domain.search.repository;
 
 import com.guingujig.yeolmumarket.domain.search.dto.PopularKeyword;
+import com.guingujig.yeolmumarket.global.config.YeolmuProperties;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -19,18 +19,16 @@ public class RedisPopularKeywordRepository implements PopularKeywordRepository {
 
   private static final String KEY_PREFIX = "search:popular-keywords:minute:";
   private static final String RECENT_AGGREGATE_KEY_PREFIX = "search:popular-keywords:recent:";
-  private static final int RECENT_WINDOW_MINUTES = 60;
-  private static final Duration BUCKET_TTL = Duration.ofMinutes(RECENT_WINDOW_MINUTES + 10L);
-  private static final Duration RECENT_AGGREGATE_TTL = Duration.ofSeconds(5);
 
   private final StringRedisTemplate stringRedisTemplate;
   private final Clock clock;
+  private final YeolmuProperties yeolmuProperties;
 
   @Override
   public void incrementSearchCount(String keyword) {
     String key = bucketKey(currentEpochMinute());
     stringRedisTemplate.opsForZSet().incrementScore(key, keyword, 1);
-    stringRedisTemplate.expire(key, BUCKET_TTL);
+    stringRedisTemplate.expire(key, yeolmuProperties.search().popularKeywords().bucketTtl());
   }
 
   @Override
@@ -49,7 +47,8 @@ public class RedisPopularKeywordRepository implements PopularKeywordRepository {
             bucketKeys.subList(1, bucketKeys.size()),
             recentAggregateKey,
             Aggregate.SUM);
-    stringRedisTemplate.expire(recentAggregateKey, RECENT_AGGREGATE_TTL);
+    stringRedisTemplate.expire(
+        recentAggregateKey, yeolmuProperties.search().popularKeywords().recentAggregateTtl());
 
     Set<TypedTuple<String>> tuples =
         stringRedisTemplate.opsForZSet().reverseRangeWithScores(recentAggregateKey, 0, limit - 1L);
@@ -64,7 +63,7 @@ public class RedisPopularKeywordRepository implements PopularKeywordRepository {
   }
 
   private List<String> recentBucketKeys(long currentEpochMinute) {
-    return LongStream.range(0, RECENT_WINDOW_MINUTES)
+    return LongStream.range(0, yeolmuProperties.search().popularKeywords().recentWindowMinutes())
         .mapToObj(offset -> bucketKey(currentEpochMinute - offset))
         .toList();
   }

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.guingujig.yeolmumarket.domain.search.dto.PopularKeyword;
+import com.guingujig.yeolmumarket.global.config.YeolmuProperties;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -44,7 +45,7 @@ class RedisPopularKeywordRepositoryTest {
   @BeforeEach
   void setUp() {
     clock = Clock.fixed(BASE_TIME, ZoneOffset.UTC);
-    repository = new RedisPopularKeywordRepository(stringRedisTemplate, clock);
+    repository = new RedisPopularKeywordRepository(stringRedisTemplate, clock, yeolmuProperties());
   }
 
   @Test
@@ -135,5 +136,12 @@ class RedisPopularKeywordRepositoryTest {
 
   private String recentAggregateKey(long epochMinute) {
     return RECENT_AGGREGATE_KEY_PREFIX + epochMinute;
+  }
+
+  private YeolmuProperties yeolmuProperties() {
+    return new YeolmuProperties(
+        null,
+        new YeolmuProperties.Search(
+            new YeolmuProperties.PopularKeywords(10, 50, 60, BUCKET_TTL, RECENT_AGGREGATE_TTL)));
   }
 }
