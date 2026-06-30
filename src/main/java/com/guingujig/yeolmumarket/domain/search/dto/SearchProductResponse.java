@@ -2,6 +2,7 @@ package com.guingujig.yeolmumarket.domain.search.dto;
 
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import com.guingujig.yeolmumarket.domain.search.service.SearchProductDisplay;
 import com.guingujig.yeolmumarket.domain.wish.dto.ProductWishSummary;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -41,6 +42,20 @@ public record SearchProductResponse(
         wishSummary.wishCount(),
         wishSummary.wished(),
         product.getCreatedAt().atOffset(ZoneOffset.UTC));
+  }
+
+  public static SearchProductResponse from(
+      SearchProductDisplay display, String sellerNickname, ProductWishSummary wishSummary) {
+    return new SearchProductResponse(
+        display.productId(),
+        display.title(),
+        display.price(),
+        display.status(),
+        display.thumbnailUrl(),
+        sellerNickname,
+        wishSummary.wishCount(),
+        wishSummary.wished(),
+        display.createdAt());
   }
 
   public SearchProductResponse withWishSummary(ProductWishSummary wishSummary) {
