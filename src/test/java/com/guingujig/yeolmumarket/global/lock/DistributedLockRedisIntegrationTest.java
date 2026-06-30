@@ -16,6 +16,7 @@ import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import com.guingujig.yeolmumarket.support.TestDataCleaner;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -81,7 +82,7 @@ class DistributedLockRedisIntegrationTest {
   }
 
   @Test
-  void Order_락을_이미_보유_중이면_상태_변경은_CONFLICT로_거절된다() {
+  void 다른_스레드가_주문_락을_보유하면_상태_변경은_CONFLICT로_거절된다() throws InterruptedException {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product =
@@ -89,21 +90,61 @@ class DistributedLockRedisIntegrationTest {
             productRepository, categoryRepository, seller, "아이패드 미니", "생활기스 있습니다.", 430000);
     Order order = orderRepository.saveAndFlush(Order.create(buyer, product));
 
-    RLock lock = redissonClient.getLock(LockKeys.order(order.getId()));
-    lock.lock(2, TimeUnit.SECONDS);
+    // RLock은 스레드 단위 재진입 락이므로, 실제 경합은 락을 보유한 다른 스레드를 두어야 재현된다.
+    String lockKey = LockKeys.order(order.getId());
+    CountDownLatch acquired = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    Thread holder =
+        new Thread(
+            () -> {
+              RLock lock = redissonClient.getLock(lockKey);
+              lock.lock(30, TimeUnit.SECONDS);
+              acquired.countDown();
+              try {
+                release.await(10, TimeUnit.SECONDS);
+              } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+              } finally {
+                if (lock.isHeldByCurrentThread()) {
+                  lock.unlock();
+                }
+              }
+            });
+    holder.start();
+
     try {
+      assertThat(acquired.await(5, TimeUnit.SECONDS)).isTrue();
       assertThatThrownBy(() -> orderService.cancelOrder(buyer.getId(), order.getId()))
           .isInstanceOfSatisfying(
               BusinessException.class,
               exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.CONFLICT));
     } finally {
-      if (lock.isHeldByCurrentThread()) {
-        lock.unlock();
-      }
+      release.countDown();
+      holder.join(5_000);
     }
 
     Order unchangedOrder = orderRepository.findById(order.getId()).orElseThrow();
     assertThat(unchangedOrder.getOrderStatus()).isEqualTo(OrderStatus.CREATED);
+  }
+
+  @Test
+  void 주문_락을_획득해_상태를_변경하고_락을_해제한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product =
+        ProductTestFactory.saveProduct(
+            productRepository, categoryRepository, seller, "갤럭시 버즈", "미개봉입니다.", 90000);
+    Long orderId = orderService.createOrder(buyer.getId(), product.getId()).orderId();
+
+    orderService.cancelOrder(buyer.getId(), orderId);
+
+    Order canceledOrder = orderRepository.findById(orderId).orElseThrow();
+    assertThat(canceledOrder.getOrderStatus()).isEqualTo(OrderStatus.CANCELED);
+
+    // 커맨드 종료 후 락이 해제됐어야 같은 키를 다시 획득할 수 있다.
+    RLock lock = redissonClient.getLock(LockKeys.order(orderId));
+    assertThat(lock.tryLock()).isTrue();
+    lock.unlock();
   }
 
   private User saveUser(String email, String nickname) {
