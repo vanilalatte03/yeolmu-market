@@ -25,8 +25,11 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
 import com.guingujig.yeolmumarket.support.ProductTestFactory;
+import com.guingujig.yeolmumarket.support.TestDataCleaner;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -37,11 +40,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@Transactional
 class PaymentControllerTest {
 
   @MockitoBean private RevokedAccessTokenRepository revokedAccessTokenRepository;
@@ -54,6 +55,7 @@ class PaymentControllerTest {
   private final PaymentRepository paymentRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
+  private final TestDataCleaner testDataCleaner;
 
   @Autowired
   PaymentControllerTest(
@@ -64,7 +66,8 @@ class PaymentControllerTest {
       OrderRepository orderRepository,
       PaymentRepository paymentRepository,
       PasswordEncoder passwordEncoder,
-      JwtTokenProvider jwtTokenProvider) {
+      JwtTokenProvider jwtTokenProvider,
+      TestDataCleaner testDataCleaner) {
     this.mockMvc = mockMvc;
     this.userRepository = userRepository;
     this.productRepository = productRepository;
@@ -73,6 +76,17 @@ class PaymentControllerTest {
     this.paymentRepository = paymentRepository;
     this.passwordEncoder = passwordEncoder;
     this.jwtTokenProvider = jwtTokenProvider;
+    this.testDataCleaner = testDataCleaner;
+  }
+
+  @BeforeEach
+  void setUp() {
+    testDataCleaner.deleteAll();
+  }
+
+  @AfterEach
+  void tearDown() {
+    testDataCleaner.deleteAll();
   }
 
   @Test

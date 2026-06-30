@@ -11,7 +11,7 @@
 | product/admin | `domain/product`, `domain/category`, `domain/wish` | `docs/API.md`, `docs/ERD.md`, `docs/adr/006-product-hidden-flag.md`, `docs/adr/001-concurrent-order-control.md` |
 | search/product cache | `domain/search`, `domain/product` | `docs/API.md`, `docs/adr/002-redis-search-cache.md`, `docs/adr/011-product-search-cache-partial-eviction.md` |
 | chat/websocket | `domain/chat`, `global/config/WebSocketConfig.java` | `docs/API.md`, `docs/ERD.md` |
-| order/payment/refund/review | `domain/order`, `domain/payment`, `domain/refund`, `domain/review` | `docs/API.md`, `docs/ERD.md`, `docs/adr/001-concurrent-order-control.md`, `docs/adr/005-mock-safe-payment-transaction-policy.md`, `docs/adr/010-redis-distributed-lock.md` |
+| order/payment/refund/review | `domain/order`, `domain/payment`, `domain/refund`, `domain/review` | `docs/API.md`, `docs/ERD.md`, `docs/adr/001-concurrent-order-control.md`, `docs/adr/005-mock-safe-payment-transaction-policy.md`, `docs/adr/013-distributed-lock-key-and-lease.md` |
 | global | `global/exception`, `global/response`, `global/config`, `global/security`, `global/entity` | `docs/API.md`, `docs/CONVENTIONS.md` |
 | development/validation | `build.gradle`, `docker-compose.yml`, `.githooks`, `gradlew.bat` | `docs/DEVELOPMENT.md` |
 | test | `src/test/java/com/guingujig/yeolmumarket` | `docs/CONVENTIONS.md`, `docs/DEVELOPMENT.md` |
