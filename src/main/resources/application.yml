@@ -2,7 +2,7 @@ spring:
   config:
     import: optional:file:.env[.properties]
   application:
-    name: yeolmu-markethttps://github.com/vanilalatte03/yeolmu-market/blob/feature/async-chat-message-save/src/main/resources/application.yml
+    name: yeolmu-market
   servlet:
     multipart:
       max-file-size: 5MB
