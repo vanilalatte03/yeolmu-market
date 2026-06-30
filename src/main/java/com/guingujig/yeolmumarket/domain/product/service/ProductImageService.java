@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,7 +53,7 @@ public class ProductImageService {
   public UploadProductImagesResponse uploadImages(
       Long sellerId, Long productId, List<MultipartFile> images) {
     Product product = getExistingProduct(productId);
-    validateOwner(product, sellerId);
+    product.validateSeller(sellerId);
     validateImagesPresent(images);
 
     boolean hasThumbnail = productImageRepository.existsByProductId(productId);
@@ -72,7 +71,6 @@ public class ProductImageService {
     }
 
     List<ProductImage> savedImages = productImageRepository.saveAll(productImages);
-    productImageRepository.flush();
     publishProductDisplayChanged(productId);
     return UploadProductImagesResponse.from(savedImages);
   }
@@ -86,23 +84,12 @@ public class ProductImageService {
   @Transactional
   public DeleteProductImageResponse deleteImage(Long sellerId, Long productId, Long imageId) {
     Product product = getExistingProduct(productId);
-    validateOwner(product, sellerId);
+    product.validateSeller(sellerId);
 
-    ProductImage image =
-        productImageRepository
-            .findByIdAndProductId(imageId, productId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.IMAGE_NOT_FOUND));
+    ProductImage image = getExistingProductImage(productId, imageId);
     String deletedImageUrl = image.getUrl();
-    boolean thumbnailDeleted = image.isThumbnail();
 
-    productImageRepository.delete(image);
-    productImageRepository.flush();
-    if (thumbnailDeleted) {
-      productImageRepository
-          .findFirstByProductIdOrderByCreatedAtAscIdAsc(productId)
-          .ifPresent(ProductImage::markAsThumbnail);
-      productImageRepository.flush();
-    }
+    productImageRepository.deleteAndPromoteNextThumbnail(image);
 
     registerAfterCommitDelete(deletedImageUrl);
     publishProductDisplayChanged(productId);
@@ -116,10 +103,10 @@ public class ProductImageService {
         .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
   }
 
-  private void validateOwner(Product product, Long sellerId) {
-    if (!Objects.equals(product.getSeller().getId(), sellerId)) {
-      throw new BusinessException(ErrorCode.PRODUCT_ACCESS_DENIED);
-    }
+  private ProductImage getExistingProductImage(Long productId, Long imageId) {
+    return productImageRepository
+        .findByIdAndProductId(imageId, productId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.IMAGE_NOT_FOUND));
   }
 
   private void validateImagesPresent(List<MultipartFile> images) {

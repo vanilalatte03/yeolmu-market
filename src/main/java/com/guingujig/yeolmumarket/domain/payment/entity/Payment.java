@@ -101,6 +101,41 @@ public class Payment extends BaseTimeEntity {
     return payment;
   }
 
+  public boolean hasIdempotencyKey(String idempotencyKey) {
+    return Objects.equals(this.idempotencyKey, idempotencyKey);
+  }
+
+  public void validateParticipant(Long userId) {
+    order.validateParticipant(userId, ErrorCode.PAYMENT_ACCESS_DENIED);
+  }
+
+  /** 전달받은 주문의 결제인지 검증해 다른 주문의 결제가 함께 전이되는 것을 차단한다. */
+  public void validateOrder(Order order) {
+    if (!belongsToOrder(order)) {
+      throw new BusinessException(ErrorCode.PAYMENT_NOT_FOUND);
+    }
+  }
+
+  /**
+   * 구매자가 배송 전 결제를 취소한다.
+   *
+   * <p>PENDING 결제는 주문 취소, PAID 결제는 주문 환불로 전이하고 두 경우 모두 상품 예약을 해제한다.
+   */
+  public void cancelByBuyer(Long buyerId, LocalDateTime canceledAt, String cancelReason) {
+    order.validateBuyer(buyerId, ErrorCode.PAYMENT_ACCESS_DENIED);
+    if (status == PaymentStatus.PENDING && order.isCreated()) {
+      cancelPending(canceledAt, cancelReason);
+      order.cancelAndReleaseProduct();
+      return;
+    }
+    if (status == PaymentStatus.PAID && order.isPaid()) {
+      cancelPaid(canceledAt, cancelReason);
+      order.refundPaidPaymentAndReleaseProduct();
+      return;
+    }
+    throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
+  }
+
   /**
    * PENDING 상태의 결제를 CANCELED로 전이하고 취소 시각과 사유를 기록한다.
    *
@@ -130,5 +165,16 @@ public class Payment extends BaseTimeEntity {
   private void recordCancellation(LocalDateTime canceledAt, String cancelReason) {
     this.canceledAt = Objects.requireNonNull(canceledAt, "canceledAt은 필수입니다.");
     this.cancelReason = cancelReason;
+  }
+
+  private boolean belongsToOrder(Order order) {
+    if (this.order == null || order == null) {
+      return false;
+    }
+    if (this.order == order) {
+      return true;
+    }
+    Long orderId = order.getId();
+    return orderId != null && Objects.equals(this.order.getId(), orderId);
   }
 }

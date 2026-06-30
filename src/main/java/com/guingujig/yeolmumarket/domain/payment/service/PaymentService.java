@@ -1,7 +1,6 @@
 package com.guingujig.yeolmumarket.domain.payment.service;
 
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
-import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.payment.dto.CancelPaymentResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.CreatePaymentRequest;
@@ -10,7 +9,6 @@ import com.guingujig.yeolmumarket.domain.payment.dto.PaymentDetailResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentStatusResponse;
 import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
-import com.guingujig.yeolmumarket.domain.payment.entity.PaymentStatus;
 import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
@@ -19,7 +17,6 @@ import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -65,12 +62,12 @@ public class PaymentService {
             .findWithDetailsById(orderId)
             .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
-    validateOrderBuyer(order, buyerId, ErrorCode.ORDER_ACCESS_DENIED);
+    order.validateBuyer(buyerId);
 
     Optional<Payment> existingByOrder = paymentRepository.findByOrder_Id(orderId);
     if (existingByOrder.isPresent()) {
       Payment existing = existingByOrder.get();
-      if (existing.getIdempotencyKey().equals(idempotencyKey)) {
+      if (existing.hasIdempotencyKey(idempotencyKey)) {
         return new ProcessPaymentResult(PaymentResponse.from(existing), false);
       }
       throw new BusinessException(ErrorCode.PAYMENT_ALREADY_EXISTS);
@@ -83,10 +80,6 @@ public class PaymentService {
               throw new BusinessException(ErrorCode.PAYMENT_ALREADY_EXISTS);
             });
 
-    if (order.getOrderStatus() != OrderStatus.CREATED) {
-      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
-    }
-
     MockPaymentResult result = resolvePaymentResult(request);
     LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
 
@@ -96,8 +89,7 @@ public class PaymentService {
       order.markAsPaid();
     } else {
       payment = Payment.createFailed(order, request.method(), idempotencyKey, now);
-      order.cancel();
-      order.getProduct().cancelReservation();
+      order.failPaymentAndReleaseProduct();
       publishProductStatusChanged(
           order.getProduct().getId(), ProductStatus.RESERVED, ProductStatus.ON_SALE);
     }
@@ -134,20 +126,10 @@ public class PaymentService {
   @Transactional
   public CancelPaymentResponse cancelPayment(Long buyerId, Long paymentId, String reason) {
     String normalizedReason = normalizeCancelReason(reason);
-    Payment payment = fetchWithBuyerAuthCheckAfterOrderLock(buyerId, paymentId);
-    Order order = payment.getOrder();
-
-    validateCancelable(payment, order);
+    Payment payment = fetchAfterOrderLock(paymentId);
 
     LocalDateTime canceledAt = LocalDateTime.now(ZoneOffset.UTC);
-    if (payment.getStatus() == PaymentStatus.PENDING) {
-      payment.cancelPending(canceledAt, normalizedReason);
-      order.cancel();
-    } else {
-      payment.cancelPaid(canceledAt, normalizedReason);
-      order.cancelPaidPayment();
-    }
-    order.getProduct().cancelReservation();
+    payment.cancelByBuyer(buyerId, canceledAt, normalizedReason);
 
     try {
       paymentRepository.flush();
@@ -167,11 +149,11 @@ public class PaymentService {
             .findWithOrderAndUsersById(paymentId)
             .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
-    validatePaymentParticipant(payment, userId);
+    payment.validateParticipant(userId);
     return payment;
   }
 
-  private Payment fetchWithBuyerAuthCheckAfterOrderLock(Long buyerId, Long paymentId) {
+  private Payment fetchAfterOrderLock(Long paymentId) {
     // 주문 락 전에 Order 엔티티를 올리면 persistence context에 stale 상태가 남을 수 있다.
     Long orderId =
         paymentRepository
@@ -187,19 +169,7 @@ public class PaymentService {
             .findWithOrderBuyerSellerAndProductByIdForUpdate(paymentId)
             .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
-    validateOrderBuyer(payment.getOrder(), buyerId, ErrorCode.PAYMENT_ACCESS_DENIED);
     return payment;
-  }
-
-  private void validateCancelable(Payment payment, Order order) {
-    boolean pendingCancel =
-        payment.getStatus() == PaymentStatus.PENDING
-            && order.getOrderStatus() == OrderStatus.CREATED;
-    boolean paidCancel =
-        payment.getStatus() == PaymentStatus.PAID && order.getOrderStatus() == OrderStatus.PAID;
-    if (!pendingCancel && !paidCancel) {
-      throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
-    }
   }
 
   private String normalizeCancelReason(String reason) {
@@ -222,27 +192,6 @@ public class PaymentService {
       return MockPaymentResult.PAID;
     }
     return result;
-  }
-
-  private void validatePaymentParticipant(Payment payment, Long userId) {
-    Order order = payment.getOrder();
-    if (!isOrderBuyer(order, userId) && !isOrderSeller(order, userId)) {
-      throw new BusinessException(ErrorCode.PAYMENT_ACCESS_DENIED);
-    }
-  }
-
-  private void validateOrderBuyer(Order order, Long buyerId, ErrorCode errorCode) {
-    if (!isOrderBuyer(order, buyerId)) {
-      throw new BusinessException(errorCode);
-    }
-  }
-
-  private boolean isOrderBuyer(Order order, Long userId) {
-    return Objects.equals(order.getBuyer().getId(), userId);
-  }
-
-  private boolean isOrderSeller(Order order, Long userId) {
-    return Objects.equals(order.getSeller().getId(), userId);
   }
 
   private void publishProductStatusChanged(Long productId, ProductStatus... affectedStatuses) {

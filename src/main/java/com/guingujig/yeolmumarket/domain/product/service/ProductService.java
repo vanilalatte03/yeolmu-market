@@ -7,6 +7,7 @@ import com.guingujig.yeolmumarket.domain.product.dto.CreateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.CreateProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.DeleteProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.ProductDetailResponse;
+import com.guingujig.yeolmumarket.domain.product.dto.ProductListItemProjection;
 import com.guingujig.yeolmumarket.domain.product.dto.ProductListItemResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusResponse;
@@ -32,7 +33,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -52,7 +52,6 @@ public class ProductService {
   private final ProductImageRepository productImageRepository;
   private final UserRepository userRepository;
   private final CategoryRepository categoryRepository;
-  private final ProductThumbnailQueryService productThumbnailQueryService;
   private final ProductWishSummaryService productWishSummaryService;
   private final ReviewRatingQueryService reviewRatingQueryService;
   private final ApplicationEventPublisher eventPublisher;
@@ -89,30 +88,27 @@ public class ProductService {
     ProductStatus queryStatus = resolveStatus(status);
     validatePublicListStatus(queryStatus);
 
-    Page<Product> products =
-        productRepository.findByHiddenFalseAndDeletedAtIsNullAndStatus(
+    Page<ProductListItemProjection> products =
+        productRepository.findPublicListItemsByStatus(
             queryStatus, PageRequest.of(page, size, resolveSort(sort)));
-    List<Long> productIds = products.getContent().stream().map(Product::getId).toList();
+    List<Long> productIds =
+        products.getContent().stream().map(ProductListItemProjection::productId).toList();
     Map<Long, ProductWishSummary> wishSummaries =
         productWishSummaryService.getSummaries(productIds, authenticatedUserId);
-    Map<Long, String> thumbnailUrls = productThumbnailQueryService.getThumbnailUrls(productIds);
 
     Page<ProductListItemResponse> productResponses =
-        products.map(product -> toProductListItemResponse(product, wishSummaries, thumbnailUrls));
+        products.map(product -> toProductListItemResponse(product, wishSummaries));
 
     return PageResponse.from(productResponses);
   }
 
   private ProductListItemResponse toProductListItemResponse(
-      Product product,
-      Map<Long, ProductWishSummary> wishSummaries,
-      Map<Long, String> thumbnailUrls) {
-    Long productId = product.getId();
+      ProductListItemProjection product, Map<Long, ProductWishSummary> wishSummaries) {
+    Long productId = product.productId();
     ProductWishSummary wishSummary =
         wishSummaries.getOrDefault(productId, ProductWishSummary.empty(productId));
-    String thumbnailUrl = thumbnailUrls.get(productId);
 
-    return ProductListItemResponse.from(product, wishSummary, thumbnailUrl);
+    return ProductListItemResponse.from(product, wishSummary);
   }
 
   /**
@@ -182,7 +178,7 @@ public class ProductService {
       Long sellerId, Long productId, UpdateProductRequest request) {
     validateUpdatableValue(request);
     Product product = getExistingProduct(productId);
-    validateOwner(product, sellerId);
+    product.validateSeller(sellerId);
 
     boolean searchIndexChanged = isSearchIndexChanged(request);
     boolean productDisplayChanged = isProductDisplayChanged(request);
@@ -208,11 +204,10 @@ public class ProductService {
   @Transactional
   public DeleteProductResponse deleteProduct(Long sellerId, Long productId) {
     Product product = getExistingProduct(productId);
-    validateOwner(product, sellerId);
-    validateDeletable(product);
+
+    product.deleteBySeller(sellerId, LocalDateTime.now(ZoneOffset.UTC));
 
     ProductStatus previousStatus = product.getStatus();
-    product.delete(LocalDateTime.now(ZoneOffset.UTC));
     publishProductSearchIndexAndDisplayChanged(product.getId(), previousStatus);
     return DeleteProductResponse.success();
   }
@@ -264,21 +259,9 @@ public class ProductService {
         .orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND));
   }
 
-  private void validateOwner(Product product, Long sellerId) {
-    if (!Objects.equals(product.getSeller().getId(), sellerId)) {
-      throw new BusinessException(ErrorCode.PRODUCT_ACCESS_DENIED);
-    }
-  }
-
   private void validateUpdatableValue(UpdateProductRequest request) {
     if (!request.isUpdatableValuePresent()) {
       throw new BusinessException(ErrorCode.VALIDATION_FAILED, "수정할 값은 하나 이상이어야 합니다.");
-    }
-  }
-
-  private void validateDeletable(Product product) {
-    if (product.hasActiveOrder()) {
-      throw new BusinessException(ErrorCode.PRODUCT_HAS_ACTIVE_ORDER);
     }
   }
 

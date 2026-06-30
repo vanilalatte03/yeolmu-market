@@ -106,13 +106,62 @@ public class Product extends BaseTimeEntity {
     this.deletedAt = Objects.requireNonNull(deletedAt, "deletedAt은 필수입니다.");
   }
 
+  /** 상품 판매자 본인만 삭제할 수 있으며, 예약 중인 상품은 거래 진행 중이므로 삭제할 수 없다. */
+  public void deleteBySeller(Long sellerId, LocalDateTime deletedAt) {
+    validateSeller(sellerId);
+    validateDeletable();
+    delete(deletedAt);
+  }
+
   /** 관리자 숨김 처리는 상품 거래 상태를 유지하고 공개 노출 여부만 변경한다. */
   public void changeHidden(boolean hidden) {
     this.hidden = hidden;
   }
 
+  public void validateSeller(Long sellerId) {
+    if (!isSeller(sellerId)) {
+      throw new BusinessException(ErrorCode.PRODUCT_ACCESS_DENIED);
+    }
+  }
+
+  public boolean isSeller(Long userId) {
+    return seller != null && Objects.equals(seller.getId(), userId);
+  }
+
+  /**
+   * 구매자가 공개 판매 중 상품을 주문할 수 있는지 검증한 뒤 RESERVED로 전이한다.
+   *
+   * <p>숨김·삭제 상품은 없는 상품처럼 처리하고, 판매자 본인 주문과 판매 중이 아닌 상품 주문은 각각 도메인 에러로 차단한다.
+   */
+  public void reserveForOrder(Long buyerId) {
+    validateVisible();
+    if (isSeller(buyerId)) {
+      throw new BusinessException(ErrorCode.CANNOT_ORDER_OWN_PRODUCT);
+    }
+    if (this.status != ProductStatus.ON_SALE) {
+      throw new BusinessException(ErrorCode.PRODUCT_NOT_ON_SALE);
+    }
+    this.status = ProductStatus.RESERVED;
+  }
+
+  /**
+   * 채팅방을 만들 수 있는 공개 상품인지와 요청자가 판매자 본인이 아닌지 검증한다.
+   *
+   * <p>숨김·삭제 상품은 없는 상품처럼 처리한다.
+   */
+  public void validateChatCreatableBy(Long buyerId) {
+    validateVisible();
+    if (isSeller(buyerId)) {
+      throw new BusinessException(ErrorCode.CANNOT_CHAT_OWN_PRODUCT);
+    }
+  }
+
   public boolean isDeleted() {
     return status == ProductStatus.DELETED || deletedAt != null;
+  }
+
+  public boolean isReserved() {
+    return status == ProductStatus.RESERVED;
   }
 
   public boolean hasActiveOrder() {
@@ -153,6 +202,18 @@ public class Product extends BaseTimeEntity {
       throw new BusinessException(ErrorCode.PRODUCT_INVALID_STATUS);
     }
     this.status = ProductStatus.SOLD_OUT;
+  }
+
+  private void validateVisible() {
+    if (isDeleted() || hidden) {
+      throw new BusinessException(ErrorCode.PRODUCT_NOT_FOUND);
+    }
+  }
+
+  private void validateDeletable() {
+    if (hasActiveOrder()) {
+      throw new BusinessException(ErrorCode.PRODUCT_HAS_ACTIVE_ORDER);
+    }
   }
 
   private static String requireText(String value, String message) {

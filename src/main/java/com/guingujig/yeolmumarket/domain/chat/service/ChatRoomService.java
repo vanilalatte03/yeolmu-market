@@ -9,7 +9,6 @@ import com.guingujig.yeolmumarket.domain.chat.entity.ChatRoom;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatMessageRepository;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatRoomRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
-import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
@@ -52,13 +51,9 @@ public class ChatRoomService {
     Product product =
         productRepository
             .findWithSellerByIdForUpdate(productId)
-            .filter(this::isCreatableChatProduct)
             .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+    product.validateChatCreatableBy(buyerId);
     User seller = product.getSeller();
-
-    if (seller.getId().equals(buyer.getId())) {
-      throw new BusinessException(ErrorCode.CANNOT_CHAT_OWN_PRODUCT);
-    }
 
     return CreateChatRoomResponse.from(findOrCreateChatRoom(product, buyer, seller));
   }
@@ -120,7 +115,7 @@ public class ChatRoomService {
             .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
     chatRoomAuthorizationService.validateParticipant(chatRoom, senderId);
 
-    User sender = resolveParticipant(chatRoom, senderId);
+    User sender = chatRoom.getParticipant(senderId);
     ChatMessage message = chatMessageRepository.save(ChatMessage.create(chatRoom, sender, content));
     chatRoom.updateLastMessageAt(message.getCreatedAt());
     return ChatMessageResponse.from(message);
@@ -130,19 +125,6 @@ public class ChatRoomService {
     return chatRoomRepository
         .findByProductAndBuyerAndSeller(product, buyer, seller)
         .orElseGet(() -> chatRoomRepository.save(ChatRoom.create(product, buyer, seller)));
-  }
-
-  private boolean isCreatableChatProduct(Product product) {
-    return product.getDeletedAt() == null
-        && product.getStatus() != ProductStatus.DELETED
-        && !product.isHidden();
-  }
-
-  private User resolveParticipant(ChatRoom chatRoom, Long userId) {
-    if (chatRoom.getBuyer().getId().equals(userId)) {
-      return chatRoom.getBuyer();
-    }
-    return chatRoom.getSeller();
   }
 
   private void validatePagination(int page, int size) {

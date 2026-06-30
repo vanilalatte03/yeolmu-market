@@ -34,4 +34,18 @@ public record ProductListItemResponse(
         wishSummary.wished(),
         product.getCreatedAt().atOffset(ZoneOffset.UTC));
   }
+
+  public static ProductListItemResponse from(
+      ProductListItemProjection product, ProductWishSummary wishSummary) {
+    return new ProductListItemResponse(
+        product.productId(),
+        product.title(),
+        product.price(),
+        product.status(),
+        product.thumbnailUrl(),
+        product.sellerNickname(),
+        wishSummary.wishCount(),
+        wishSummary.wished(),
+        product.createdAt().atOffset(ZoneOffset.UTC));
+  }
 }

@@ -1,7 +1,6 @@
 package com.guingujig.yeolmumarket.domain.refund.service;
 
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
-import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
 import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
@@ -12,7 +11,6 @@ import com.guingujig.yeolmumarket.domain.refund.dto.RefundResolution;
 import com.guingujig.yeolmumarket.domain.refund.dto.RejectRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.dto.ResolveRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.entity.RefundRequest;
-import com.guingujig.yeolmumarket.domain.refund.entity.RefundRequestStatus;
 import com.guingujig.yeolmumarket.domain.refund.repository.RefundRequestRepository;
 import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
@@ -21,7 +19,6 @@ import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -58,16 +55,15 @@ public class RefundService {
             .findWithDetailsByIdForUpdate(orderId)
             .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
-    validateOrderBuyer(order, buyerId);
+    order.validateBuyer(buyerId);
 
     if (refundRequestRepository.existsByOrder_Id(orderId)) {
       throw new BusinessException(ErrorCode.REFUND_REQUEST_ALREADY_EXISTS);
     }
 
-    order.requestRefund();
     LocalDateTime requestedAt = LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
     RefundRequest refundRequest =
-        RefundRequest.create(order, order.getBuyer(), normalizedReason, requestedAt);
+        RefundRequest.createForBuyer(order, buyerId, normalizedReason, requestedAt);
 
     refundRequestRepository.save(refundRequest);
 
@@ -86,19 +82,15 @@ public class RefundService {
   @Transactional
   public ApproveRefundRequestResponse approveRefundRequest(Long sellerId, Long refundId) {
     RefundRequest refundRequest = fetchRefundRequestForProcessing(refundId);
-
-    validateRefundRequestSeller(refundRequest, sellerId);
+    refundRequest.validateSeller(sellerId);
 
     Payment payment =
         paymentRepository
-            .findByOrder_Id(refundRequest.getOrder().getId())
+            .findByOrder_Id(refundRequest.getOrderId())
             .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
     LocalDateTime approvedAt = nowUtc();
-    refundRequest.approve(approvedAt);
-    refundRequest.getOrder().approveRefund();
-    refundRequest.getOrder().getProduct().cancelReservation();
-    payment.cancelPaid(approvedAt, "환불 요청 승인");
+    refundRequest.approveBySeller(sellerId, payment, approvedAt);
 
     flushRefundRequestChanges();
     publishProductStatusChanged(
@@ -126,11 +118,8 @@ public class RefundService {
     String normalizedReason = normalizeOptionalReason(reason);
     RefundRequest refundRequest = fetchRefundRequestForProcessing(refundId);
 
-    validateRefundRequestSeller(refundRequest, sellerId);
-
     LocalDateTime rejectedAt = nowUtc();
-    refundRequest.rejectToDispute(normalizedReason, rejectedAt);
-    refundRequest.getOrder().rejectRefund();
+    refundRequest.rejectBySeller(sellerId, normalizedReason, rejectedAt);
 
     flushRefundRequestChanges();
 
@@ -157,26 +146,18 @@ public class RefundService {
     }
     String normalizedReason = normalizeOptionalReason(reason);
     RefundRequest refundRequest = fetchRefundRequestForProcessing(refundId);
-
-    validateRefundRequestSeller(refundRequest, sellerId);
-
-    validateResolvableDispute(refundRequest);
-
-    Payment payment =
-        paymentRepository
-            .findByOrder_Id(refundRequest.getOrder().getId())
-            .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+    refundRequest.validateDisputeResolvableBySeller(sellerId);
 
     LocalDateTime resolvedAt = nowUtc();
-    refundRequest.resolveDispute(normalizedReason, resolvedAt);
 
     if (resolution == RefundResolution.REFUND) {
-      refundRequest.getOrder().refundDispute();
-      refundRequest.getOrder().getProduct().cancelReservation();
-      payment.cancelPaid(resolvedAt, "분쟁 환불 종료");
+      Payment payment =
+          paymentRepository
+              .findByOrder_Id(refundRequest.getOrderId())
+              .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+      refundRequest.resolveRefundBySeller(sellerId, payment, normalizedReason, resolvedAt);
     } else {
-      refundRequest.getOrder().completeDispute();
-      refundRequest.getOrder().getProduct().completeSale();
+      refundRequest.resolveCompleteBySeller(sellerId, normalizedReason, resolvedAt);
     }
 
     flushRefundRequestChanges();
@@ -228,13 +209,6 @@ public class RefundService {
         .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_REQUEST_NOT_FOUND));
   }
 
-  private void validateResolvableDispute(RefundRequest refundRequest) {
-    if (refundRequest.getStatus() != RefundRequestStatus.DISPUTED
-        || refundRequest.getOrder().getOrderStatus() != OrderStatus.DISPUTED) {
-      throw new BusinessException(ErrorCode.INVALID_REFUND_REQUEST_STATUS);
-    }
-  }
-
   private void flushRefundRequestChanges() {
     try {
       refundRequestRepository.flush();
@@ -245,18 +219,6 @@ public class RefundService {
 
   private LocalDateTime nowUtc() {
     return LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
-  }
-
-  private void validateOrderBuyer(Order order, Long buyerId) {
-    if (!Objects.equals(order.getBuyer().getId(), buyerId)) {
-      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
-    }
-  }
-
-  private void validateRefundRequestSeller(RefundRequest refundRequest, Long sellerId) {
-    if (!Objects.equals(refundRequest.getOrder().getSeller().getId(), sellerId)) {
-      throw new BusinessException(ErrorCode.REFUND_REQUEST_ACCESS_DENIED);
-    }
   }
 
   private void publishProductStatusChanged(Long productId, ProductStatus... affectedStatuses) {
