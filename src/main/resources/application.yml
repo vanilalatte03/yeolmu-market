@@ -37,7 +37,7 @@ auth:
     name: refreshToken
     path: /api/auth/refresh
     same-site: Lax
-    secure: false
+    secure: ${AUTH_REFRESH_TOKEN_COOKIE_SECURE:false}
 
 yeolmu:
   cache:

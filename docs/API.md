@@ -50,6 +50,8 @@ Redis 블랙리스트 조회에 실패하면 access token 인증은 degraded mod
 이 경우 Redis 장애 중에는 이미 로그아웃된 access token이 만료 전까지 일시적으로 사용될 수 있다.
 refresh token은 Redis에 활성 토큰 해시 또는 식별자를 저장해 서버에서 관리한다.
 HTML 브라우저 클라이언트의 refresh token은 응답 body로 노출하지 않고 `HttpOnly` 쿠키로만 전달한다.
+로컬 `http://localhost:8080` 기준 refresh token 쿠키는 `Secure` 없이 발급하며, 운영 HTTPS 환경에서는
+`AUTH_REFRESH_TOKEN_COOKIE_SECURE=true`로 설정해 `Secure` 속성을 포함한다.
 이번 프로젝트는 사용자별 활성 refresh token을 1개만 허용한다.
 로그인 또는 refresh token 재발급 성공 시 기존 refresh token은 폐기되고 새 refresh token만 유효하다.
 로그아웃 시 요청에 사용된 access token을 블랙리스트에 등록하고, 인증된 회원의 활성 refresh token도 Redis에서 삭제한다.
