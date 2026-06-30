@@ -31,7 +31,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -181,7 +180,7 @@ public class ProductService {
       Long sellerId, Long productId, UpdateProductRequest request) {
     validateUpdatableValue(request);
     Product product = getExistingProduct(productId);
-    validateOwner(product, sellerId);
+    product.validateSeller(sellerId);
 
     product.updateInfo(request.title(), request.description(), request.price());
     if (request.categoryId() != null) {
@@ -200,10 +199,8 @@ public class ProductService {
   @Transactional
   public DeleteProductResponse deleteProduct(Long sellerId, Long productId) {
     Product product = getExistingProduct(productId);
-    validateOwner(product, sellerId);
-    validateDeletable(product);
 
-    product.delete(LocalDateTime.now(ZoneOffset.UTC));
+    product.deleteBySeller(sellerId, LocalDateTime.now(ZoneOffset.UTC));
     publishProductSearchCacheEviction();
     return DeleteProductResponse.success();
   }
@@ -252,21 +249,9 @@ public class ProductService {
         .orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND));
   }
 
-  private void validateOwner(Product product, Long sellerId) {
-    if (!Objects.equals(product.getSeller().getId(), sellerId)) {
-      throw new BusinessException(ErrorCode.PRODUCT_ACCESS_DENIED);
-    }
-  }
-
   private void validateUpdatableValue(UpdateProductRequest request) {
     if (!request.isUpdatableValuePresent()) {
       throw new BusinessException(ErrorCode.VALIDATION_FAILED, "수정할 값은 하나 이상이어야 합니다.");
-    }
-  }
-
-  private void validateDeletable(Product product) {
-    if (product.hasActiveOrder()) {
-      throw new BusinessException(ErrorCode.PRODUCT_HAS_ACTIVE_ORDER);
     }
   }
 

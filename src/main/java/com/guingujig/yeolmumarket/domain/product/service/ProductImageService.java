@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,7 +53,7 @@ public class ProductImageService {
   public UploadProductImagesResponse uploadImages(
       Long sellerId, Long productId, List<MultipartFile> images) {
     Product product = getExistingProduct(productId);
-    validateOwner(product, sellerId);
+    product.validateSeller(sellerId);
     validateImagesPresent(images);
 
     boolean hasThumbnail = productImageRepository.existsByProductId(productId);
@@ -86,7 +85,7 @@ public class ProductImageService {
   @Transactional
   public DeleteProductImageResponse deleteImage(Long sellerId, Long productId, Long imageId) {
     Product product = getExistingProduct(productId);
-    validateOwner(product, sellerId);
+    product.validateSeller(sellerId);
 
     ProductImage image =
         productImageRepository
@@ -114,12 +113,6 @@ public class ProductImageService {
         .findWithSellerById(productId)
         .filter(product -> !product.isDeleted())
         .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
-  }
-
-  private void validateOwner(Product product, Long sellerId) {
-    if (!Objects.equals(product.getSeller().getId(), sellerId)) {
-      throw new BusinessException(ErrorCode.PRODUCT_ACCESS_DENIED);
-    }
   }
 
   private void validateImagesPresent(List<MultipartFile> images) {
