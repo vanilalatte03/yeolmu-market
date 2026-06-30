@@ -19,7 +19,8 @@ import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductImageRepository;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.review.service.ReviewRatingQueryService;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.domain.wish.dto.ProductWishSummary;
@@ -72,7 +73,7 @@ public class ProductService {
     Product product =
         Product.create(seller, request.title(), request.description(), request.price(), category);
     Product savedProduct = productRepository.save(product);
-    publishProductSearchCacheEviction();
+    publishProductSearchIndexChanged(savedProduct.getId());
     return CreateProductResponse.from(savedProduct);
   }
 
@@ -183,12 +184,19 @@ public class ProductService {
     Product product = getExistingProduct(productId);
     validateOwner(product, sellerId);
 
+    boolean searchIndexChanged = isSearchIndexChanged(request);
+    boolean productDisplayChanged = isProductDisplayChanged(request);
     product.updateInfo(request.title(), request.description(), request.price());
     if (request.categoryId() != null) {
       product.changeCategory(getCategory(request.categoryId()));
     }
     productRepository.flush();
-    publishProductSearchCacheEviction();
+    if (searchIndexChanged) {
+      publishProductSearchIndexChanged(product.getId());
+    }
+    if (productDisplayChanged) {
+      publishProductDisplayChanged(product.getId());
+    }
     return UpdateProductResponse.from(product);
   }
 
@@ -204,7 +212,7 @@ public class ProductService {
     validateDeletable(product);
 
     product.delete(LocalDateTime.now(ZoneOffset.UTC));
-    publishProductSearchCacheEviction();
+    publishProductSearchIndexAndDisplayChanged(product.getId());
     return DeleteProductResponse.success();
   }
 
@@ -218,8 +226,11 @@ public class ProductService {
       Long productId, UpdateProductHiddenStatusRequest request) {
     Product product = getExistingProduct(productId);
 
+    boolean hiddenChanged = product.isHidden() != request.hidden();
     product.changeHidden(request.hidden());
-    publishProductSearchCacheEviction();
+    if (hiddenChanged) {
+      publishProductSearchIndexAndDisplayChanged(product.getId());
+    }
     return UpdateProductHiddenStatusResponse.from(product);
   }
 
@@ -339,7 +350,24 @@ public class ProductService {
     return Sort.by(Sort.Order.desc("modifiedAt"), Sort.Order.desc("id"));
   }
 
-  private void publishProductSearchCacheEviction() {
-    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+  private boolean isSearchIndexChanged(UpdateProductRequest request) {
+    return request.title() != null || request.description() != null || request.price() != null;
+  }
+
+  private boolean isProductDisplayChanged(UpdateProductRequest request) {
+    return request.title() != null || request.price() != null;
+  }
+
+  private void publishProductSearchIndexAndDisplayChanged(Long productId) {
+    publishProductSearchIndexChanged(productId);
+    publishProductDisplayChanged(productId);
+  }
+
+  private void publishProductSearchIndexChanged(Long productId) {
+    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId));
+  }
+
+  private void publishProductDisplayChanged(Long productId) {
+    eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
   }
 }

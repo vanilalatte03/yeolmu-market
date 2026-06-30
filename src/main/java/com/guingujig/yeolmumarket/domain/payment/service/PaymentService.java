@@ -12,7 +12,8 @@ import com.guingujig.yeolmumarket.domain.payment.dto.PaymentStatusResponse;
 import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
 import com.guingujig.yeolmumarket.domain.payment.entity.PaymentStatus;
 import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import java.time.LocalDateTime;
@@ -97,7 +98,7 @@ public class PaymentService {
       payment = Payment.createFailed(order, request.method(), idempotencyKey, now);
       order.cancel();
       order.getProduct().cancelReservation();
-      eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+      publishProductStatusChanged(order.getProduct().getId());
     }
 
     try {
@@ -157,7 +158,7 @@ public class PaymentService {
       throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
     }
 
-    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+    publishProductStatusChanged(order.getProduct().getId());
 
     return CancelPaymentResponse.from(payment);
   }
@@ -244,5 +245,10 @@ public class PaymentService {
 
   private boolean isOrderSeller(Order order, Long userId) {
     return Objects.equals(order.getSeller().getId(), userId);
+  }
+
+  private void publishProductStatusChanged(Long productId) {
+    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId));
+    eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
   }
 }

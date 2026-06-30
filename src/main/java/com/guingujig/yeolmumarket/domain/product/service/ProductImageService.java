@@ -6,7 +6,7 @@ import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductImage;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductImageRepository;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
 import com.guingujig.yeolmumarket.global.config.LocalProductImageStorageProperties;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
@@ -73,7 +73,7 @@ public class ProductImageService {
 
     List<ProductImage> savedImages = productImageRepository.saveAll(productImages);
     productImageRepository.flush();
-    publishProductSearchCacheEviction();
+    publishProductDisplayChanged(productId);
     return UploadProductImagesResponse.from(savedImages);
   }
 
@@ -105,7 +105,7 @@ public class ProductImageService {
     }
 
     registerAfterCommitDelete(deletedImageUrl);
-    publishProductSearchCacheEviction();
+    publishProductDisplayChanged(productId);
     return DeleteProductImageResponse.success();
   }
 
@@ -185,7 +185,7 @@ public class ProductImageService {
     }
   }
 
-  private void publishProductSearchCacheEviction() {
-    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+  private void publishProductDisplayChanged(Long productId) {
+    eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
   }
 }

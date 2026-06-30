@@ -13,7 +13,8 @@ import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
@@ -90,7 +91,7 @@ public class OrderService {
     Order order = Order.create(buyer, product);
     orderRepository.save(order);
 
-    publishProductSearchCacheEviction();
+    publishProductStatusChanged(product.getId());
     return CreateOrderResponse.from(order);
   }
 
@@ -127,7 +128,7 @@ public class OrderService {
     }
     entityManager.refresh(order);
 
-    publishProductSearchCacheEviction();
+    publishProductStatusChanged(order.getProduct().getId());
     return CancelOrderResponse.from(order);
   }
 
@@ -202,7 +203,7 @@ public class OrderService {
     }
     entityManager.refresh(order);
 
-    publishProductSearchCacheEviction();
+    publishProductStatusChanged(order.getProduct().getId());
     return ConfirmOrderResponse.from(order);
   }
 
@@ -292,8 +293,9 @@ public class OrderService {
     product.completeSale();
   }
 
-  private void publishProductSearchCacheEviction() {
-    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+  private void publishProductStatusChanged(Long productId) {
+    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId));
+    eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
   }
 
   private void validateBuyer(Order order, Long userId) {

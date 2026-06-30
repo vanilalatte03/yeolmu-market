@@ -13,7 +13,8 @@ import com.guingujig.yeolmumarket.domain.refund.dto.ResolveRefundRequestResponse
 import com.guingujig.yeolmumarket.domain.refund.entity.RefundRequest;
 import com.guingujig.yeolmumarket.domain.refund.entity.RefundRequestStatus;
 import com.guingujig.yeolmumarket.domain.refund.repository.RefundRequestRepository;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import java.time.LocalDateTime;
@@ -112,7 +113,7 @@ public class RefundService {
     payment.cancelPaid(approvedAt, "환불 요청 승인");
 
     flushRefundRequestChanges();
-    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+    publishProductStatusChanged(refundRequest.getOrder().getProduct().getId());
 
     return ApproveRefundRequestResponse.from(refundRequest);
   }
@@ -188,7 +189,7 @@ public class RefundService {
     }
 
     flushRefundRequestChanges();
-    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+    publishProductStatusChanged(refundRequest.getOrder().getProduct().getId());
 
     return ResolveRefundRequestResponse.from(refundRequest);
   }
@@ -286,5 +287,10 @@ public class RefundService {
       normalizedName = normalizedName.substring(qualifierIndex + 1);
     }
     return DUPLICATE_REFUND_REQUEST_CONSTRAINT.equalsIgnoreCase(normalizedName);
+  }
+
+  private void publishProductStatusChanged(Long productId) {
+    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId));
+    eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
   }
 }
