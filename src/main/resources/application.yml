@@ -40,6 +40,9 @@ auth:
     secure: ${AUTH_REFRESH_TOKEN_COOKIE_SECURE:false}
 
 yeolmu:
+  lock:
+    wait-time: 500ms
+    lease-time: 10s
   cache:
     search:
       products-v2:
