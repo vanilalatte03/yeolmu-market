@@ -5,15 +5,12 @@ import com.guingujig.yeolmumarket.domain.order.dto.ConfirmOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.RegisterOrderShippingResponse;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
-import com.guingujig.yeolmumarket.domain.product.entity.Product;
-import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import jakarta.persistence.EntityManager;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -32,10 +29,9 @@ public class OrderLockedCommandService {
   public CancelOrderResponse cancelOrder(Long requesterId, Long orderId) {
     Order order = findOrder(orderId);
 
-    validateBuyer(order, requesterId);
+    order.validateBuyer(requesterId);
 
-    order.cancel();
-    order.getProduct().cancelReservation();
+    order.cancelAndReleaseProduct();
 
     try {
       orderRepository.flush();
@@ -53,7 +49,7 @@ public class OrderLockedCommandService {
       Long sellerId, Long orderId, String trackingNumber) {
     Order order = findOrder(orderId);
 
-    validateSeller(order, sellerId);
+    order.validateSeller(sellerId);
 
     order.registerShipping(trackingNumber, LocalDateTime.now(ZoneOffset.UTC));
 
@@ -71,10 +67,9 @@ public class OrderLockedCommandService {
   public ConfirmOrderResponse confirmOrder(Long buyerId, Long orderId) {
     Order order = findOrder(orderId);
 
-    validateBuyer(order, buyerId);
+    order.validateBuyer(buyerId);
 
-    order.confirmPurchase();
-    completeProductSale(order.getProduct());
+    order.confirmPurchaseAndCompleteProduct();
 
     try {
       orderRepository.flush();
@@ -93,34 +88,7 @@ public class OrderLockedCommandService {
         .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
   }
 
-  private void completeProductSale(Product product) {
-    if (product.getStatus() != ProductStatus.RESERVED) {
-      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
-    }
-    product.completeSale();
-  }
-
   private void publishProductSearchCacheEviction() {
     eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
-  }
-
-  private void validateBuyer(Order order, Long userId) {
-    if (!isBuyer(order, userId)) {
-      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
-    }
-  }
-
-  private void validateSeller(Order order, Long userId) {
-    if (!isSeller(order, userId)) {
-      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
-    }
-  }
-
-  private boolean isBuyer(Order order, Long userId) {
-    return Objects.equals(order.getBuyer().getId(), userId);
-  }
-
-  private boolean isSeller(Order order, Long userId) {
-    return Objects.equals(order.getSeller().getId(), userId);
   }
 }

@@ -11,7 +11,6 @@ import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
-import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
@@ -21,7 +20,6 @@ import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.lock.DistributedLockExecutor;
 import com.guingujig.yeolmumarket.global.lock.LockKeys;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -68,19 +66,7 @@ public class OrderService {
             .findWithSellerById(productId)
             .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
 
-    if (product.isDeleted() || product.isHidden()) {
-      throw new BusinessException(ErrorCode.PRODUCT_NOT_FOUND);
-    }
-
-    if (Objects.equals(product.getSeller().getId(), buyerId)) {
-      throw new BusinessException(ErrorCode.CANNOT_ORDER_OWN_PRODUCT);
-    }
-
-    if (product.getStatus() != ProductStatus.ON_SALE) {
-      throw new BusinessException(ErrorCode.PRODUCT_NOT_ON_SALE);
-    }
-
-    product.reserve();
+    product.reserveForOrder(buyerId);
 
     try {
       productRepository.flush();
@@ -192,7 +178,7 @@ public class OrderService {
             .findWithDetailsById(orderId)
             .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
-    validateOrderParticipant(order, requesterId);
+    order.validateParticipant(requesterId);
 
     return GetOrderResponse.from(order);
   }
@@ -230,19 +216,5 @@ public class OrderService {
 
   private void publishProductSearchCacheEviction() {
     eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
-  }
-
-  private void validateOrderParticipant(Order order, Long userId) {
-    if (!isBuyer(order, userId) && !isSeller(order, userId)) {
-      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
-    }
-  }
-
-  private boolean isBuyer(Order order, Long userId) {
-    return Objects.equals(order.getBuyer().getId(), userId);
-  }
-
-  private boolean isSeller(Order order, Long userId) {
-    return Objects.equals(order.getSeller().getId(), userId);
   }
 }

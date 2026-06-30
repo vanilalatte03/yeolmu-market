@@ -1,6 +1,5 @@
 package com.guingujig.yeolmumarket.domain.payment.service;
 
-import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.payment.dto.CancelPaymentResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.CreatePaymentRequest;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentDetailResponse;
@@ -12,7 +11,6 @@ import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.lock.DistributedLockExecutor;
 import com.guingujig.yeolmumarket.global.lock.LockKeys;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -97,7 +95,7 @@ public class PaymentService {
             .findWithOrderAndUsersById(paymentId)
             .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
-    validatePaymentParticipant(payment, userId);
+    payment.validateParticipant(userId);
     return payment;
   }
 
@@ -113,20 +111,5 @@ public class PaymentService {
       throw new BusinessException(ErrorCode.VALIDATION_FAILED);
     }
     return trimmedReason;
-  }
-
-  private void validatePaymentParticipant(Payment payment, Long userId) {
-    Order order = payment.getOrder();
-    if (!isOrderBuyer(order, userId) && !isOrderSeller(order, userId)) {
-      throw new BusinessException(ErrorCode.PAYMENT_ACCESS_DENIED);
-    }
-  }
-
-  private boolean isOrderBuyer(Order order, Long userId) {
-    return Objects.equals(order.getBuyer().getId(), userId);
-  }
-
-  private boolean isOrderSeller(Order order, Long userId) {
-    return Objects.equals(order.getSeller().getId(), userId);
   }
 }

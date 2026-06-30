@@ -84,6 +84,12 @@ public class Order extends BaseTimeEntity {
     this.orderStatus = OrderStatus.PAID;
   }
 
+  /** CREATED 주문을 결제 실패 결과로 취소하고 상품 예약을 해제한다. */
+  public void failPaymentAndReleaseProduct() {
+    cancel();
+    product.cancelReservation();
+  }
+
   /**
    * CREATED 상태의 주문을 CANCELED로 전이한다.
    *
@@ -96,6 +102,12 @@ public class Order extends BaseTimeEntity {
     this.orderStatus = OrderStatus.CANCELED;
   }
 
+  /** CREATED 주문을 취소하고 예약된 상품을 다시 판매 중으로 되돌린다. */
+  public void cancelAndReleaseProduct() {
+    cancel();
+    product.cancelReservation();
+  }
+
   /**
    * PAID 상태의 주문을 결제 취소 결과인 REFUNDED로 전이한다.
    *
@@ -106,6 +118,12 @@ public class Order extends BaseTimeEntity {
       throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
     }
     this.orderStatus = OrderStatus.REFUNDED;
+  }
+
+  /** PAID 주문을 결제 환불 결과로 전이하고 예약된 상품을 다시 판매 중으로 되돌린다. */
+  public void refundPaidPaymentAndReleaseProduct() {
+    cancelPaidPayment();
+    product.cancelReservation();
   }
 
   /**
@@ -134,6 +152,15 @@ public class Order extends BaseTimeEntity {
     this.orderStatus = OrderStatus.COMPLETED;
   }
 
+  /** SHIPPING 주문을 구매 확정하고 상품을 판매 완료 상태로 전이한다. */
+  public void confirmPurchaseAndCompleteProduct() {
+    if (this.orderStatus != OrderStatus.SHIPPING || !product.isReserved()) {
+      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+    }
+    this.orderStatus = OrderStatus.COMPLETED;
+    product.completeSale();
+  }
+
   /**
    * SHIPPING 상태의 주문을 환불 요청 상태로 전이한다.
    *
@@ -156,6 +183,12 @@ public class Order extends BaseTimeEntity {
       throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
     }
     this.orderStatus = OrderStatus.REFUNDED;
+  }
+
+  /** REFUND_REQUESTED 주문을 환불 승인 결과로 전이하고 상품 예약을 해제한다. */
+  public void approveRefundAndReleaseProduct() {
+    approveRefund();
+    product.cancelReservation();
   }
 
   /**
@@ -182,6 +215,12 @@ public class Order extends BaseTimeEntity {
     this.orderStatus = OrderStatus.REFUNDED;
   }
 
+  /** DISPUTED 주문을 분쟁 환불 결과로 전이하고 상품 예약을 해제한다. */
+  public void refundDisputeAndReleaseProduct() {
+    refundDispute();
+    product.cancelReservation();
+  }
+
   /**
    * DISPUTED 상태의 주문을 분쟁 거래 완료 결과인 COMPLETED로 전이한다.
    *
@@ -193,4 +232,86 @@ public class Order extends BaseTimeEntity {
     }
     this.orderStatus = OrderStatus.COMPLETED;
   }
+
+  /** DISPUTED 주문을 분쟁 거래 완료 결과로 전이하고 상품을 판매 완료 상태로 전이한다. */
+  public void completeDisputeAndCompleteProduct() {
+    if (this.orderStatus != OrderStatus.DISPUTED || !product.isReserved()) {
+      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+    }
+    this.orderStatus = OrderStatus.COMPLETED;
+    product.completeSale();
+  }
+
+  public void validateBuyer(Long userId) {
+    validateBuyer(userId, ErrorCode.ORDER_ACCESS_DENIED);
+  }
+
+  public void validateBuyer(Long userId, ErrorCode errorCode) {
+    if (!isBuyer(userId)) {
+      throw new BusinessException(errorCode);
+    }
+  }
+
+  public void validateSeller(Long userId) {
+    validateSeller(userId, ErrorCode.ORDER_ACCESS_DENIED);
+  }
+
+  public void validateSeller(Long userId, ErrorCode errorCode) {
+    if (!isSeller(userId)) {
+      throw new BusinessException(errorCode);
+    }
+  }
+
+  public void validateParticipant(Long userId) {
+    validateParticipant(userId, ErrorCode.ORDER_ACCESS_DENIED);
+  }
+
+  public void validateParticipant(Long userId, ErrorCode errorCode) {
+    if (!isBuyer(userId) && !isSeller(userId)) {
+      throw new BusinessException(errorCode);
+    }
+  }
+
+  public boolean isCreated() {
+    return orderStatus == OrderStatus.CREATED;
+  }
+
+  public boolean isPaid() {
+    return orderStatus == OrderStatus.PAID;
+  }
+
+  public boolean isDisputed() {
+    return orderStatus == OrderStatus.DISPUTED;
+  }
+
+  /**
+   * 거래 완료 주문에서 리뷰 작성자와 대상자를 결정한다.
+   *
+   * <p>주문 참여자가 아니면 접근 거부, 거래 완료 전이면 리뷰 불가로 실패한다.
+   */
+  public ReviewParticipants resolveReviewParticipants(Long reviewerId) {
+    ReviewParticipants participants;
+    if (isBuyer(reviewerId)) {
+      participants = new ReviewParticipants(buyer, seller);
+    } else if (isSeller(reviewerId)) {
+      participants = new ReviewParticipants(seller, buyer);
+    } else {
+      throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
+    }
+
+    if (orderStatus != OrderStatus.COMPLETED) {
+      throw new BusinessException(ErrorCode.REVIEW_NOT_ALLOWED);
+    }
+    return participants;
+  }
+
+  private boolean isBuyer(Long userId) {
+    return buyer != null && Objects.equals(buyer.getId(), userId);
+  }
+
+  private boolean isSeller(Long userId) {
+    return seller != null && Objects.equals(seller.getId(), userId);
+  }
+
+  public record ReviewParticipants(User reviewer, User reviewee) {}
 }

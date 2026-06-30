@@ -3,6 +3,8 @@ package com.guingujig.yeolmumarket.domain.review.entity;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.global.entity.BaseTimeEntity;
+import com.guingujig.yeolmumarket.global.exception.BusinessException;
+import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -54,7 +56,7 @@ public class Review extends BaseTimeEntity {
   /**
    * 리뷰는 거래 완료된 주문의 구매자와 판매자가 서로에게만 작성할 수 있다.
    *
-   * <p>거래 완료 여부는 주문 상태 전이 정책과 함께 서비스에서 검증한다.
+   * <p>거래 완료 여부와 참여자 판정은 주문 엔티티의 리뷰 참여자 결정 규칙을 따른다.
    */
   public static Review create(
       Order order, User reviewer, User reviewee, Integer score, String content) {
@@ -81,6 +83,12 @@ public class Review extends BaseTimeEntity {
     }
     if (content != null) {
       this.content = requireContent(content);
+    }
+  }
+
+  public void validateReviewer(Long reviewerId) {
+    if (!sameUserId(reviewer, reviewerId)) {
+      throw new BusinessException(ErrorCode.REVIEW_ACCESS_DENIED);
     }
   }
 
@@ -111,6 +119,10 @@ public class Review extends BaseTimeEntity {
       return Objects.equals(left.getId(), right.getId());
     }
     return left == right;
+  }
+
+  private static boolean sameUserId(User user, Long userId) {
+    return user != null && Objects.equals(user.getId(), userId);
   }
 
   private static String requireContent(String content) {

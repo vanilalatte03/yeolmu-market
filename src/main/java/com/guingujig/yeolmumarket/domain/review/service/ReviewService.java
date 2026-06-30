@@ -14,7 +14,6 @@ import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.lock.DistributedLockExecutor;
 import com.guingujig.yeolmumarket.global.lock.LockKeys;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -109,7 +108,7 @@ public class ReviewService {
       Long reviewerId, Long orderId, Long reviewId, Integer score, String content) {
     ReviewUpdateValues updateValues = validateReviewUpdateValues(score, content);
     Review review = getReviewInOrder(orderId, reviewId);
-    validateReviewer(review, reviewerId);
+    review.validateReviewer(reviewerId);
 
     review.update(updateValues.score(), updateValues.content());
     // updatedAt 응답값을 감사 필드 기준으로 확정한다.
@@ -126,7 +125,7 @@ public class ReviewService {
   @Transactional
   public DeleteReviewResponse deleteReview(Long reviewerId, Long orderId, Long reviewId) {
     Review review = getReviewInOrder(orderId, reviewId);
-    validateReviewer(review, reviewerId);
+    review.validateReviewer(reviewerId);
 
     reviewRepository.delete(review);
     return DeleteReviewResponse.success();
@@ -148,12 +147,6 @@ public class ReviewService {
     return reviewRepository
         .findByIdAndOrderId(reviewId, orderId)
         .orElseThrow(() -> new BusinessException(ErrorCode.REVIEW_NOT_FOUND));
-  }
-
-  private void validateReviewer(Review review, Long reviewerId) {
-    if (!Objects.equals(review.getReviewer().getId(), reviewerId)) {
-      throw new BusinessException(ErrorCode.REVIEW_ACCESS_DENIED);
-    }
   }
 
   private void validateScore(Integer score) {

@@ -480,6 +480,29 @@ class RefundServiceTest {
   }
 
   @Test
+  void COMPLETE_분쟁_종료는_결제_조회_없이_거래_완료로_처리된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    RefundRequest refundRequest = saveDisputedRefund(order, "상품에 설명과 다른 하자가 있습니다.", "정상 상품입니다.");
+
+    assertThat(paymentRepository.findByOrder_Id(order.getId())).isEmpty();
+    ResolveRefundRequestResponse response =
+        refundService.resolveRefundRequest(
+            seller.getId(), refundRequest.getId(), RefundResolution.COMPLETE, null);
+
+    assertThat(response.status()).isEqualTo(RefundRequestStatus.CLOSED);
+    assertThat(response.orderStatus()).isEqualTo(OrderStatus.COMPLETED);
+    assertThat(response.productStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+    assertThat(paymentRepository.findByOrder_Id(order.getId())).isEmpty();
+    assertThat(orderRepository.findById(order.getId()).orElseThrow().getOrderStatus())
+        .isEqualTo(OrderStatus.COMPLETED);
+    assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProductStatus.SOLD_OUT);
+  }
+
+  @Test
   void 구매자와_타사용자는_분쟁을_종료할_수_없다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
@@ -576,6 +599,33 @@ class RefundServiceTest {
         payment,
         RefundRequestStatus.DISPUTED,
         OrderStatus.REFUND_REQUESTED);
+  }
+
+  @Test
+  void 주문_상태가_DISPUTED가_아니면_결제_조회보다_상태_오류가_우선한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User buyer = saveUser("buyer@example.com", "열무구매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
+    Order order = saveShippingOrder(buyer, product);
+    RefundRequest refundRequest = saveDisputedRefund(order, "상품에 설명과 다른 하자가 있습니다.", "정상 상품입니다.");
+    ReflectionTestUtils.setField(order, "orderStatus", OrderStatus.REFUND_REQUESTED);
+    orderRepository.saveAndFlush(order);
+
+    assertThat(paymentRepository.findByOrder_Id(order.getId())).isEmpty();
+    assertThatThrownBy(
+            () ->
+                refundService.resolveRefundRequest(
+                    seller.getId(), refundRequest.getId(), RefundResolution.REFUND, null))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_REFUND_REQUEST_STATUS));
+
+    Order unchangedOrder = orderRepository.findById(order.getId()).orElseThrow();
+    RefundRequest unchangedRefundRequest =
+        refundRequestRepository.findById(refundRequest.getId()).orElseThrow();
+    assertThat(unchangedOrder.getOrderStatus()).isEqualTo(OrderStatus.REFUND_REQUESTED);
+    assertThat(unchangedRefundRequest.getStatus()).isEqualTo(RefundRequestStatus.DISPUTED);
+    assertThat(unchangedRefundRequest.getResolvedAt()).isNull();
   }
 
   @Test
