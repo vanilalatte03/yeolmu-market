@@ -1,7 +1,6 @@
 package com.guingujig.yeolmumarket.domain.review.service;
 
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
-import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.review.dto.DeleteReviewResponse;
 import com.guingujig.yeolmumarket.domain.review.dto.PublicReceivedReviewListItemResponse;
@@ -11,12 +10,10 @@ import com.guingujig.yeolmumarket.domain.review.dto.UpdateReviewResponse;
 import com.guingujig.yeolmumarket.domain.review.dto.WrittenReviewListItemResponse;
 import com.guingujig.yeolmumarket.domain.review.entity.Review;
 import com.guingujig.yeolmumarket.domain.review.repository.ReviewRepository;
-import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -52,10 +49,7 @@ public class ReviewService {
             .findWithDetailsByIdForUpdate(orderId)
             .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
-    ReviewParticipants participants = resolveParticipants(order, reviewerId);
-    if (order.getOrderStatus() != OrderStatus.COMPLETED) {
-      throw new BusinessException(ErrorCode.REVIEW_NOT_ALLOWED);
-    }
+    Order.ReviewParticipants participants = order.resolveReviewParticipants(reviewerId);
     if (reviewRepository.existsByOrderIdAndReviewerId(orderId, reviewerId)) {
       throw new BusinessException(ErrorCode.REVIEW_ALREADY_EXISTS);
     }
@@ -125,7 +119,7 @@ public class ReviewService {
       Long reviewerId, Long orderId, Long reviewId, Integer score, String content) {
     ReviewUpdateValues updateValues = validateReviewUpdateValues(score, content);
     Review review = getReviewInOrder(orderId, reviewId);
-    validateReviewer(review, reviewerId);
+    review.validateReviewer(reviewerId);
 
     review.update(updateValues.score(), updateValues.content());
     // updatedAt 응답값을 감사 필드 기준으로 확정한다.
@@ -142,7 +136,7 @@ public class ReviewService {
   @Transactional
   public DeleteReviewResponse deleteReview(Long reviewerId, Long orderId, Long reviewId) {
     Review review = getReviewInOrder(orderId, reviewId);
-    validateReviewer(review, reviewerId);
+    review.validateReviewer(reviewerId);
 
     reviewRepository.delete(review);
     return DeleteReviewResponse.success();
@@ -164,12 +158,6 @@ public class ReviewService {
     return reviewRepository
         .findByIdAndOrderId(reviewId, orderId)
         .orElseThrow(() -> new BusinessException(ErrorCode.REVIEW_NOT_FOUND));
-  }
-
-  private void validateReviewer(Review review, Long reviewerId) {
-    if (!Objects.equals(review.getReviewer().getId(), reviewerId)) {
-      throw new BusinessException(ErrorCode.REVIEW_ACCESS_DENIED);
-    }
   }
 
   private void validateScore(Integer score) {
@@ -211,20 +199,6 @@ public class ReviewService {
   private Sort reviewSort() {
     return Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
   }
-
-  private ReviewParticipants resolveParticipants(Order order, Long reviewerId) {
-    User buyer = order.getBuyer();
-    User seller = order.getSeller();
-    if (Objects.equals(buyer.getId(), reviewerId)) {
-      return new ReviewParticipants(buyer, seller);
-    }
-    if (Objects.equals(seller.getId(), reviewerId)) {
-      return new ReviewParticipants(seller, buyer);
-    }
-    throw new BusinessException(ErrorCode.ORDER_ACCESS_DENIED);
-  }
-
-  private record ReviewParticipants(User reviewer, User reviewee) {}
 
   private record ReviewUpdateValues(Integer score, String content) {}
 
