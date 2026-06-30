@@ -1,27 +1,19 @@
 package com.guingujig.yeolmumarket.domain.payment.service;
 
-import com.guingujig.yeolmumarket.domain.order.entity.Order;
-import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.payment.dto.CancelPaymentResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.CreatePaymentRequest;
-import com.guingujig.yeolmumarket.domain.payment.dto.MockPaymentResult;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentDetailResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentStatusResponse;
 import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
 import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
-import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
-import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.Optional;
+import com.guingujig.yeolmumarket.global.lock.DistributedLockExecutor;
+import com.guingujig.yeolmumarket.global.lock.LockKeys;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -29,8 +21,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class PaymentService {
 
   private final PaymentRepository paymentRepository;
-  private final OrderRepository orderRepository;
-  private final ApplicationEventPublisher eventPublisher;
+  private final DistributedLockExecutor distributedLockExecutor;
+  private final PaymentLockedCommandService paymentLockedCommandService;
 
   /**
    * 구매자가 CREATED 상태의 주문에 대해 모의 결제를 요청한다.
@@ -45,7 +37,7 @@ public class PaymentService {
    * @throws BusinessException PAYMENT_ALREADY_EXISTS - 다른 멱등키로 같은 주문 재요청 또는 이미 사용된 멱등키
    * @throws BusinessException INVALID_ORDER_STATUS - CREATED가 아닌 주문에 결제 요청
    */
-  @Transactional
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public ProcessPaymentResult processPayment(
       Long buyerId, Long orderId, String idempotencyKey, CreatePaymentRequest request) {
 
@@ -53,49 +45,10 @@ public class PaymentService {
       throw new BusinessException(ErrorCode.VALIDATION_FAILED);
     }
 
-    orderRepository
-        .findByIdForUpdate(orderId)
-        .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
-
-    Order order =
-        orderRepository
-            .findWithDetailsById(orderId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
-
-    order.validateBuyer(buyerId);
-
-    Optional<Payment> existingByOrder = paymentRepository.findByOrder_Id(orderId);
-    if (existingByOrder.isPresent()) {
-      Payment existing = existingByOrder.get();
-      if (existing.hasIdempotencyKey(idempotencyKey)) {
-        return new ProcessPaymentResult(PaymentResponse.from(existing), false);
-      }
-      throw new BusinessException(ErrorCode.PAYMENT_ALREADY_EXISTS);
-    }
-
-    paymentRepository
-        .findByIdempotencyKey(idempotencyKey)
-        .ifPresent(
-            p -> {
-              throw new BusinessException(ErrorCode.PAYMENT_ALREADY_EXISTS);
-            });
-
-    MockPaymentResult result = resolvePaymentResult(request);
-    LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
-
-    Payment payment;
-    if (result == MockPaymentResult.PAID) {
-      payment = Payment.createPaid(order, request.method(), idempotencyKey, now);
-      order.markAsPaid();
-    } else {
-      payment = Payment.createFailed(order, request.method(), idempotencyKey, now);
-      order.failPaymentAndReleaseProduct();
-      publishProductStatusChanged(
-          order.getProduct().getId(), ProductStatus.RESERVED, ProductStatus.ON_SALE);
-    }
-
-    paymentRepository.save(payment);
-    return new ProcessPaymentResult(PaymentResponse.from(payment), true);
+    return distributedLockExecutor.execute(
+        LockKeys.order(orderId),
+        () ->
+            paymentLockedCommandService.processPayment(buyerId, orderId, idempotencyKey, request));
   }
 
   public record ProcessPaymentResult(PaymentResponse response, boolean created) {}
@@ -123,24 +76,17 @@ public class PaymentService {
    * @throws BusinessException PAYMENT_ACCESS_DENIED - 주문 구매자가 아닌 사용자의 취소 요청
    * @throws BusinessException INVALID_PAYMENT_STATUS - 취소할 수 없는 결제 또는 주문 상태, 또는 동시 취소 경합
    */
-  @Transactional
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public CancelPaymentResponse cancelPayment(Long buyerId, Long paymentId, String reason) {
     String normalizedReason = normalizeCancelReason(reason);
-    Payment payment = fetchAfterOrderLock(paymentId);
+    Long orderId =
+        paymentRepository
+            .findOrderIdById(paymentId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
-    LocalDateTime canceledAt = LocalDateTime.now(ZoneOffset.UTC);
-    payment.cancelByBuyer(buyerId, canceledAt, normalizedReason);
-
-    try {
-      paymentRepository.flush();
-    } catch (ObjectOptimisticLockingFailureException e) {
-      throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
-    }
-
-    publishProductStatusChanged(
-        payment.getOrder().getProduct().getId(), ProductStatus.RESERVED, ProductStatus.ON_SALE);
-
-    return CancelPaymentResponse.from(payment);
+    return distributedLockExecutor.execute(
+        LockKeys.order(orderId),
+        () -> paymentLockedCommandService.cancelPayment(buyerId, paymentId, normalizedReason));
   }
 
   private Payment fetchWithAuthCheck(Long userId, Long paymentId) {
@@ -150,25 +96,6 @@ public class PaymentService {
             .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
     payment.validateParticipant(userId);
-    return payment;
-  }
-
-  private Payment fetchAfterOrderLock(Long paymentId) {
-    // 주문 락 전에 Order 엔티티를 올리면 persistence context에 stale 상태가 남을 수 있다.
-    Long orderId =
-        paymentRepository
-            .findOrderIdById(paymentId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
-
-    orderRepository
-        .findByIdForUpdate(orderId)
-        .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
-
-    Payment payment =
-        paymentRepository
-            .findWithOrderBuyerSellerAndProductByIdForUpdate(paymentId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
-
     return payment;
   }
 
@@ -184,18 +111,5 @@ public class PaymentService {
       throw new BusinessException(ErrorCode.VALIDATION_FAILED);
     }
     return trimmedReason;
-  }
-
-  private MockPaymentResult resolvePaymentResult(CreatePaymentRequest request) {
-    MockPaymentResult result = request.result();
-    if (result == null) {
-      return MockPaymentResult.PAID;
-    }
-    return result;
-  }
-
-  private void publishProductStatusChanged(Long productId, ProductStatus... affectedStatuses) {
-    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId, affectedStatuses));
-    eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
   }
 }

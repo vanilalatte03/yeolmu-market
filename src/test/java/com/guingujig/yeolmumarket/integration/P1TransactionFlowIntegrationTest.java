@@ -22,8 +22,11 @@ import com.guingujig.yeolmumarket.domain.payment.entity.PaymentStatus;
 import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
+import com.guingujig.yeolmumarket.support.TestDataCleaner;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -33,13 +36,11 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@Transactional
 class P1TransactionFlowIntegrationTest {
 
   private static final AtomicLong TEST_SEQUENCE = new AtomicLong();
@@ -55,6 +56,7 @@ class P1TransactionFlowIntegrationTest {
   private final OrderRepository orderRepository;
   private final ProductRepository productRepository;
   private final PaymentRepository paymentRepository;
+  private final TestDataCleaner testDataCleaner;
 
   @Autowired
   P1TransactionFlowIntegrationTest(
@@ -63,13 +65,25 @@ class P1TransactionFlowIntegrationTest {
       CategoryRepository categoryRepository,
       OrderRepository orderRepository,
       ProductRepository productRepository,
-      PaymentRepository paymentRepository) {
+      PaymentRepository paymentRepository,
+      TestDataCleaner testDataCleaner) {
     this.mockMvc = mockMvc;
     this.objectMapper = objectMapper;
     this.categoryRepository = categoryRepository;
     this.orderRepository = orderRepository;
     this.productRepository = productRepository;
     this.paymentRepository = paymentRepository;
+    this.testDataCleaner = testDataCleaner;
+  }
+
+  @BeforeEach
+  void setUp() {
+    testDataCleaner.deleteAll();
+  }
+
+  @AfterEach
+  void tearDown() {
+    testDataCleaner.deleteAll();
   }
 
   @Test

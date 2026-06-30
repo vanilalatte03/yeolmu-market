@@ -1540,6 +1540,8 @@ P0에서는 주문 생성 상태의 주문만 취소할 수 있다.
 | `ORDER_ACCESS_DENIED` | 403 | 주문 구매자가 아닌 사용자의 취소 시도 |
 | `ORDER_NOT_FOUND` | 404 | 주문 없음 |
 | `INVALID_ORDER_STATUS` | 409 | 취소할 수 없는 주문 상태 |
+| `CONFLICT` | 409 | 같은 주문의 상태 변경 요청과 경합해 분산락 획득 실패 |
+| `REDIS_UNAVAILABLE` | 503 | 분산락 Redis 연결 또는 명령 실패 |
 
 ### 배송 증빙 등록
 
@@ -1589,6 +1591,8 @@ P0에서는 주문 생성 상태의 주문만 취소할 수 있다.
 | `ORDER_ACCESS_DENIED` | 403 | 주문 판매자가 아닌 사용자의 배송 증빙 등록 시도 |
 | `ORDER_NOT_FOUND` | 404 | 주문 없음 |
 | `INVALID_ORDER_STATUS` | 409 | 배송 증빙을 등록할 수 없는 주문 상태 |
+| `CONFLICT` | 409 | 같은 주문의 상태 변경 요청과 경합해 분산락 획득 실패 |
+| `REDIS_UNAVAILABLE` | 503 | 분산락 Redis 연결 또는 명령 실패 |
 
 ## 채팅 API
 
@@ -1984,6 +1988,8 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 | `ORDER_NOT_FOUND` | 404 | 주문 없음 |
 | `PAYMENT_ALREADY_EXISTS` | 409 | 해당 주문의 결제가 이미 존재하고 요청 `Idempotency-Key`가 기존 결제와 다름 |
 | `INVALID_ORDER_STATUS` | 409 | 결제할 수 없는 주문 상태 |
+| `CONFLICT` | 409 | 같은 주문의 상태 변경 요청과 경합해 분산락 획득 실패 |
+| `REDIS_UNAVAILABLE` | 503 | 분산락 Redis 연결 또는 명령 실패 |
 
 ### 결제 상태 조회
 
@@ -2127,6 +2133,8 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 | `PAYMENT_ACCESS_DENIED` | 403 | 결제 당사자가 아닌 사용자의 취소 시도 |
 | `PAYMENT_NOT_FOUND` | 404 | 결제 없음 |
 | `INVALID_PAYMENT_STATUS` | 409 | 취소할 수 없는 결제 상태 |
+| `CONFLICT` | 409 | 같은 주문의 상태 변경 요청과 경합해 분산락 획득 실패 |
+| `REDIS_UNAVAILABLE` | 503 | 분산락 Redis 연결 또는 명령 실패 |
 
 ### 구매 확정
 
@@ -2166,6 +2174,8 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 | `ORDER_ACCESS_DENIED` | 403 | 주문 구매자가 아닌 사용자의 확정 시도 |
 | `ORDER_NOT_FOUND` | 404 | 주문 없음 |
 | `INVALID_ORDER_STATUS` | 409 | 구매 확정할 수 없는 주문 상태 |
+| `CONFLICT` | 409 | 같은 주문의 상태 변경 요청과 경합해 분산락 획득 실패 |
+| `REDIS_UNAVAILABLE` | 503 | 분산락 Redis 연결 또는 명령 실패 |
 
 ## 카테고리 API
 
@@ -2556,6 +2566,8 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 | `ORDER_NOT_FOUND` | 404 | 주문 없음 |
 | `REVIEW_NOT_ALLOWED` | 409 | 거래 완료 전 리뷰 작성 시도 |
 | `REVIEW_ALREADY_EXISTS` | 409 | 해당 주문 상대방에게 이미 작성한 리뷰 |
+| `CONFLICT` | 409 | 같은 주문의 상태 변경 요청과 경합해 분산락 획득 실패 |
+| `REDIS_UNAVAILABLE` | 503 | 분산락 Redis 연결 또는 명령 실패 |
 
 ### 유저 리뷰 수정
 
@@ -2811,6 +2823,8 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 | `REFUND_REQUEST_ACCESS_DENIED` | 403 | 주문 판매자가 아닌 사용자의 거절 시도 |
 | `REFUND_REQUEST_NOT_FOUND` | 404 | 환불 요청 없음 |
 | `INVALID_REFUND_REQUEST_STATUS` | 409 | 거절할 수 없는 환불 요청 상태 |
+| `CONFLICT` | 409 | 같은 주문의 상태 변경 요청과 경합해 분산락 획득 실패 |
+| `REDIS_UNAVAILABLE` | 503 | 분산락 Redis 연결 또는 명령 실패 |
 
 ### 환불요청
 
@@ -2861,6 +2875,8 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 | `ORDER_NOT_FOUND` | 404 | 주문 없음 |
 | `REFUND_REQUEST_ALREADY_EXISTS` | 409 | 해당 주문의 환불 요청이 이미 존재 |
 | `INVALID_ORDER_STATUS` | 409 | 환불 요청을 생성할 수 없는 주문 상태 |
+| `CONFLICT` | 409 | 같은 주문의 상태 변경 요청과 경합해 분산락 획득 실패 |
+| `REDIS_UNAVAILABLE` | 503 | 분산락 Redis 연결 또는 명령 실패 |
 
 ### 환불 요청 승인
 
@@ -2903,6 +2919,8 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 | `REFUND_REQUEST_ACCESS_DENIED` | 403 | 주문 판매자가 아닌 사용자의 승인 시도 |
 | `REFUND_REQUEST_NOT_FOUND` | 404 | 환불 요청 없음 |
 | `INVALID_REFUND_REQUEST_STATUS` | 409 | 승인할 수 없는 환불 요청 상태 |
+| `CONFLICT` | 409 | 같은 주문의 상태 변경 요청과 경합해 분산락 획득 실패 |
+| `REDIS_UNAVAILABLE` | 503 | 분산락 Redis 연결 또는 명령 실패 |
 
 ### 분쟁 종료
 
@@ -2969,3 +2987,5 @@ Idempotency-Key: 9b2e7c1a-3f4d-4a6b-8e21-0c5f7a9d1234
 | `REFUND_REQUEST_ACCESS_DENIED` | 403 | 분쟁 종료 권한 없음 |
 | `REFUND_REQUEST_NOT_FOUND` | 404 | 환불 요청 없음 |
 | `INVALID_REFUND_REQUEST_STATUS` | 409 | 종료할 수 없는 환불 요청 상태 |
+| `CONFLICT` | 409 | 같은 주문의 상태 변경 요청과 경합해 분산락 획득 실패 |
+| `REDIS_UNAVAILABLE` | 503 | 분산락 Redis 연결 또는 명령 실패 |
