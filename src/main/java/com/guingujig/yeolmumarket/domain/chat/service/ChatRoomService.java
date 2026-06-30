@@ -44,6 +44,7 @@ public class ChatRoomService {
   private final UserRepository userRepository;
   private final ChatRoomAuthorizationService chatRoomAuthorizationService;
   private final ChatMessagePersistenceService chatMessagePersistenceService;
+  private final ChatMessageSaveFailureNotifier chatMessageSaveFailureNotifier;
 
   /**
    * 구매자와 상품 판매자 사이의 채팅방을 생성하거나 기존 방을 반환한다.
@@ -111,9 +112,9 @@ public class ChatRoomService {
   }
 
   /**
-   * 채팅방 참여자의 메시지 전송 권한을 확인하고, DB 저장은 비동기로 위임한다.
+   * 채팅방 참여자의 메시지 전송 권한을 확인하고, 저장 전 접수 응답을 생성한다.
    *
-   * <p>저장 작업 등록에 성공하면 호출자가 저장 완료를 기다리지 않고 메시지를 즉시 발행한다.
+   * <p>호출자는 이 응답을 먼저 발행한 뒤 {@link #saveAcceptedMessageAsync(ChatMessageResponse)}로 저장을 위임한다.
    */
   @Transactional(readOnly = true)
   public ChatMessageResponse sendMessage(Long senderId, Long roomId, String content) {
@@ -128,19 +129,40 @@ public class ChatRoomService {
     User sender = chatRoom.getParticipant(senderId);
     LocalDateTime acceptedAt = LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
     String acceptedMessageId = UUID.randomUUID().toString();
+    return ChatMessageResponse.accepted(acceptedMessageId, roomId, sender, content, acceptedAt);
+  }
+
+  public void saveAcceptedMessageAsync(ChatMessageResponse response) {
     try {
       chatMessagePersistenceService.saveAsync(
-          senderId, roomId, content, acceptedAt, acceptedMessageId);
+          response.senderId(),
+          response.roomId(),
+          response.content(),
+          response.createdAt().toLocalDateTime(),
+          response.acceptedMessageId());
     } catch (TaskRejectedException exception) {
       log.warn(
           "비동기 채팅 메시지 저장 작업 등록에 실패했습니다. roomId={}, senderId={}, acceptedMessageId={}",
-          roomId,
-          senderId,
-          acceptedMessageId,
+          response.roomId(),
+          response.senderId(),
+          response.acceptedMessageId(),
           exception);
-      throw new BusinessException(ErrorCode.CHAT_MESSAGE_SAVE_FAILED);
+      notifySaveRegistrationFailure(response);
     }
-    return ChatMessageResponse.accepted(acceptedMessageId, roomId, sender, content, acceptedAt);
+  }
+
+  private void notifySaveRegistrationFailure(ChatMessageResponse response) {
+    try {
+      chatMessageSaveFailureNotifier.notifyFailure(
+          response.senderId(), response.roomId(), response.acceptedMessageId());
+    } catch (RuntimeException exception) {
+      log.warn(
+          "비동기 채팅 메시지 저장 작업 등록 실패 알림 전송에 실패했습니다. roomId={}, senderId={}, acceptedMessageId={}",
+          response.roomId(),
+          response.senderId(),
+          response.acceptedMessageId(),
+          exception);
+    }
   }
 
   private ChatRoom findOrCreateChatRoom(Product product, User buyer, User seller) {

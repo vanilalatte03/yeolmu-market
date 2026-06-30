@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -52,21 +54,25 @@ class ChatMessageWebSocketControllerTest {
     var principal =
         new TestingAuthenticationToken(
             new AuthenticatedUser(1L, "buyer@example.com", UserRole.USER), null);
-    when(chatRoomService.sendMessage(1L, 10L, "거래 가능할까요?"))
-        .thenReturn(
-            new ChatMessageResponse(
-                null,
-                "accepted-message-1",
-                10L,
-                1L,
-                "열무구매자",
-                "거래 가능할까요?",
-                OffsetDateTime.parse("2026-06-22T09:55:00Z")));
+    ChatMessageResponse response =
+        new ChatMessageResponse(
+            null,
+            "accepted-message-1",
+            10L,
+            1L,
+            "열무구매자",
+            "거래 가능할까요?",
+            OffsetDateTime.parse("2026-06-22T09:55:00Z"));
+    when(chatRoomService.sendMessage(1L, 10L, "거래 가능할까요?")).thenReturn(response);
 
     controller.sendMessage(10L, "{\"content\":\"거래 가능할까요?\"}", principal);
 
     ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
-    verify(messagingTemplate).convertAndSend(eq("/sub/chat-rooms/10"), payloadCaptor.capture());
+    InOrder inOrder = inOrder(messagingTemplate, chatRoomService);
+    inOrder
+        .verify(messagingTemplate)
+        .convertAndSend(eq("/sub/chat-rooms/10"), payloadCaptor.capture());
+    inOrder.verify(chatRoomService).saveAcceptedMessageAsync(response);
     assertThat(payloadCaptor.getValue())
         .contains("\"messageId\":null")
         .contains("\"acceptedMessageId\":\"accepted-message-1\"")
@@ -167,20 +173,6 @@ class ChatMessageWebSocketControllerTest {
     controller.sendMessage(10L, "{\"content\":\"거래 가능할까요?\"}", principal);
 
     verify(chatWebSocketErrorSender).sendToUser(principal, ErrorCode.CHAT_ROOM_ACCESS_DENIED, 10L);
-    verify(messagingTemplate, never()).convertAndSend(eq("/sub/chat-rooms/10"), anyString());
-  }
-
-  @Test
-  void 저장_작업_등록_실패는_user_error_queue로_전송하고_발행하지_않는다() {
-    var principal =
-        new TestingAuthenticationToken(
-            new AuthenticatedUser(1L, "buyer@example.com", UserRole.USER), null);
-    when(chatRoomService.sendMessage(1L, 10L, "거래 가능할까요?"))
-        .thenThrow(new BusinessException(ErrorCode.CHAT_MESSAGE_SAVE_FAILED));
-
-    controller.sendMessage(10L, "{\"content\":\"거래 가능할까요?\"}", principal);
-
-    verify(chatWebSocketErrorSender).sendToUser(principal, ErrorCode.CHAT_MESSAGE_SAVE_FAILED, 10L);
     verify(messagingTemplate, never()).convertAndSend(eq("/sub/chat-rooms/10"), anyString());
   }
 

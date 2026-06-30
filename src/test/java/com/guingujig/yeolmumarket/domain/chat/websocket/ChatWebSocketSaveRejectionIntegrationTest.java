@@ -113,7 +113,7 @@ class ChatWebSocketSaveRejectionIntegrationTest {
   }
 
   @Test
-  void 저장_작업_등록이_거절되면_두_구독자에게_메시지를_발행하지_않는다() throws Exception {
+  void 저장_작업_등록이_거절되면_접수_메시지_발행_후_실패를_알린다() throws Exception {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     ChatRoom chatRoom = saveChatRoom(seller, buyer);
@@ -139,11 +139,26 @@ class ChatWebSocketSaveRejectionIntegrationTest {
     buyerSession.send(
         "/pub/chat-rooms/" + chatRoom.getId() + "/message", "{\"content\":\"거래 가능할까요?\"}");
 
+    String buyerMessagePayload = pollNonProbePayload(buyerMessageHandler);
+    assertThat(buyerMessagePayload)
+        .contains("\"messageId\":null")
+        .contains("\"roomId\":" + chatRoom.getId())
+        .contains("\"senderId\":" + buyer.getId())
+        .contains("\"content\":\"거래 가능할까요?\"");
+    String acceptedMessageId = acceptedMessageIdFrom(buyerMessagePayload);
+
+    String sellerMessagePayload = pollNonProbePayload(sellerMessageHandler);
+    assertThat(sellerMessagePayload)
+        .contains("\"acceptedMessageId\":\"" + acceptedMessageId + "\"")
+        .contains("\"roomId\":" + chatRoom.getId())
+        .contains("\"senderId\":" + buyer.getId())
+        .contains("\"content\":\"거래 가능할까요?\"");
+
     String errorPayload = errorHandler.pollPayload();
-    assertThat(errorPayload).contains("\"code\":\"CHAT_MESSAGE_SAVE_FAILED\"");
-    assertThat(errorPayload).contains("\"roomId\":" + chatRoom.getId());
-    assertNoMessagePayload(buyerMessageHandler);
-    assertNoMessagePayload(sellerMessageHandler);
+    assertThat(errorPayload)
+        .contains("\"code\":\"CHAT_MESSAGE_SAVE_FAILED\"")
+        .contains("\"roomId\":" + chatRoom.getId())
+        .contains("\"acceptedMessageId\":\"" + acceptedMessageId + "\"");
     assertThat(chatMessageRepository.findAll()).isEmpty();
     assertThat(buyerSession.isConnected()).isTrue();
     assertThat(sellerSession.isConnected()).isTrue();
@@ -237,15 +252,25 @@ class ChatWebSocketSaveRejectionIntegrationTest {
     }
   }
 
-  private void assertNoMessagePayload(MessageFrameHandler handler) throws InterruptedException {
-    long deadline = System.nanoTime() + SUBSCRIPTION_PROBE_INTERVAL.toNanos();
+  private String pollNonProbePayload(MessageFrameHandler handler) throws InterruptedException {
+    long deadline = System.nanoTime() + TIMEOUT.toNanos();
     while (System.nanoTime() < deadline) {
       String payload = handler.pollPayload(Duration.ofNanos(deadline - System.nanoTime()));
-      if (payload == null) {
-        return;
+      if (payload != null && !payload.startsWith("__subscription_probe__:")) {
+        return payload;
       }
-      assertThat(payload).startsWith("__subscription_probe__:");
     }
+    return null;
+  }
+
+  private String acceptedMessageIdFrom(String payload) {
+    String prefix = "\"acceptedMessageId\":\"";
+    int start = payload.indexOf(prefix);
+    assertThat(start).as("acceptedMessageId should exist in accepted payload").isNotNegative();
+    int valueStart = start + prefix.length();
+    int valueEnd = payload.indexOf("\"", valueStart);
+    assertThat(valueEnd).as("acceptedMessageId should be a string value").isPositive();
+    return payload.substring(valueStart, valueEnd);
   }
 
   private void deleteAll() {

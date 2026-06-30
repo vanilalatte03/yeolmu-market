@@ -386,6 +386,7 @@ class ChatRoomServiceTest {
     Long roomId = chatRoomService.createChatRoom(buyer.getId(), product.getId()).roomId();
 
     var response = chatRoomService.sendMessage(buyer.getId(), roomId, "거래 가능할까요?");
+    chatRoomService.saveAcceptedMessageAsync(response);
 
     assertThat(response.messageId()).isNull();
     assertThat(response.acceptedMessageId()).isNotBlank();
