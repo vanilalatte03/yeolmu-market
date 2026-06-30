@@ -23,7 +23,6 @@ import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -103,11 +102,7 @@ public class PaymentService {
           order.getProduct().getId(), ProductStatus.RESERVED, ProductStatus.ON_SALE);
     }
 
-    try {
-      paymentRepository.saveAndFlush(payment);
-    } catch (DataIntegrityViolationException e) {
-      throw new BusinessException(ErrorCode.PAYMENT_ALREADY_EXISTS);
-    }
+    paymentRepository.save(payment);
     return new ProcessPaymentResult(PaymentResponse.from(payment), true);
   }
 

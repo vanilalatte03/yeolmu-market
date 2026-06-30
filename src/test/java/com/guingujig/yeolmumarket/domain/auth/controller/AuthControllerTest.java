@@ -20,6 +20,7 @@ import com.guingujig.yeolmumarket.domain.user.entity.UserRole;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.security.JwtRefreshClaims;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
+import jakarta.servlet.http.Cookie;
 import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -139,7 +141,7 @@ class AuthControllerTest {
   }
 
   @Test
-  void 로그인에_성공하면_JWT_access_token을_응답한다() throws Exception {
+  void 로그인에_성공하면_access_token은_응답_body로_refresh_token은_쿠키로_응답한다() throws Exception {
     User user =
         userRepository.save(
             new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
@@ -161,17 +163,18 @@ class AuthControllerTest {
             .andExpect(jsonPath("$.code").value("SUCCESS"))
             .andExpect(jsonPath("$.data.tokenType").value("Bearer"))
             .andExpect(jsonPath("$.data.accessToken", matchesPattern("[^.]+\\.[^.]+\\.[^.]+")))
-            .andExpect(jsonPath("$.data.refreshToken", matchesPattern("[^.]+\\.[^.]+\\.[^.]+")))
+            .andExpect(jsonPath("$.data.refreshToken").doesNotExist())
             .andExpect(jsonPath("$.data.expiresIn").value(3600))
-            .andExpect(jsonPath("$.data.refreshExpiresIn").value(1209600))
+            .andExpect(jsonPath("$.data.refreshExpiresIn").doesNotExist())
             .andExpect(jsonPath("$.data.user.userId").value(user.getId()))
             .andExpect(jsonPath("$.data.user.email").value("customer@example.com"))
             .andExpect(jsonPath("$.data.user.nickname").value("열무구매자"))
             .andExpect(jsonPath("$.data.user.role").value("USER"))
             .andReturn();
 
-    String responseBody = result.getResponse().getContentAsString();
-    String refreshToken = responseBody.replaceAll("(?s).*\"refreshToken\":\"([^\"]+)\".*", "$1");
+    String setCookie = result.getResponse().getHeader(HttpHeaders.SET_COOKIE);
+    assertRefreshTokenCookie(setCookie);
+    String refreshToken = extractRefreshTokenFromSetCookie(result);
     JwtRefreshClaims refreshClaims = jwtTokenProvider.parseRefreshToken(refreshToken);
     ArgumentCaptor<String> refreshJtiCaptor = ArgumentCaptor.forClass(String.class);
     verify(activeRefreshTokenRepository)
@@ -221,27 +224,20 @@ class AuthControllerTest {
 
     MvcResult result =
         mockMvc
-            .perform(
-                post("/api/auth/refresh")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(
-                        """
-                    {
-                      "refreshToken": "%s"
-                    }
-                    """
-                            .formatted(oldRefreshToken)))
+            .perform(post("/api/auth/refresh").cookie(new Cookie("refreshToken", oldRefreshToken)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.code").value("SUCCESS"))
             .andExpect(jsonPath("$.data.tokenType").value("Bearer"))
             .andExpect(jsonPath("$.data.accessToken", matchesPattern("[^.]+\\.[^.]+\\.[^.]+")))
-            .andExpect(jsonPath("$.data.refreshToken", matchesPattern("[^.]+\\.[^.]+\\.[^.]+")))
+            .andExpect(jsonPath("$.data.refreshToken").doesNotExist())
             .andExpect(jsonPath("$.data.expiresIn").value(3600))
-            .andExpect(jsonPath("$.data.refreshExpiresIn").value(1209600))
+            .andExpect(jsonPath("$.data.refreshExpiresIn").doesNotExist())
             .andReturn();
 
-    String newRefreshToken = extractRefreshToken(result);
+    String setCookie = result.getResponse().getHeader(HttpHeaders.SET_COOKIE);
+    assertRefreshTokenCookie(setCookie);
+    String newRefreshToken = extractRefreshTokenFromSetCookie(result);
     JwtRefreshClaims newRefreshClaims = jwtTokenProvider.parseRefreshToken(newRefreshToken);
     ArgumentCaptor<String> refreshJtiCaptor = ArgumentCaptor.forClass(String.class);
     verify(activeRefreshTokenRepository)
@@ -270,16 +266,7 @@ class AuthControllerTest {
         .thenReturn(false);
 
     mockMvc
-        .perform(
-            post("/api/auth/refresh")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-                    {
-                      "refreshToken": "%s"
-                    }
-                    """
-                        .formatted(oldRefreshToken)))
+        .perform(post("/api/auth/refresh").cookie(new Cookie("refreshToken", oldRefreshToken)))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("REVOKED_TOKEN"));
@@ -304,7 +291,7 @@ class AuthControllerTest {
                     """))
             .andExpect(status().isOk())
             .andReturn();
-    String firstLoginRefreshToken = extractRefreshToken(firstLoginResult);
+    String firstLoginRefreshToken = extractRefreshTokenFromSetCookie(firstLoginResult);
     reset(activeRefreshTokenRepository);
     MvcResult secondLoginResult =
         mockMvc
@@ -320,7 +307,7 @@ class AuthControllerTest {
                     """))
             .andExpect(status().isOk())
             .andReturn();
-    String secondLoginRefreshToken = extractRefreshToken(secondLoginResult);
+    String secondLoginRefreshToken = extractRefreshTokenFromSetCookie(secondLoginResult);
     assertThat(secondLoginRefreshToken).isNotEqualTo(firstLoginRefreshToken);
     JwtRefreshClaims firstLoginRefreshClaims =
         jwtTokenProvider.parseRefreshToken(firstLoginRefreshToken);
@@ -333,15 +320,7 @@ class AuthControllerTest {
 
     mockMvc
         .perform(
-            post("/api/auth/refresh")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-                    {
-                      "refreshToken": "%s"
-                    }
-                    """
-                        .formatted(firstLoginRefreshToken)))
+            post("/api/auth/refresh").cookie(new Cookie("refreshToken", firstLoginRefreshToken)))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("REVOKED_TOKEN"));
@@ -350,15 +329,16 @@ class AuthControllerTest {
   @Test
   void refresh_token이_누락되면_400으로_응답한다() throws Exception {
     mockMvc
-        .perform(
-            post("/api/auth/refresh")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-                    {
-                      "refreshToken": ""
-                    }
-                    """))
+        .perform(post("/api/auth/refresh"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void refresh_token_쿠키가_비어있으면_400으로_응답한다() throws Exception {
+    mockMvc
+        .perform(post("/api/auth/refresh").cookie(new Cookie("refreshToken", "")))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
@@ -367,15 +347,7 @@ class AuthControllerTest {
   @Test
   void 잘못된_refresh_token이면_401로_응답한다() throws Exception {
     mockMvc
-        .perform(
-            post("/api/auth/refresh")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-                    {
-                      "refreshToken": "invalid.jwt"
-                    }
-                    """))
+        .perform(post("/api/auth/refresh").cookie(new Cookie("refreshToken", "invalid.jwt")))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
@@ -443,8 +415,19 @@ class AuthControllerTest {
         .andExpect(jsonPath("$.errors[0]", containsString(": ")));
   }
 
-  private String extractRefreshToken(MvcResult result) throws java.io.UnsupportedEncodingException {
-    String responseBody = result.getResponse().getContentAsString();
-    return responseBody.replaceAll("(?s).*\"refreshToken\":\"([^\"]+)\".*", "$1");
+  private String extractRefreshTokenFromSetCookie(MvcResult result) {
+    String setCookie = result.getResponse().getHeader(HttpHeaders.SET_COOKIE);
+    assertThat(setCookie).isNotBlank();
+    return setCookie.replaceAll("(?s).*refreshToken=([^;]+).*", "$1");
+  }
+
+  private void assertRefreshTokenCookie(String setCookie) {
+    assertThat(setCookie)
+        .contains("refreshToken=")
+        .contains("HttpOnly")
+        .contains("SameSite=Lax")
+        .contains("Path=/api/auth/refresh")
+        .contains("Max-Age=1209600")
+        .doesNotContain("Secure");
   }
 }

@@ -19,7 +19,6 @@ import com.guingujig.yeolmumarket.global.response.PageResponse;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -86,12 +85,8 @@ public class CategoryService {
   public CreateCategoryResponse createCategory(CreateCategoryRequest request) {
     validateNameDoesNotExist(request.name());
 
-    try {
-      Category category = categoryRepository.saveAndFlush(Category.create(request.name()));
-      return CreateCategoryResponse.from(category);
-    } catch (DataIntegrityViolationException exception) {
-      throw new BusinessException(ErrorCode.CATEGORY_NAME_ALREADY_EXISTS);
-    }
+    Category category = categoryRepository.save(Category.create(request.name()));
+    return CreateCategoryResponse.from(category);
   }
 
   /**
@@ -105,12 +100,9 @@ public class CategoryService {
     Category category = getCategory(categoryId);
     validateNameDoesNotExistForOtherCategory(request.name(), categoryId);
 
-    try {
-      category.updateName(request.name());
-      categoryRepository.flush();
-    } catch (DataIntegrityViolationException exception) {
-      throw new BusinessException(ErrorCode.CATEGORY_NAME_ALREADY_EXISTS);
-    }
+    category.updateName(request.name());
+    // updatedAt 응답값을 감사 필드 기준으로 확정한다.
+    categoryRepository.flush();
     return UpdateCategoryResponse.from(category);
   }
 

@@ -18,7 +18,6 @@ import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -65,11 +64,7 @@ public class ReviewService {
         Review.create(
             order, participants.reviewer(), participants.reviewee(), score, normalizedContent);
 
-    try {
-      reviewRepository.saveAndFlush(review);
-    } catch (DataIntegrityViolationException exception) {
-      throw new BusinessException(ErrorCode.REVIEW_ALREADY_EXISTS);
-    }
+    reviewRepository.save(review);
 
     return ReviewResponse.from(review);
   }
@@ -133,6 +128,7 @@ public class ReviewService {
     validateReviewer(review, reviewerId);
 
     review.update(updateValues.score(), updateValues.content());
+    // updatedAt 응답값을 감사 필드 기준으로 확정한다.
     reviewRepository.flush();
     return UpdateReviewResponse.from(review);
   }
@@ -149,7 +145,6 @@ public class ReviewService {
     validateReviewer(review, reviewerId);
 
     reviewRepository.delete(review);
-    reviewRepository.flush();
     return DeleteReviewResponse.success();
   }
 

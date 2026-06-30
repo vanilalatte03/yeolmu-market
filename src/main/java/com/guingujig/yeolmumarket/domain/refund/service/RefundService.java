@@ -23,9 +23,7 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,8 +31,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class RefundService {
-
-  private static final String DUPLICATE_REFUND_REQUEST_CONSTRAINT = "uk_refund_request_order";
 
   private final OrderRepository orderRepository;
   private final RefundRequestRepository refundRequestRepository;
@@ -73,16 +69,7 @@ public class RefundService {
     RefundRequest refundRequest =
         RefundRequest.create(order, order.getBuyer(), normalizedReason, requestedAt);
 
-    try {
-      refundRequestRepository.saveAndFlush(refundRequest);
-    } catch (DataIntegrityViolationException e) {
-      if (isDuplicateRefundRequestConstraint(e)) {
-        throw new BusinessException(ErrorCode.REFUND_REQUEST_ALREADY_EXISTS);
-      }
-      throw e;
-    } catch (ObjectOptimisticLockingFailureException e) {
-      throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
-    }
+    refundRequestRepository.save(refundRequest);
 
     return CreateRefundRequestResponse.from(refundRequest);
   }
@@ -270,30 +257,6 @@ public class RefundService {
     if (!Objects.equals(refundRequest.getOrder().getSeller().getId(), sellerId)) {
       throw new BusinessException(ErrorCode.REFUND_REQUEST_ACCESS_DENIED);
     }
-  }
-
-  private boolean isDuplicateRefundRequestConstraint(Throwable throwable) {
-    Throwable current = throwable;
-    while (current != null) {
-      if (current instanceof ConstraintViolationException exception
-          && isDuplicateRefundRequestConstraintName(exception.getConstraintName())) {
-        return true;
-      }
-      current = current.getCause();
-    }
-    return false;
-  }
-
-  private boolean isDuplicateRefundRequestConstraintName(String constraintName) {
-    if (constraintName == null) {
-      return false;
-    }
-    String normalizedName = constraintName.replace("`", "").replace("\"", "");
-    int qualifierIndex = normalizedName.lastIndexOf('.');
-    if (qualifierIndex >= 0) {
-      normalizedName = normalizedName.substring(qualifierIndex + 1);
-    }
-    return DUPLICATE_REFUND_REQUEST_CONSTRAINT.equalsIgnoreCase(normalizedName);
   }
 
   private void publishProductStatusChanged(Long productId, ProductStatus... affectedStatuses) {
