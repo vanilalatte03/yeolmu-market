@@ -13,6 +13,7 @@ import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.product.service.ProductThumbnailQueryService;
+import com.guingujig.yeolmumarket.global.config.YeolmuProperties;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
@@ -32,13 +33,13 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class CategoryService {
 
-  private static final int MAX_PAGE_SIZE = 100;
   private static final String LATEST_SORT = "latest";
   private static final Sort DEFAULT_SORT = Sort.by(Sort.Direction.ASC, "id");
 
   private final CategoryRepository categoryRepository;
   private final ProductRepository productRepository;
   private final ProductThumbnailQueryService productThumbnailQueryService;
+  private final YeolmuProperties yeolmuProperties;
 
   /** 상품 등록과 탐색에 사용할 전체 카테고리 목록을 ID 오름차순으로 조회한다. */
   @Transactional(readOnly = true)
@@ -170,7 +171,7 @@ public class CategoryService {
   }
 
   private void validatePagination(int page, int size) {
-    if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
+    if (page < 0 || size < 1 || size > yeolmuProperties.pagination().maxPageSize()) {
       throw new BusinessException(ErrorCode.INVALID_PAGINATION);
     }
   }

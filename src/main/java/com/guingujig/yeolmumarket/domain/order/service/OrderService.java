@@ -17,6 +17,7 @@ import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEve
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.global.config.YeolmuProperties;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.lock.DistributedLockExecutor;
@@ -36,14 +37,13 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class OrderService {
 
-  private static final int MAX_PAGE_SIZE = 100;
-
   private final OrderRepository orderRepository;
   private final ProductRepository productRepository;
   private final UserRepository userRepository;
   private final ApplicationEventPublisher eventPublisher;
   private final DistributedLockExecutor distributedLockExecutor;
   private final OrderLockedCommandService orderLockedCommandService;
+  private final YeolmuProperties yeolmuProperties;
 
   /**
    * 로그인한 구매자가 판매 중인 상품을 주문한다.
@@ -186,7 +186,7 @@ public class OrderService {
   }
 
   private void validatePagination(int page, int size) {
-    if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
+    if (page < 0 || size < 1 || size > yeolmuProperties.pagination().maxPageSize()) {
       throw new BusinessException(ErrorCode.INVALID_PAGINATION);
     }
   }

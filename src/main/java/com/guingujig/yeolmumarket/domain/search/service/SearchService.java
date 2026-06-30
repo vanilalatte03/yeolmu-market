@@ -6,6 +6,7 @@ import com.guingujig.yeolmumarket.domain.search.dto.SearchProductResponse;
 import com.guingujig.yeolmumarket.domain.user.service.UserNicknameQueryService;
 import com.guingujig.yeolmumarket.domain.wish.dto.ProductWishSummary;
 import com.guingujig.yeolmumarket.domain.wish.service.ProductWishSummaryService;
+import com.guingujig.yeolmumarket.global.config.YeolmuProperties;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +30,7 @@ public class SearchService {
   private final PopularKeywordService popularKeywordService;
   private final UserNicknameQueryService userNicknameQueryService;
   private final ProductWishSummaryService productWishSummaryService;
+  private final YeolmuProperties yeolmuProperties;
 
   /**
    * 공개 상품을 키워드, 가격 범위, 상품 상태 조건으로 검색한다.
@@ -43,7 +45,8 @@ public class SearchService {
   @Transactional(readOnly = true)
   public PageResponse<SearchProductResponse> searchProducts(
       SearchProductRequest request, Long authenticatedUserId) {
-    SearchProductCondition condition = SearchProductCondition.from(request);
+    SearchProductCondition condition =
+        SearchProductCondition.from(request, yeolmuProperties.pagination().maxPageSize());
     recordSearchKeywordSafely(request.keyword());
     return assembleSearchResponse(
         searchProductQueryService.searchProductIds(condition),
@@ -64,7 +67,8 @@ public class SearchService {
   @Transactional(readOnly = true)
   public PageResponse<SearchProductResponse> searchProductsV2(
       SearchProductRequest request, Long authenticatedUserId) {
-    SearchProductCondition condition = SearchProductCondition.from(request);
+    SearchProductCondition condition =
+        SearchProductCondition.from(request, yeolmuProperties.pagination().maxPageSize());
     recordSearchKeywordSafely(request.keyword());
     SearchProductCacheKey cacheKey =
         new SearchProductCacheKey(

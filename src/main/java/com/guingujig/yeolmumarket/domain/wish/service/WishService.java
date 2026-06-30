@@ -10,6 +10,7 @@ import com.guingujig.yeolmumarket.domain.wish.dto.WishListItemResponse;
 import com.guingujig.yeolmumarket.domain.wish.dto.WishResponse;
 import com.guingujig.yeolmumarket.domain.wish.entity.Wish;
 import com.guingujig.yeolmumarket.domain.wish.repository.WishRepository;
+import com.guingujig.yeolmumarket.global.config.YeolmuProperties;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
@@ -26,12 +27,11 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class WishService {
 
-  private static final int MAX_PAGE_SIZE = 100;
-
   private final WishRepository wishRepository;
   private final ProductRepository productRepository;
   private final UserRepository userRepository;
   private final ProductThumbnailQueryService productThumbnailQueryService;
+  private final YeolmuProperties yeolmuProperties;
 
   @Transactional
   public WishResponse createWish(Long userId, Long productId) {
@@ -90,7 +90,7 @@ public class WishService {
   }
 
   private void validatePagination(int page, int size) {
-    if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
+    if (page < 0 || size < 1 || size > yeolmuProperties.pagination().maxPageSize()) {
       throw new BusinessException(ErrorCode.INVALID_PAGINATION);
     }
   }
