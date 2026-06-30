@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -121,6 +122,21 @@ class SecurityConfigTest {
     mockMvc
         .perform(get("/uploads/products/1/security-public-image.png"))
         .andExpect(status().isOk());
+  }
+
+  @Test
+  void 정적_프론트_리소스는_인증_없이_조회할_수_있다() throws Exception {
+    mockMvc.perform(get("/")).andExpect(status().isOk());
+
+    mockMvc
+        .perform(get("/index.html"))
+        .andExpect(status().isOk())
+        .andExpect(content().string(containsString("/app.js")));
+    mockMvc.perform(get("/styles.css")).andExpect(status().isOk());
+    mockMvc.perform(get("/app.js")).andExpect(status().isOk());
+    mockMvc.perform(get("/api.js")).andExpect(status().isOk());
+    mockMvc.perform(get("/stomp-client.js")).andExpect(status().isOk());
+    mockMvc.perform(get("/assets/radish.svg")).andExpect(status().isOk());
   }
 
   @Test
