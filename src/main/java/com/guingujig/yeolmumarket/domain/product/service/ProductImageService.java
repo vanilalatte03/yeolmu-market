@@ -109,12 +109,6 @@ public class ProductImageService {
         .orElseThrow(() -> new BusinessException(ErrorCode.IMAGE_NOT_FOUND));
   }
 
-  private void validateOwner(Product product, Long sellerId) {
-    if (!Objects.equals(product.getSeller().getId(), sellerId)) {
-      throw new BusinessException(ErrorCode.PRODUCT_ACCESS_DENIED);
-    }
-  }
-
   private void validateImagesPresent(List<MultipartFile> images) {
     if (images == null || images.isEmpty()) {
       throw new BusinessException(ErrorCode.VALIDATION_FAILED, "업로드할 이미지는 하나 이상이어야 합니다.");
