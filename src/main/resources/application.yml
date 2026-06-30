@@ -40,6 +40,12 @@ auth:
     secure: ${AUTH_REFRESH_TOKEN_COOKIE_SECURE:false}
 
 yeolmu:
+  async:
+    chat-message:
+      core-pool-size: 2
+      max-pool-size: 8
+      queue-capacity: 1000
+      await-termination-seconds: 10
   lock:
     wait-time: 500ms
     lease-time: 10s

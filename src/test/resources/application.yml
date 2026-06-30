@@ -39,6 +39,12 @@ auth:
     secure: false
 
 yeolmu:
+  async:
+    chat-message:
+      core-pool-size: 2
+      max-pool-size: 8
+      queue-capacity: 1000
+      await-termination-seconds: 10
   lock:
     wait-time: 10ms
     lease-time: 2s

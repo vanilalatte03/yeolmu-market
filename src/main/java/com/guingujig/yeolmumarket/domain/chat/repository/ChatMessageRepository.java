@@ -36,8 +36,20 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
       select message
       from ChatMessage message
       where message.chatRoom = :chatRoom
-      and (:beforeMessageId is null or message.id < :beforeMessageId)
-      order by message.id desc
+      and (
+        :beforeMessageId is null
+        or exists (
+          select cursorMessage.id
+          from ChatMessage cursorMessage
+          where cursorMessage.chatRoom = :chatRoom
+            and cursorMessage.id = :beforeMessageId
+            and (
+              message.createdAt < cursorMessage.createdAt
+              or (message.createdAt = cursorMessage.createdAt and message.id < cursorMessage.id)
+            )
+        )
+      )
+      order by message.createdAt desc, message.id desc
       """)
   List<ChatMessage> findPreviousMessages(
       @Param("chatRoom") ChatRoom chatRoom,
