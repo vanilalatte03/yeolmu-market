@@ -1,7 +1,6 @@
 package com.guingujig.yeolmumarket.domain.user.service;
 
 import com.guingujig.yeolmumarket.domain.review.service.ReviewRatingQueryService;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.domain.user.dto.GetUserResponse;
 import com.guingujig.yeolmumarket.domain.user.dto.UpdateUserRequest;
 import com.guingujig.yeolmumarket.domain.user.dto.UpdateUserResponse;
@@ -9,9 +8,7 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,7 +20,6 @@ public class UserService {
 
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
-  private final ApplicationEventPublisher eventPublisher;
   private final ReviewRatingQueryService reviewRatingQueryService;
 
   /**
@@ -55,9 +51,6 @@ public class UserService {
             .findById(userId)
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-    boolean nicknameChanged =
-        StringUtils.hasText(request.nickname())
-            && !Objects.equals(user.getNickname(), request.nickname());
     if (StringUtils.hasText(request.nickname())) {
       user.updateNickname(request.nickname());
     }
@@ -67,9 +60,6 @@ public class UserService {
     }
 
     userRepository.flush();
-    if (nicknameChanged) {
-      eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
-    }
     return UpdateUserResponse.from(user);
   }
 
