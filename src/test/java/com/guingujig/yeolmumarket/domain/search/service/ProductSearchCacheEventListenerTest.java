@@ -47,4 +47,20 @@ class ProductSearchCacheEventListenerTest {
 
     verify(cache).evict(1L);
   }
+
+  @Test
+  void 상품_표시_캐시_무효화_RuntimeException도_예외를_전파하지_않는다() {
+    SearchIndexVersionProvider searchIndexVersionProvider = mock(SearchIndexVersionProvider.class);
+    CacheManager cacheManager = mock(CacheManager.class);
+    Cache cache = mock(Cache.class);
+    ProductSearchCacheEventListener listener =
+        new ProductSearchCacheEventListener(searchIndexVersionProvider, cacheManager);
+    when(cacheManager.getCache(SearchCacheNames.PRODUCT_DISPLAY_V2)).thenReturn(cache);
+    doThrow(new IllegalStateException("serialization failure")).when(cache).evict(1L);
+
+    assertThatCode(() -> listener.evictProductDisplay(new ProductDisplayChangedEvent(1L)))
+        .doesNotThrowAnyException();
+
+    verify(cache).evict(1L);
+  }
 }
