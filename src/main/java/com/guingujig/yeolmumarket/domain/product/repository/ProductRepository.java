@@ -2,11 +2,13 @@ package com.guingujig.yeolmumarket.domain.product.repository;
 
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -16,6 +18,11 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
   @EntityGraph(attributePaths = "seller")
   Optional<Product> findWithSellerById(Long id);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @EntityGraph(attributePaths = "seller")
+  @Query("SELECT p FROM Product p WHERE p.id = :id")
+  Optional<Product> findWithSellerByIdForUpdate(@Param("id") Long id);
 
   @EntityGraph(attributePaths = "seller")
   Page<Product> findByHiddenFalseAndDeletedAtIsNullAndStatus(

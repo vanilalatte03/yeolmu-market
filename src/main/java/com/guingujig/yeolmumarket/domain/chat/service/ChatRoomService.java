@@ -21,7 +21,6 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -42,11 +41,9 @@ public class ChatRoomService {
   /**
    * 구매자와 상품 판매자 사이의 채팅방을 생성하거나 기존 방을 반환한다.
    *
-   * <p>동시 요청으로 유니크 제약 충돌이 발생하면, 이미 생성된 채팅방을 다시 조회해 같은 결과로 수렴시킨다.
-   *
-   * <p>메서드 전체에 트랜잭션을 두지 않는다. 충돌 후 재조회를 새 트랜잭션(새 스냅샷)으로 수행해야 동시 커밋된 행을 확실히 보기 때문이다. 한 트랜잭션으로 묶으면
-   * INSERT 실패가 트랜잭션을 rollback-only로 만들고, MySQL 기본 격리수준(REPEATABLE READ)의 스냅샷 탓에 재조회가 빈 결과를 볼 수 있다.
+   * <p>상품 row lock으로 같은 상품의 채팅방 생성 요청을 직렬화해, 기존 방 조회와 신규 생성의 책임을 명확히 나눈다.
    */
+  @Transactional
   public CreateChatRoomResponse createChatRoom(Long buyerId, Long productId) {
     User buyer =
         userRepository
@@ -54,7 +51,7 @@ public class ChatRoomService {
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
     Product product =
         productRepository
-            .findWithSellerById(productId)
+            .findWithSellerByIdForUpdate(productId)
             .filter(this::isCreatableChatProduct)
             .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
     User seller = product.getSeller();
@@ -124,8 +121,7 @@ public class ChatRoomService {
     chatRoomAuthorizationService.validateParticipant(chatRoom, senderId);
 
     User sender = resolveParticipant(chatRoom, senderId);
-    ChatMessage message =
-        chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, sender, content));
+    ChatMessage message = chatMessageRepository.save(ChatMessage.create(chatRoom, sender, content));
     chatRoom.updateLastMessageAt(message.getCreatedAt());
     return ChatMessageResponse.from(message);
   }
@@ -133,17 +129,7 @@ public class ChatRoomService {
   private ChatRoom findOrCreateChatRoom(Product product, User buyer, User seller) {
     return chatRoomRepository
         .findByProductAndBuyerAndSeller(product, buyer, seller)
-        .orElseGet(() -> saveOrFindExisting(product, buyer, seller));
-  }
-
-  private ChatRoom saveOrFindExisting(Product product, User buyer, User seller) {
-    try {
-      return chatRoomRepository.saveAndFlush(ChatRoom.create(product, buyer, seller));
-    } catch (DataIntegrityViolationException exception) {
-      return chatRoomRepository
-          .findByProductAndBuyerAndSeller(product, buyer, seller)
-          .orElseThrow(() -> exception);
-    }
+        .orElseGet(() -> chatRoomRepository.save(ChatRoom.create(product, buyer, seller)));
   }
 
   private boolean isCreatableChatProduct(Product product) {

@@ -5,12 +5,16 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Path;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.transaction.TransactionSystemException;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -34,6 +38,15 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 public class GlobalExceptionHandler {
 
   private static final Set<String> PAGINATION_PARAMETER_NAMES = Set.of("page", "size");
+  private static final Map<String, ErrorCode> UNIQUE_CONSTRAINT_ERROR_CODES =
+      Map.of(
+          "uk_category_name", ErrorCode.CATEGORY_NAME_ALREADY_EXISTS,
+          "uk_payment_order", ErrorCode.PAYMENT_ALREADY_EXISTS,
+          "uk_payment_idempotency_key", ErrorCode.PAYMENT_ALREADY_EXISTS,
+          "uk_refund_request_order", ErrorCode.REFUND_REQUEST_ALREADY_EXISTS,
+          "uk_review_order_reviewer", ErrorCode.REVIEW_ALREADY_EXISTS,
+          "uk_wish_user_product", ErrorCode.WISH_ALREADY_EXISTS,
+          "uk_users_email", ErrorCode.EMAIL_ALREADY_EXISTS);
   private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
   @ExceptionHandler(BusinessException.class)
@@ -49,6 +62,18 @@ public class GlobalExceptionHandler {
     ErrorCode errorCode = ErrorCode.CONFLICT;
     return ResponseEntity.status(errorCode.getHttpStatus())
         .body(ApiResponse.failure(errorCode.name(), errorCode.getMessage()));
+  }
+
+  @ExceptionHandler({DataIntegrityViolationException.class, TransactionSystemException.class})
+  public ResponseEntity<ApiResponse<Void>> handleDataIntegrityException(Exception exception) {
+    ErrorCode errorCode = resolveDataIntegrityErrorCode(exception);
+    if (errorCode != null) {
+      return ResponseEntity.status(errorCode.getHttpStatus())
+          .body(ApiResponse.failure(errorCode.name(), errorCode.getMessage()));
+    }
+
+    log.error("처리되지 않은 DB 무결성 예외가 발생했습니다.", exception);
+    return internalServerErrorResponse();
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -139,9 +164,7 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(Exception.class)
   public ResponseEntity<ApiResponse<Void>> handleException(Exception exception) {
     log.error("처리되지 않은 예외가 발생했습니다.", exception);
-    ErrorCode errorCode = ErrorCode.INTERNAL_SERVER_ERROR;
-    return ResponseEntity.status(errorCode.getHttpStatus())
-        .body(ApiResponse.failure(errorCode.name(), errorCode.getMessage()));
+    return internalServerErrorResponse();
   }
 
   private List<String> extractValidationErrors(MethodArgumentNotValidException exception) {
@@ -174,6 +197,71 @@ public class GlobalExceptionHandler {
     }
 
     return ErrorCode.VALIDATION_FAILED;
+  }
+
+  private ErrorCode resolveDataIntegrityErrorCode(Throwable throwable) {
+    String constraintName = findHibernateConstraintName(throwable);
+    if (constraintName != null) {
+      ErrorCode errorCode =
+          UNIQUE_CONSTRAINT_ERROR_CODES.get(normalizeConstraintName(constraintName));
+      if (errorCode != null) {
+        return errorCode;
+      }
+    }
+    return resolveConstraintFromMessage(throwable);
+  }
+
+  private String findHibernateConstraintName(Throwable throwable) {
+    Throwable current = throwable;
+    while (current != null) {
+      if (current instanceof org.hibernate.exception.ConstraintViolationException exception
+          && exception.getConstraintName() != null) {
+        return exception.getConstraintName();
+      }
+      current = current.getCause();
+    }
+    return null;
+  }
+
+  private ErrorCode resolveConstraintFromMessage(Throwable throwable) {
+    Throwable current = throwable;
+    while (current != null) {
+      String message = current.getMessage();
+      if (message != null) {
+        String normalizedMessage = normalizeConstraintText(message);
+        for (Map.Entry<String, ErrorCode> entry : UNIQUE_CONSTRAINT_ERROR_CODES.entrySet()) {
+          if (normalizedMessage.contains(entry.getKey())) {
+            return entry.getValue();
+          }
+        }
+      }
+      current = current.getCause();
+    }
+    return null;
+  }
+
+  private String normalizeConstraintName(String constraintName) {
+    String normalizedName = normalizeConstraintText(constraintName).trim();
+    int qualifierIndex = normalizedName.lastIndexOf('.');
+    if (qualifierIndex >= 0) {
+      normalizedName = normalizedName.substring(qualifierIndex + 1);
+    }
+    return normalizedName;
+  }
+
+  private String normalizeConstraintText(String text) {
+    return text.replace("`", "")
+        .replace("\"", "")
+        .replace("'", "")
+        .replace("[", "")
+        .replace("]", "")
+        .toLowerCase(Locale.ROOT);
+  }
+
+  private ResponseEntity<ApiResponse<Void>> internalServerErrorResponse() {
+    ErrorCode errorCode = ErrorCode.INTERNAL_SERVER_ERROR;
+    return ResponseEntity.status(errorCode.getHttpStatus())
+        .body(ApiResponse.failure(errorCode.name(), errorCode.getMessage()));
   }
 
   private String formatConstraintViolation(ConstraintViolation<?> violation) {
