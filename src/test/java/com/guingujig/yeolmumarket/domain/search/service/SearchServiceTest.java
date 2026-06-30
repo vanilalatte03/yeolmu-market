@@ -41,6 +41,7 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -548,6 +549,24 @@ class SearchServiceTest {
   }
 
   @Test
+  void 가격_변경_후_v2_검색_캐시가_무효화되어_정렬_이동이_반영된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product cheapProduct = saveProduct(seller, "저가 상품", "설명", 10000);
+    Product expensiveProduct = saveProduct(seller, "고가 상품", "설명", 50000);
+    SearchProductRequest request =
+        new SearchProductRequest(null, null, null, ProductStatus.ON_SALE, 0, 10, "priceAsc");
+
+    searchService.searchProductsV2(request);
+    productService.updateProduct(
+        seller.getId(), expensiveProduct.getId(), new UpdateProductRequest(null, null, 5000, null));
+    PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
+
+    assertThat(response.content())
+        .extracting(SearchProductResponse::productId)
+        .containsExactly(expensiveProduct.getId(), cheapProduct.getId());
+  }
+
+  @Test
   void 상품_삭제_후_v2_검색_캐시가_무효화되어_검색에서_제외된다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     Product product = saveProduct(seller, "삭제 대상 상품", "설명", 10000);
@@ -558,6 +577,25 @@ class SearchServiceTest {
     PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
 
     assertThat(response.content()).isEmpty();
+  }
+
+  @Test
+  void 상품_숨김_후_v2_검색_캐시가_무효화되어_뒤_페이지_상품이_당겨진다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product secondPageProduct = saveProduct(seller, "뒤 페이지 상품", "설명", 10000);
+    Product firstPageProduct = saveProduct(seller, "첫 페이지 상품", "설명", 20000);
+    SearchProductRequest request =
+        new SearchProductRequest(null, null, null, ProductStatus.ON_SALE, 0, 1, "latest");
+
+    searchService.searchProductsV2(request);
+    productService.updateProductHiddenStatus(
+        firstPageProduct.getId(), new UpdateProductHiddenStatusRequest(true));
+    PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
+
+    assertThat(response.content())
+        .extracting(SearchProductResponse::productId)
+        .containsExactly(secondPageProduct.getId());
+    assertThat(response.totalElements()).isEqualTo(1);
   }
 
   @Test
@@ -612,6 +650,21 @@ class SearchServiceTest {
   }
 
   @Test
+  void 닉네임_변경_후_v2_캐시_hit_상황에서도_최신_닉네임을_조립한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    saveProduct(seller, "아이패드 미니 6세대", "설명", 430000);
+    SearchProductRequest request = request("아이패드", null, null, ProductStatus.ON_SALE);
+
+    PageResponse<SearchProductResponse> beforeResponse = searchService.searchProductsV2(request);
+    seller.updateNickname("새판매자");
+    userRepository.saveAndFlush(seller);
+    PageResponse<SearchProductResponse> afterResponse = searchService.searchProductsV2(request);
+
+    assertThat(beforeResponse.content().getFirst().sellerNickname()).isEqualTo("열무판매자");
+    assertThat(afterResponse.content().getFirst().sellerNickname()).isEqualTo("새판매자");
+  }
+
+  @Test
   void Redis_기반_CacheManager가_검색_캐시_TTL과_serializer를_적용한다() {
     RedisCacheManager redisCacheManager =
         (RedisCacheManager)
@@ -620,43 +673,51 @@ class SearchServiceTest {
                     org.mockito.Mockito.mock(RedisConnectionFactory.class), searchCacheProperties);
     redisCacheManager.afterPropertiesSet();
     assertThat(redisCacheManager.getCacheNames())
-        .containsExactly(SearchCacheNames.PRODUCT_SEARCH_V2);
+        .containsExactlyInAnyOrder(
+            SearchCacheNames.PRODUCT_SEARCH_LIST_V2, SearchCacheNames.PRODUCT_DISPLAY_V2);
 
-    RedisCache cache = (RedisCache) redisCacheManager.getCache(SearchCacheNames.PRODUCT_SEARCH_V2);
-    assertThat(cache).isNotNull();
-    RedisCacheConfiguration configuration = cache.getCacheConfiguration();
+    RedisCache listCache =
+        (RedisCache) redisCacheManager.getCache(SearchCacheNames.PRODUCT_SEARCH_LIST_V2);
+    RedisCache displayCache =
+        (RedisCache) redisCacheManager.getCache(SearchCacheNames.PRODUCT_DISPLAY_V2);
+    assertThat(listCache).isNotNull();
+    assertThat(displayCache).isNotNull();
+    RedisCacheConfiguration configuration = listCache.getCacheConfiguration();
+    RedisCacheConfiguration displayConfiguration = displayCache.getCacheConfiguration();
 
     assertThat(searchCacheProperties.productsV2().ttl()).isEqualTo(Duration.ofMinutes(5));
     assertThat(configuration.getTtlFunction().getTimeToLive("key", "value"))
         .isEqualTo(Duration.ofMinutes(5));
-    assertThat(configuration.getKeyPrefixFor(SearchCacheNames.PRODUCT_SEARCH_V2))
+    assertThat(displayConfiguration.getTtlFunction().getTimeToLive("key", "value"))
+        .isEqualTo(Duration.ofMinutes(5));
+    assertThat(configuration.getKeyPrefixFor(SearchCacheNames.PRODUCT_SEARCH_LIST_V2))
         .isEqualTo("cache:search:products:v2::");
+    assertThat(displayConfiguration.getKeyPrefixFor(SearchCacheNames.PRODUCT_DISPLAY_V2))
+        .isEqualTo("cache:search:products:v2:display::");
 
     byte[] keyBytes = toBytes(configuration.getKeySerializationPair().write("search-key"));
     assertThat(new String(keyBytes, StandardCharsets.UTF_8)).isEqualTo("search-key");
 
-    PageResponse<SearchProductResponse> pageResponse =
-        new PageResponse<>(
-            List.of(
-                new SearchProductResponse(
-                    1L,
-                    "아이패드",
-                    430000,
-                    ProductStatus.ON_SALE,
-                    null,
-                    "열무판매자",
-                    0,
-                    false,
-                    OffsetDateTime.of(2026, 6, 26, 0, 0, 0, 0, ZoneOffset.UTC))),
-            0,
-            10,
-            1,
-            1,
-            false);
+    PageResponse<Long> pageResponse = new PageResponse<>(List.of(1L), 0, 10, 1, 1, false);
     ByteBuffer valueBuffer = configuration.getValueSerializationPair().write(pageResponse);
     Object deserialized = configuration.getValueSerializationPair().read(valueBuffer);
 
     assertThat(deserialized).isEqualTo(pageResponse);
+
+    SearchProductDisplay display =
+        new SearchProductDisplay(
+            1L,
+            "아이패드",
+            430000,
+            ProductStatus.ON_SALE,
+            null,
+            2L,
+            OffsetDateTime.of(2026, 6, 26, 0, 0, 0, 0, ZoneOffset.UTC));
+    ByteBuffer displayValueBuffer = displayConfiguration.getValueSerializationPair().write(display);
+    Object displayDeserialized =
+        displayConfiguration.getValueSerializationPair().read(displayValueBuffer);
+
+    assertThat(displayDeserialized).isEqualTo(display);
   }
 
   @TestConfiguration
@@ -665,7 +726,29 @@ class SearchServiceTest {
     @Bean
     @Primary
     CacheManager testCacheManager() {
-      return new ConcurrentMapCacheManager(SearchCacheNames.PRODUCT_SEARCH_V2);
+      return new ConcurrentMapCacheManager(
+          SearchCacheNames.PRODUCT_SEARCH_LIST_V2, SearchCacheNames.PRODUCT_DISPLAY_V2);
+    }
+
+    @Bean
+    @Primary
+    SearchIndexVersionProvider searchIndexVersionProvider() {
+      return new InMemorySearchIndexVersionProvider();
+    }
+  }
+
+  static class InMemorySearchIndexVersionProvider implements SearchIndexVersionProvider {
+
+    private final AtomicLong version = new AtomicLong();
+
+    @Override
+    public String currentVersionKey() {
+      return Long.toString(version.get());
+    }
+
+    @Override
+    public void increaseVersion() {
+      version.incrementAndGet();
     }
   }
 
@@ -684,10 +767,12 @@ class SearchServiceTest {
   }
 
   private void clearSearchCache() {
-    org.springframework.cache.Cache cache =
-        cacheManager.getCache(SearchCacheNames.PRODUCT_SEARCH_V2);
-    if (cache != null) {
-      cache.invalidate();
+    for (String cacheName :
+        List.of(SearchCacheNames.PRODUCT_SEARCH_LIST_V2, SearchCacheNames.PRODUCT_DISPLAY_V2)) {
+      org.springframework.cache.Cache cache = cacheManager.getCache(cacheName);
+      if (cache != null) {
+        cache.invalidate();
+      }
     }
   }
 
