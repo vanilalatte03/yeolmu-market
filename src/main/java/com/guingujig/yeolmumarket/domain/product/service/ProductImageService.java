@@ -4,6 +4,7 @@ import com.guingujig.yeolmumarket.domain.product.dto.DeleteProductImageResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UploadProductImagesResponse;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductImage;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductImageRepository;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
@@ -72,7 +73,6 @@ public class ProductImageService {
     }
 
     List<ProductImage> savedImages = productImageRepository.saveAll(productImages);
-    productImageRepository.flush();
     publishProductSearchCacheEviction();
     return UploadProductImagesResponse.from(savedImages);
   }
@@ -85,24 +85,11 @@ public class ProductImageService {
    */
   @Transactional
   public DeleteProductImageResponse deleteImage(Long sellerId, Long productId, Long imageId) {
-    Product product = getExistingProduct(productId);
-    validateOwner(product, sellerId);
-
-    ProductImage image =
-        productImageRepository
-            .findByIdAndProductId(imageId, productId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.IMAGE_NOT_FOUND));
+    ProductImage image = getExistingProductImage(productId, imageId);
+    validateOwner(image.getProduct(), sellerId);
     String deletedImageUrl = image.getUrl();
-    boolean thumbnailDeleted = image.isThumbnail();
 
-    productImageRepository.delete(image);
-    productImageRepository.flush();
-    if (thumbnailDeleted) {
-      productImageRepository
-          .findFirstByProductIdOrderByCreatedAtAscIdAsc(productId)
-          .ifPresent(ProductImage::markAsThumbnail);
-      productImageRepository.flush();
-    }
+    productImageRepository.deleteAndPromoteNextThumbnail(image);
 
     registerAfterCommitDelete(deletedImageUrl);
     publishProductSearchCacheEviction();
@@ -114,6 +101,20 @@ public class ProductImageService {
         .findWithSellerById(productId)
         .filter(product -> !product.isDeleted())
         .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+  }
+
+  private ProductImage getExistingProductImage(Long productId, Long imageId) {
+    return productImageRepository
+        .findExistingImageWithProductAndSeller(imageId, productId, ProductStatus.DELETED)
+        .orElseGet(
+            () -> {
+              validateProductExists(productId);
+              throw new BusinessException(ErrorCode.IMAGE_NOT_FOUND);
+            });
+  }
+
+  private void validateProductExists(Long productId) {
+    getExistingProduct(productId);
   }
 
   private void validateOwner(Product product, Long sellerId) {
