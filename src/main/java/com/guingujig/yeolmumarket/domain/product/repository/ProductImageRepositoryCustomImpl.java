@@ -23,22 +23,18 @@ public class ProductImageRepositoryCustomImpl implements ProductImageRepositoryC
   private void promoteFirstImageAsThumbnail(Long productId) {
     entityManager.flush();
     entityManager
-        .createNativeQuery(
+        .createQuery(
             """
-            update product_image
-            set is_thumbnail = true
-            where id = (
-              select id
-              from (
-                select candidate.id
-                from product_image candidate
-                where candidate.product_id = :productId
-                order by candidate.created_at asc, candidate.id asc
-                limit 1
-              ) next_image
-            )
-            """)
+            select image
+            from ProductImage image
+            where image.product.id = :productId
+            order by image.createdAt asc, image.id asc
+            """,
+            ProductImage.class)
         .setParameter("productId", productId)
-        .executeUpdate();
+        .setMaxResults(1)
+        .getResultStream()
+        .findFirst()
+        .ifPresent(ProductImage::markAsThumbnail);
   }
 }
