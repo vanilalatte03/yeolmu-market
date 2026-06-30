@@ -16,7 +16,6 @@ import com.guingujig.yeolmumarket.global.response.PageResponse;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -42,11 +41,7 @@ public class WishService {
       throw new BusinessException(ErrorCode.WISH_ALREADY_EXISTS);
     }
 
-    try {
-      wishRepository.saveAndFlush(Wish.create(user, product));
-    } catch (DataIntegrityViolationException exception) {
-      throw new BusinessException(ErrorCode.WISH_ALREADY_EXISTS);
-    }
+    wishRepository.save(Wish.create(user, product));
 
     return new WishResponse(productId, true, wishRepository.countByProductId(productId));
   }
@@ -61,7 +56,6 @@ public class WishService {
             .orElseThrow(() -> new BusinessException(ErrorCode.WISH_NOT_FOUND));
 
     wishRepository.delete(wish);
-    wishRepository.flush();
     return new WishResponse(productId, false, wishRepository.countByProductId(productId));
   }
 
