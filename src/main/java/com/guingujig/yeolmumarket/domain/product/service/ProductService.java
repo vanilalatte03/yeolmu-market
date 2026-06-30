@@ -204,10 +204,10 @@ public class ProductService {
   @Transactional
   public DeleteProductResponse deleteProduct(Long sellerId, Long productId) {
     Product product = getExistingProduct(productId);
+    ProductStatus previousStatus = product.getStatus();
 
     product.deleteBySeller(sellerId, LocalDateTime.now(ZoneOffset.UTC));
 
-    ProductStatus previousStatus = product.getStatus();
     publishProductSearchIndexAndDisplayChanged(product.getId(), previousStatus);
     return DeleteProductResponse.success();
   }

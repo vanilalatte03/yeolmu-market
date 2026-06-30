@@ -612,6 +612,25 @@ class SearchServiceTest {
     PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
 
     assertThat(response.content()).isEmpty();
+    assertThat(response.totalElements()).isZero();
+  }
+
+  @Test
+  void 상품_삭제_후_v2_검색_캐시가_무효화되어_뒤_페이지_상품이_당겨진다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product secondPageProduct = saveProduct(seller, "뒤 페이지 상품", "설명", 10000);
+    Product firstPageProduct = saveProduct(seller, "첫 페이지 상품", "설명", 20000);
+    SearchProductRequest request =
+        new SearchProductRequest(null, null, null, ProductStatus.ON_SALE, 0, 1, "latest");
+
+    searchService.searchProductsV2(request);
+    productService.deleteProduct(seller.getId(), firstPageProduct.getId());
+    PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
+
+    assertThat(response.content())
+        .extracting(SearchProductResponse::productId)
+        .containsExactly(secondPageProduct.getId());
+    assertThat(response.totalElements()).isEqualTo(1);
   }
 
   @Test
