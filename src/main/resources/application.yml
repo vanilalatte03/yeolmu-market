@@ -2,7 +2,7 @@ spring:
   config:
     import: optional:file:.env[.properties]
   application:
-    name: yeolmu-market
+    name: yeolmu-markethttps://github.com/vanilalatte03/yeolmu-market/blob/feature/async-chat-message-save/src/main/resources/application.yml
   servlet:
     multipart:
       max-file-size: 5MB
@@ -40,19 +40,16 @@ auth:
     secure: ${AUTH_REFRESH_TOKEN_COOKIE_SECURE:false}
 
 yeolmu:
-<<<<<<< feature/async-chat-message-save
   async:
     chat-message:
       core-pool-size: 2
       max-pool-size: 8
       queue-capacity: 1000
       await-termination-seconds: 10
-=======
   lock:
     wait-time: 500ms
     lease-time: 10s
     tx-timeout-seconds: 8
->>>>>>> develop
   cache:
     search:
       products-v2:
