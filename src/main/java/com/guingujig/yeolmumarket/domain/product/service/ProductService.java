@@ -7,6 +7,7 @@ import com.guingujig.yeolmumarket.domain.product.dto.CreateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.CreateProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.DeleteProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.ProductDetailResponse;
+import com.guingujig.yeolmumarket.domain.product.dto.ProductListItemProjection;
 import com.guingujig.yeolmumarket.domain.product.dto.ProductListItemResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusResponse;
@@ -50,7 +51,6 @@ public class ProductService {
   private final ProductImageRepository productImageRepository;
   private final UserRepository userRepository;
   private final CategoryRepository categoryRepository;
-  private final ProductThumbnailQueryService productThumbnailQueryService;
   private final ProductWishSummaryService productWishSummaryService;
   private final ReviewRatingQueryService reviewRatingQueryService;
   private final ApplicationEventPublisher eventPublisher;
@@ -87,30 +87,27 @@ public class ProductService {
     ProductStatus queryStatus = resolveStatus(status);
     validatePublicListStatus(queryStatus);
 
-    Page<Product> products =
-        productRepository.findByHiddenFalseAndDeletedAtIsNullAndStatus(
+    Page<ProductListItemProjection> products =
+        productRepository.findPublicListItemsByStatus(
             queryStatus, PageRequest.of(page, size, resolveSort(sort)));
-    List<Long> productIds = products.getContent().stream().map(Product::getId).toList();
+    List<Long> productIds =
+        products.getContent().stream().map(ProductListItemProjection::productId).toList();
     Map<Long, ProductWishSummary> wishSummaries =
         productWishSummaryService.getSummaries(productIds, authenticatedUserId);
-    Map<Long, String> thumbnailUrls = productThumbnailQueryService.getThumbnailUrls(productIds);
 
     Page<ProductListItemResponse> productResponses =
-        products.map(product -> toProductListItemResponse(product, wishSummaries, thumbnailUrls));
+        products.map(product -> toProductListItemResponse(product, wishSummaries));
 
     return PageResponse.from(productResponses);
   }
 
   private ProductListItemResponse toProductListItemResponse(
-      Product product,
-      Map<Long, ProductWishSummary> wishSummaries,
-      Map<Long, String> thumbnailUrls) {
-    Long productId = product.getId();
+      ProductListItemProjection product, Map<Long, ProductWishSummary> wishSummaries) {
+    Long productId = product.productId();
     ProductWishSummary wishSummary =
         wishSummaries.getOrDefault(productId, ProductWishSummary.empty(productId));
-    String thumbnailUrl = thumbnailUrls.get(productId);
 
-    return ProductListItemResponse.from(product, wishSummary, thumbnailUrl);
+    return ProductListItemResponse.from(product, wishSummary);
   }
 
   /**
