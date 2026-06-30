@@ -36,7 +36,8 @@ yeolmu:
   cache:
     search:
       products-v2:
-        ttl: 5m
+        list-ttl: 30s
+        display-ttl: 5m
   storage:
     local:
       root-path: build/uploads

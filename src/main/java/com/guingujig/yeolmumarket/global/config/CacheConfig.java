@@ -38,9 +38,8 @@ public class CacheConfig implements CachingConfigurer {
             .allowIfSubType("java.time.")
             .allowIfSubType("java.util.")
             .build();
-    RedisCacheConfiguration searchCacheConfiguration =
+    RedisCacheConfiguration baseSearchCacheConfiguration =
         RedisCacheConfiguration.defaultCacheConfig()
-            .entryTtl(properties.productsV2().ttl())
             .prefixCacheNameWith(SEARCH_CACHE_KEY_PREFIX)
             .disableCachingNullValues()
             .serializeKeysWith(
@@ -56,9 +55,9 @@ public class CacheConfig implements CachingConfigurer {
         .withInitialCacheConfigurations(
             Map.of(
                 SearchCacheNames.PRODUCT_SEARCH_LIST_V2,
-                searchCacheConfiguration,
+                baseSearchCacheConfiguration.entryTtl(properties.productsV2().listTtl()),
                 SearchCacheNames.PRODUCT_DISPLAY_V2,
-                searchCacheConfiguration))
+                baseSearchCacheConfiguration.entryTtl(properties.productsV2().displayTtl())))
         .disableCreateOnMissingCache()
         .build();
   }
