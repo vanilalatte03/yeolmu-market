@@ -37,7 +37,6 @@ class RedisPopularKeywordRepositoryTest {
   @Mock private ZSetOperations<String, String> zSetOperations;
   @Mock private TypedTuple<String> firstTuple;
   @Mock private TypedTuple<String> secondTuple;
-  @Mock private TypedTuple<String> thirdTuple;
 
   private RedisPopularKeywordRepository repository;
   private Clock clock;
@@ -68,7 +67,7 @@ class RedisPopularKeywordRepositoryTest {
     when(secondTuple.getScore()).thenReturn(2.0);
     long currentEpochMinute = currentEpochMinute();
     Set<TypedTuple<String>> topTuples = new LinkedHashSet<>(List.of(firstTuple, secondTuple));
-    when(zSetOperations.reverseRangeWithScores(recentAggregateKey(currentEpochMinute), 0, 3))
+    when(zSetOperations.reverseRangeWithScores(recentAggregateKey(currentEpochMinute), 0, 1))
         .thenReturn(topTuples);
 
     List<PopularKeyword> popularKeywords = repository.findTopKeywords(2);
@@ -86,24 +85,21 @@ class RedisPopularKeywordRepositoryTest {
   }
 
   @Test
-  void 검색횟수_내림차순과_키워드_오름차순으로_정렬한_뒤_limit만_반환한다() {
+  void Redis_ZSET_역순_범위_조회_순서를_그대로_반환한다() {
     when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
     when(firstTuple.getValue()).thenReturn("아이패드");
     when(firstTuple.getScore()).thenReturn(4.0);
     when(secondTuple.getValue()).thenReturn("맥북");
     when(secondTuple.getScore()).thenReturn(4.0);
-    when(thirdTuple.getValue()).thenReturn("에어팟");
-    when(thirdTuple.getScore()).thenReturn(2.0);
     long currentEpochMinute = currentEpochMinute();
-    Set<TypedTuple<String>> topTuples =
-        new LinkedHashSet<>(List.of(firstTuple, secondTuple, thirdTuple));
-    when(zSetOperations.reverseRangeWithScores(recentAggregateKey(currentEpochMinute), 0, 3))
+    Set<TypedTuple<String>> topTuples = new LinkedHashSet<>(List.of(firstTuple, secondTuple));
+    when(zSetOperations.reverseRangeWithScores(recentAggregateKey(currentEpochMinute), 0, 1))
         .thenReturn(topTuples);
 
     List<PopularKeyword> popularKeywords = repository.findTopKeywords(2);
 
     assertThat(popularKeywords)
-        .containsExactly(new PopularKeyword("맥북", 4), new PopularKeyword("아이패드", 4));
+        .containsExactly(new PopularKeyword("아이패드", 4), new PopularKeyword("맥북", 4));
   }
 
   @Test
@@ -111,7 +107,7 @@ class RedisPopularKeywordRepositoryTest {
     when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
     when(firstTuple.getValue()).thenReturn("아이패드");
     when(firstTuple.getScore()).thenReturn(1.0);
-    when(zSetOperations.reverseRangeWithScores(recentAggregateKey(currentEpochMinute()), 0, 19))
+    when(zSetOperations.reverseRangeWithScores(recentAggregateKey(currentEpochMinute()), 0, 9))
         .thenReturn(new LinkedHashSet<>(List.of(firstTuple)));
 
     List<PopularKeyword> popularKeywords = repository.findTopKeywords(10);

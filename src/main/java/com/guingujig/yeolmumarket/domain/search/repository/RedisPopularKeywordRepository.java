@@ -4,7 +4,6 @@ import com.guingujig.yeolmumarket.domain.search.dto.PopularKeyword;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.LongStream;
@@ -53,9 +52,7 @@ public class RedisPopularKeywordRepository implements PopularKeywordRepository {
     stringRedisTemplate.expire(recentAggregateKey, RECENT_AGGREGATE_TTL);
 
     Set<TypedTuple<String>> tuples =
-        stringRedisTemplate
-            .opsForZSet()
-            .reverseRangeWithScores(recentAggregateKey, 0, topKeywordScanEnd(limit));
+        stringRedisTemplate.opsForZSet().reverseRangeWithScores(recentAggregateKey, 0, limit - 1L);
     if (tuples == null || tuples.isEmpty()) {
       return List.of();
     }
@@ -63,16 +60,7 @@ public class RedisPopularKeywordRepository implements PopularKeywordRepository {
     return tuples.stream()
         .filter(tuple -> tuple.getValue() != null && tuple.getScore() != null)
         .map(tuple -> new PopularKeyword(tuple.getValue(), tuple.getScore().longValue()))
-        .sorted(
-            Comparator.comparingLong(PopularKeyword::searchCount)
-                .reversed()
-                .thenComparing(PopularKeyword::keyword))
-        .limit(limit)
         .toList();
-  }
-
-  private long topKeywordScanEnd(int limit) {
-    return (limit * 2L) - 1L;
   }
 
   private List<String> recentBucketKeys(long currentEpochMinute) {
