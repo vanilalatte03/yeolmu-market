@@ -19,6 +19,9 @@ import com.guingujig.yeolmumarket.global.response.PageResponse;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.TransientPropertyValueException;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -114,9 +117,18 @@ public class CategoryService {
   @Transactional
   public DeleteCategoryResponse deleteCategory(Long categoryId) {
     Category category = getCategory(categoryId);
-    validateCategoryIsNotInUse(categoryId);
 
-    categoryRepository.delete(category);
+    try {
+      categoryRepository.delete(category);
+      categoryRepository.flush();
+    } catch (DataIntegrityViolationException exception) {
+      throw new BusinessException(ErrorCode.CATEGORY_IN_USE);
+    } catch (InvalidDataAccessApiUsageException exception) {
+      if (isProductCategoryReferenceFailure(exception)) {
+        throw new BusinessException(ErrorCode.CATEGORY_IN_USE);
+      }
+      throw exception;
+    }
     return DeleteCategoryResponse.success();
   }
 
@@ -138,10 +150,17 @@ public class CategoryService {
     }
   }
 
-  private void validateCategoryIsNotInUse(Long categoryId) {
-    if (productRepository.existsByCategoryId(categoryId)) {
-      throw new BusinessException(ErrorCode.CATEGORY_IN_USE);
+  private boolean isProductCategoryReferenceFailure(Throwable throwable) {
+    Throwable current = throwable;
+    while (current != null) {
+      if (current instanceof TransientPropertyValueException exception
+          && Product.class.getName().equals(exception.getPropertyOwnerEntityName())
+          && "category".equals(exception.getPropertyName())) {
+        return true;
+      }
+      current = current.getCause();
     }
+    return false;
   }
 
   private void validateCategoryExists(Long categoryId) {

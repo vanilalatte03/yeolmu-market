@@ -15,8 +15,6 @@ import org.springframework.data.repository.query.Param;
 
 public interface ProductRepository extends JpaRepository<Product, Long> {
 
-  boolean existsByCategoryId(Long categoryId);
-
   @EntityGraph(attributePaths = "seller")
   Optional<Product> findWithSellerById(Long id);
 

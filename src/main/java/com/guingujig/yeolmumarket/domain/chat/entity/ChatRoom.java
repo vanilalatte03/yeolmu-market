@@ -2,6 +2,8 @@ package com.guingujig.yeolmumarket.domain.chat.entity;
 
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
+import com.guingujig.yeolmumarket.global.exception.BusinessException;
+import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -66,6 +68,16 @@ public class ChatRoom {
 
   public boolean isParticipant(Long userId) {
     return buyer.getId().equals(userId) || seller.getId().equals(userId);
+  }
+
+  public User getParticipant(Long userId) {
+    if (buyer.getId().equals(userId)) {
+      return buyer;
+    }
+    if (seller.getId().equals(userId)) {
+      return seller;
+    }
+    throw new BusinessException(ErrorCode.CHAT_ROOM_ACCESS_DENIED);
   }
 
   /**
