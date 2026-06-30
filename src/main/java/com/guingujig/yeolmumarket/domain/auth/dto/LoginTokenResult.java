@@ -5,5 +5,4 @@ public record LoginTokenResult(
     String accessToken,
     String refreshToken,
     long expiresIn,
-    long refreshExpiresIn,
     LoginUserInfo user) {}

@@ -81,7 +81,6 @@ public class AuthService {
         accessToken,
         refreshToken,
         jwtTokenProvider.getAccessTokenValiditySeconds(),
-        jwtTokenProvider.getRefreshTokenValiditySeconds(),
         LoginUserInfo.from(user));
   }
 
@@ -117,11 +116,7 @@ public class AuthService {
     validateRefreshTokenRotated(rotated);
 
     return new RefreshTokenResult(
-        "Bearer",
-        accessToken,
-        newRefreshToken,
-        jwtTokenProvider.getAccessTokenValiditySeconds(),
-        jwtTokenProvider.getRefreshTokenValiditySeconds());
+        "Bearer", accessToken, newRefreshToken, jwtTokenProvider.getAccessTokenValiditySeconds());
   }
 
   /**
