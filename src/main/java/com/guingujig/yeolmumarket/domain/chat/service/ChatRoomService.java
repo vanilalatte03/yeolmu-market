@@ -117,6 +117,8 @@ public class ChatRoomService {
    */
   @Transactional(readOnly = true)
   public ChatMessageResponse sendMessage(Long senderId, Long roomId, String content) {
+    validateMessageContent(content);
+
     ChatRoom chatRoom =
         chatRoomRepository
             .findWithParticipantsById(roomId)
@@ -156,6 +158,12 @@ public class ChatRoomService {
   private void validateMessageCursor(Long beforeMessageId, int size) {
     if (size <= 0 || size > MAX_PAGE_SIZE || (beforeMessageId != null && beforeMessageId <= 0)) {
       throw new BusinessException(ErrorCode.INVALID_PAGINATION);
+    }
+  }
+
+  private void validateMessageContent(String content) {
+    if (content == null || content.isBlank()) {
+      throw new BusinessException(ErrorCode.VALIDATION_FAILED);
     }
   }
 

@@ -43,6 +43,36 @@ class ChatRoomServiceAsyncFailureTest {
   @InjectMocks private ChatRoomService chatRoomService;
 
   @Test
+  void null_메시지는_validation_failed로_실패하고_저장을_위임하지_않는다() {
+    assertThatThrownBy(() -> chatRoomService.sendMessage(1L, 10L, null))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+
+    verifyNoInteractions(
+        chatRoomRepository,
+        chatRoomAuthorizationService,
+        chatMessagePersistenceService,
+        chatMessageSaveFailureNotifier);
+  }
+
+  @Test
+  void 공백_메시지는_validation_failed로_실패하고_저장을_위임하지_않는다() {
+    assertThatThrownBy(() -> chatRoomService.sendMessage(1L, 10L, "   "))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+
+    verifyNoInteractions(
+        chatRoomRepository,
+        chatRoomAuthorizationService,
+        chatMessagePersistenceService,
+        chatMessageSaveFailureNotifier);
+  }
+
+  @Test
   void 비동기_저장_작업_등록이_거절되면_저장_실패_예외로_전파한다() {
     User buyer = user(1L, "buyer@example.com", "열무구매자");
     User seller = user(2L, "seller@example.com", "열무판매자");

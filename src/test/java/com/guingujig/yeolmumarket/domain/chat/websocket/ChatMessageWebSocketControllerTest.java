@@ -183,4 +183,18 @@ class ChatMessageWebSocketControllerTest {
     verify(chatWebSocketErrorSender).sendToUser(principal, ErrorCode.CHAT_MESSAGE_SAVE_FAILED, 10L);
     verify(messagingTemplate, never()).convertAndSend(eq("/sub/chat-rooms/10"), anyString());
   }
+
+  @Test
+  void 서비스_검증_실패는_user_error_queue로_전송하고_발행하지_않는다() {
+    var principal =
+        new TestingAuthenticationToken(
+            new AuthenticatedUser(1L, "buyer@example.com", UserRole.USER), null);
+    when(chatRoomService.sendMessage(1L, 10L, "거래 가능할까요?"))
+        .thenThrow(new BusinessException(ErrorCode.VALIDATION_FAILED));
+
+    controller.sendMessage(10L, "{\"content\":\"거래 가능할까요?\"}", principal);
+
+    verify(chatWebSocketErrorSender).sendToUser(principal, ErrorCode.VALIDATION_FAILED, 10L);
+    verify(messagingTemplate, never()).convertAndSend(eq("/sub/chat-rooms/10"), anyString());
+  }
 }
