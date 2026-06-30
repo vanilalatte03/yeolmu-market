@@ -8,6 +8,7 @@ import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.lock.LockBoundedTransactional;
 import jakarta.persistence.EntityManager;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -15,7 +16,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -25,7 +25,7 @@ public class OrderLockedCommandService {
   private final EntityManager entityManager;
   private final ApplicationEventPublisher eventPublisher;
 
-  @Transactional
+  @LockBoundedTransactional
   public CancelOrderResponse cancelOrder(Long requesterId, Long orderId) {
     Order order = findOrder(orderId);
 
@@ -44,7 +44,7 @@ public class OrderLockedCommandService {
     return CancelOrderResponse.from(order);
   }
 
-  @Transactional
+  @LockBoundedTransactional
   public RegisterOrderShippingResponse registerShipping(
       Long sellerId, Long orderId, String trackingNumber) {
     Order order = findOrder(orderId);
@@ -63,7 +63,7 @@ public class OrderLockedCommandService {
     return RegisterOrderShippingResponse.from(order);
   }
 
-  @Transactional
+  @LockBoundedTransactional
   public ConfirmOrderResponse confirmOrder(Long buyerId, Long orderId) {
     Order order = findOrder(orderId);
 

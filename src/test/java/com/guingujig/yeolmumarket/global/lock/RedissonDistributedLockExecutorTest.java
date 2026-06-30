@@ -31,7 +31,7 @@ class RedissonDistributedLockExecutorTest {
   void 락을_획득하면_콜백을_실행하고_락을_해제한다() throws InterruptedException {
     RedissonDistributedLockExecutor executor = executor();
     when(redissonClient.getLock(LOCK_KEY)).thenReturn(lock);
-    when(lock.tryLock(10, 1000, TimeUnit.MILLISECONDS)).thenReturn(true);
+    when(lock.tryLock(10, 2000, TimeUnit.MILLISECONDS)).thenReturn(true);
     when(lock.isHeldByCurrentThread()).thenReturn(true);
 
     String result = executor.execute(LOCK_KEY, () -> "success");
@@ -45,7 +45,7 @@ class RedissonDistributedLockExecutorTest {
     RedissonDistributedLockExecutor executor = executor();
     AtomicBoolean callbackCalled = new AtomicBoolean(false);
     when(redissonClient.getLock(LOCK_KEY)).thenReturn(lock);
-    when(lock.tryLock(10, 1000, TimeUnit.MILLISECONDS)).thenReturn(false);
+    when(lock.tryLock(10, 2000, TimeUnit.MILLISECONDS)).thenReturn(false);
 
     assertThatThrownBy(
             () ->
@@ -66,7 +66,7 @@ class RedissonDistributedLockExecutorTest {
   void Redis_연결_장애가_발생하면_REDIS_UNAVAILABLE로_변환한다() throws InterruptedException {
     RedissonDistributedLockExecutor executor = executor();
     when(redissonClient.getLock(LOCK_KEY)).thenReturn(lock);
-    when(lock.tryLock(10, 1000, TimeUnit.MILLISECONDS))
+    when(lock.tryLock(10, 2000, TimeUnit.MILLISECONDS))
         .thenThrow(new RedisConnectionException("redis unavailable"));
 
     assertThatThrownBy(() -> executor.execute(LOCK_KEY, () -> "ignored"))
@@ -78,6 +78,6 @@ class RedissonDistributedLockExecutorTest {
 
   private RedissonDistributedLockExecutor executor() {
     return new RedissonDistributedLockExecutor(
-        redissonClient, new LockProperties(Duration.ofMillis(10), Duration.ofSeconds(1)));
+        redissonClient, new LockProperties(Duration.ofMillis(10), Duration.ofSeconds(2), 1));
   }
 }

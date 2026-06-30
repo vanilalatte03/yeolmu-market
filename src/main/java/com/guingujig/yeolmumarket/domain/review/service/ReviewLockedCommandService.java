@@ -7,10 +7,10 @@ import com.guingujig.yeolmumarket.domain.review.entity.Review;
 import com.guingujig.yeolmumarket.domain.review.repository.ReviewRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.lock.LockBoundedTransactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -19,7 +19,7 @@ public class ReviewLockedCommandService {
   private final ReviewRepository reviewRepository;
   private final OrderRepository orderRepository;
 
-  @Transactional
+  @LockBoundedTransactional
   public ReviewResponse createReview(Long reviewerId, Long orderId, Integer score, String content) {
     Order order =
         orderRepository

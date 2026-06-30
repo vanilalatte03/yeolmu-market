@@ -41,7 +41,8 @@ auth:
 yeolmu:
   lock:
     wait-time: 10ms
-    lease-time: 1s
+    lease-time: 2s
+    tx-timeout-seconds: 1
     redisson:
       enabled: false
   cache:

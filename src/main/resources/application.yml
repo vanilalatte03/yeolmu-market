@@ -43,6 +43,7 @@ yeolmu:
   lock:
     wait-time: 500ms
     lease-time: 10s
+    tx-timeout-seconds: 8
   cache:
     search:
       products-v2:

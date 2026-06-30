@@ -14,6 +14,7 @@ import com.guingujig.yeolmumarket.domain.refund.repository.RefundRequestReposito
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.lock.LockBoundedTransactional;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
@@ -23,7 +24,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -36,7 +36,7 @@ public class RefundLockedCommandService {
   private final PaymentRepository paymentRepository;
   private final ApplicationEventPublisher eventPublisher;
 
-  @Transactional
+  @LockBoundedTransactional
   public CreateRefundRequestResponse createRefundRequest(
       Long buyerId, Long orderId, String reason) {
     Order order =
@@ -67,7 +67,7 @@ public class RefundLockedCommandService {
     return CreateRefundRequestResponse.from(refundRequest);
   }
 
-  @Transactional
+  @LockBoundedTransactional
   public ApproveRefundRequestResponse approveRefundRequest(Long sellerId, Long refundId) {
     RefundRequest refundRequest = fetchRefundRequest(refundId);
     refundRequest.validateSeller(sellerId);
@@ -86,7 +86,7 @@ public class RefundLockedCommandService {
     return ApproveRefundRequestResponse.from(refundRequest);
   }
 
-  @Transactional
+  @LockBoundedTransactional
   public RejectRefundRequestResponse rejectRefundRequest(
       Long sellerId, Long refundId, String reason) {
     RefundRequest refundRequest = fetchRefundRequest(refundId);
@@ -99,7 +99,7 @@ public class RefundLockedCommandService {
     return RejectRefundRequestResponse.from(refundRequest);
   }
 
-  @Transactional
+  @LockBoundedTransactional
   public ResolveRefundRequestResponse resolveRefundRequest(
       Long sellerId, Long refundId, RefundResolution resolution, String reason) {
     RefundRequest refundRequest = fetchRefundRequest(refundId);

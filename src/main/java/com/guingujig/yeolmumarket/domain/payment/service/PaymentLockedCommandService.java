@@ -11,6 +11,7 @@ import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
 import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import com.guingujig.yeolmumarket.global.lock.LockBoundedTransactional;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
@@ -19,7 +20,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -29,7 +29,7 @@ public class PaymentLockedCommandService {
   private final OrderRepository orderRepository;
   private final ApplicationEventPublisher eventPublisher;
 
-  @Transactional
+  @LockBoundedTransactional
   public PaymentService.ProcessPaymentResult processPayment(
       Long buyerId, Long orderId, String idempotencyKey, CreatePaymentRequest request) {
     Order order =
@@ -76,7 +76,7 @@ public class PaymentLockedCommandService {
     return new PaymentService.ProcessPaymentResult(PaymentResponse.from(payment), true);
   }
 
-  @Transactional
+  @LockBoundedTransactional
   public CancelPaymentResponse cancelPayment(Long buyerId, Long paymentId, String reason) {
     Payment payment =
         paymentRepository
