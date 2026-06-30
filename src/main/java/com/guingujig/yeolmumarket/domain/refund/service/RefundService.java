@@ -5,6 +5,7 @@ import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
 import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.refund.dto.ApproveRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.dto.CreateRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.dto.RefundResolution;
@@ -113,7 +114,10 @@ public class RefundService {
     payment.cancelPaid(approvedAt, "환불 요청 승인");
 
     flushRefundRequestChanges();
-    publishProductStatusChanged(refundRequest.getOrder().getProduct().getId());
+    publishProductStatusChanged(
+        refundRequest.getOrder().getProduct().getId(),
+        ProductStatus.RESERVED,
+        ProductStatus.ON_SALE);
 
     return ApproveRefundRequestResponse.from(refundRequest);
   }
@@ -189,7 +193,10 @@ public class RefundService {
     }
 
     flushRefundRequestChanges();
-    publishProductStatusChanged(refundRequest.getOrder().getProduct().getId());
+    publishProductStatusChanged(
+        refundRequest.getOrder().getProduct().getId(),
+        ProductStatus.RESERVED,
+        resolution == RefundResolution.REFUND ? ProductStatus.ON_SALE : ProductStatus.SOLD_OUT);
 
     return ResolveRefundRequestResponse.from(refundRequest);
   }
@@ -289,8 +296,8 @@ public class RefundService {
     return DUPLICATE_REFUND_REQUEST_CONSTRAINT.equalsIgnoreCase(normalizedName);
   }
 
-  private void publishProductStatusChanged(Long productId) {
-    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId));
+  private void publishProductStatusChanged(Long productId, ProductStatus... affectedStatuses) {
+    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId, affectedStatuses));
     eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
   }
 }

@@ -64,7 +64,8 @@ public class SearchService {
     SearchProductCondition condition = SearchProductCondition.from(request);
     recordSearchKeywordSafely(request.keyword());
     SearchProductCacheKey cacheKey =
-        new SearchProductCacheKey(condition, searchIndexVersionProvider.currentVersionKey());
+        new SearchProductCacheKey(
+            condition, searchIndexVersionProvider.currentVersionKey(condition.status()));
     return assembleSearchResponse(
         cachedSearchProductQueryService.search(cacheKey), authenticatedUserId);
   }

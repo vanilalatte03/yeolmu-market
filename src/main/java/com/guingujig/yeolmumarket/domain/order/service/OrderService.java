@@ -91,7 +91,7 @@ public class OrderService {
     Order order = Order.create(buyer, product);
     orderRepository.save(order);
 
-    publishProductStatusChanged(product.getId());
+    publishProductStatusChanged(product.getId(), ProductStatus.ON_SALE, ProductStatus.RESERVED);
     return CreateOrderResponse.from(order);
   }
 
@@ -128,7 +128,8 @@ public class OrderService {
     }
     entityManager.refresh(order);
 
-    publishProductStatusChanged(order.getProduct().getId());
+    publishProductStatusChanged(
+        order.getProduct().getId(), ProductStatus.RESERVED, ProductStatus.ON_SALE);
     return CancelOrderResponse.from(order);
   }
 
@@ -203,7 +204,8 @@ public class OrderService {
     }
     entityManager.refresh(order);
 
-    publishProductStatusChanged(order.getProduct().getId());
+    publishProductStatusChanged(
+        order.getProduct().getId(), ProductStatus.RESERVED, ProductStatus.SOLD_OUT);
     return ConfirmOrderResponse.from(order);
   }
 
@@ -293,8 +295,8 @@ public class OrderService {
     product.completeSale();
   }
 
-  private void publishProductStatusChanged(Long productId) {
-    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId));
+  private void publishProductStatusChanged(Long productId, ProductStatus... affectedStatuses) {
+    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId, affectedStatuses));
     eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
   }
 

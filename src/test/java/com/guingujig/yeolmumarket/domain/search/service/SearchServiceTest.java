@@ -40,7 +40,10 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Collection;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -532,6 +535,23 @@ class SearchServiceTest {
   }
 
   @Test
+  void 판매중_상품_등록은_RESERVED_검색_목록_캐시를_무효화하지_않는다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    saveProductWithStatus(seller, "예약 상품", "설명", 10000, ProductStatus.RESERVED);
+    SearchProductRequest reservedRequest = request(null, null, null, ProductStatus.RESERVED);
+
+    PageResponse<SearchProductResponse> firstResponse =
+        searchService.searchProductsV2(reservedRequest);
+    Category category = saveCategory("디지털기기");
+    productService.createProduct(
+        seller.getId(), new CreateProductRequest("판매중 상품", "설명", 20000, category.getId()));
+    PageResponse<SearchProductResponse> secondResponse =
+        searchService.searchProductsV2(reservedRequest);
+
+    assertThat(secondResponse).isEqualTo(firstResponse);
+  }
+
+  @Test
   void 상품_수정_후_v2_검색_캐시가_무효화되어_변경값이_반영된다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     Product product = saveProduct(seller, "변경 전 상품", "설명", 10000);
@@ -685,9 +705,10 @@ class SearchServiceTest {
     RedisCacheConfiguration configuration = listCache.getCacheConfiguration();
     RedisCacheConfiguration displayConfiguration = displayCache.getCacheConfiguration();
 
-    assertThat(searchCacheProperties.productsV2().ttl()).isEqualTo(Duration.ofMinutes(5));
+    assertThat(searchCacheProperties.productsV2().listTtl()).isEqualTo(Duration.ofSeconds(30));
+    assertThat(searchCacheProperties.productsV2().displayTtl()).isEqualTo(Duration.ofMinutes(5));
     assertThat(configuration.getTtlFunction().getTimeToLive("key", "value"))
-        .isEqualTo(Duration.ofMinutes(5));
+        .isEqualTo(Duration.ofSeconds(30));
     assertThat(displayConfiguration.getTtlFunction().getTimeToLive("key", "value"))
         .isEqualTo(Duration.ofMinutes(5));
     assertThat(configuration.getKeyPrefixFor(SearchCacheNames.PRODUCT_SEARCH_LIST_V2))
@@ -739,16 +760,20 @@ class SearchServiceTest {
 
   static class InMemorySearchIndexVersionProvider implements SearchIndexVersionProvider {
 
-    private final AtomicLong version = new AtomicLong();
+    private final Map<ProductStatus, AtomicLong> versions = new EnumMap<>(ProductStatus.class);
 
     @Override
-    public String currentVersionKey() {
-      return Long.toString(version.get());
+    public String currentVersionKey(ProductStatus status) {
+      return Long.toString(version(status).get());
     }
 
     @Override
-    public void increaseVersion() {
-      version.incrementAndGet();
+    public void increaseVersions(Collection<ProductStatus> statuses) {
+      statuses.forEach(status -> version(status).incrementAndGet());
+    }
+
+    private AtomicLong version(ProductStatus status) {
+      return versions.computeIfAbsent(status, ignored -> new AtomicLong());
     }
   }
 

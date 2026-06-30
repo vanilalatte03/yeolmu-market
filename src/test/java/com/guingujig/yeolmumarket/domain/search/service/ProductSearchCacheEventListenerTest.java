@@ -6,6 +6,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -23,9 +25,11 @@ class ProductSearchCacheEventListenerTest {
     ProductSearchCacheEventListener listener =
         new ProductSearchCacheEventListener(searchIndexVersionProvider, cacheManager);
 
-    listener.increaseSearchIndexVersion(new ProductSearchIndexChangedEvent(1L));
+    listener.increaseSearchIndexVersion(
+        new ProductSearchIndexChangedEvent(1L, ProductStatus.ON_SALE, ProductStatus.RESERVED));
 
-    verify(searchIndexVersionProvider).increaseVersion();
+    verify(searchIndexVersionProvider)
+        .increaseVersions(Set.of(ProductStatus.ON_SALE, ProductStatus.RESERVED));
   }
 
   @Test

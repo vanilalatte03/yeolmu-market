@@ -73,7 +73,7 @@ public class ProductService {
     Product product =
         Product.create(seller, request.title(), request.description(), request.price(), category);
     Product savedProduct = productRepository.save(product);
-    publishProductSearchIndexChanged(savedProduct.getId());
+    publishProductSearchIndexChanged(savedProduct.getId(), savedProduct.getStatus());
     return CreateProductResponse.from(savedProduct);
   }
 
@@ -192,7 +192,7 @@ public class ProductService {
     }
     productRepository.flush();
     if (searchIndexChanged) {
-      publishProductSearchIndexChanged(product.getId());
+      publishProductSearchIndexChanged(product.getId(), product.getStatus());
     }
     if (productDisplayChanged) {
       publishProductDisplayChanged(product.getId());
@@ -211,8 +211,9 @@ public class ProductService {
     validateOwner(product, sellerId);
     validateDeletable(product);
 
+    ProductStatus previousStatus = product.getStatus();
     product.delete(LocalDateTime.now(ZoneOffset.UTC));
-    publishProductSearchIndexAndDisplayChanged(product.getId());
+    publishProductSearchIndexAndDisplayChanged(product.getId(), previousStatus);
     return DeleteProductResponse.success();
   }
 
@@ -229,7 +230,7 @@ public class ProductService {
     boolean hiddenChanged = product.isHidden() != request.hidden();
     product.changeHidden(request.hidden());
     if (hiddenChanged) {
-      publishProductSearchIndexAndDisplayChanged(product.getId());
+      publishProductSearchIndexAndDisplayChanged(product.getId(), product.getStatus());
     }
     return UpdateProductHiddenStatusResponse.from(product);
   }
@@ -358,13 +359,14 @@ public class ProductService {
     return request.title() != null || request.price() != null;
   }
 
-  private void publishProductSearchIndexAndDisplayChanged(Long productId) {
-    publishProductSearchIndexChanged(productId);
+  private void publishProductSearchIndexAndDisplayChanged(
+      Long productId, ProductStatus... affectedStatuses) {
+    publishProductSearchIndexChanged(productId, affectedStatuses);
     publishProductDisplayChanged(productId);
   }
 
-  private void publishProductSearchIndexChanged(Long productId) {
-    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId));
+  private void publishProductSearchIndexChanged(Long productId, ProductStatus... affectedStatuses) {
+    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId, affectedStatuses));
   }
 
   private void publishProductDisplayChanged(Long productId) {

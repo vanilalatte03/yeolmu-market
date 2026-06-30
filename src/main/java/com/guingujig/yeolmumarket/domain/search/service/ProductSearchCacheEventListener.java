@@ -21,7 +21,7 @@ public class ProductSearchCacheEventListener {
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void increaseSearchIndexVersion(ProductSearchIndexChangedEvent event) {
-    searchIndexVersionProvider.increaseVersion();
+    searchIndexVersionProvider.increaseVersions(event.affectedStatuses());
   }
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
