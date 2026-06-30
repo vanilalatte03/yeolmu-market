@@ -5,11 +5,11 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
+import java.util.stream.LongStream;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.redis.connection.zset.Aggregate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations.TypedTuple;
 import org.springframework.stereotype.Repository;
@@ -19,8 +19,10 @@ import org.springframework.stereotype.Repository;
 public class RedisPopularKeywordRepository implements PopularKeywordRepository {
 
   private static final String KEY_PREFIX = "search:popular-keywords:minute:";
+  private static final String RECENT_AGGREGATE_KEY_PREFIX = "search:popular-keywords:recent:";
   private static final int RECENT_WINDOW_MINUTES = 60;
   private static final Duration BUCKET_TTL = Duration.ofMinutes(RECENT_WINDOW_MINUTES + 10L);
+  private static final Duration RECENT_AGGREGATE_TTL = Duration.ofSeconds(5);
 
   private final StringRedisTemplate stringRedisTemplate;
   private final Clock clock;
@@ -34,33 +36,49 @@ public class RedisPopularKeywordRepository implements PopularKeywordRepository {
 
   @Override
   public List<PopularKeyword> findTopKeywords(int limit) {
-    Map<String, Long> searchCounts = new HashMap<>();
-    long currentEpochMinute = currentEpochMinute();
-    for (int offset = 0; offset < RECENT_WINDOW_MINUTES; offset++) {
-      collectSearchCounts(bucketKey(currentEpochMinute - offset), searchCounts);
+    if (limit <= 0) {
+      return List.of();
     }
 
-    return searchCounts.entrySet().stream()
+    long currentEpochMinute = currentEpochMinute();
+    String recentAggregateKey = recentAggregateKey(currentEpochMinute);
+    List<String> bucketKeys = recentBucketKeys(currentEpochMinute);
+    stringRedisTemplate
+        .opsForZSet()
+        .unionAndStore(
+            bucketKeys.get(0),
+            bucketKeys.subList(1, bucketKeys.size()),
+            recentAggregateKey,
+            Aggregate.SUM);
+    stringRedisTemplate.expire(recentAggregateKey, RECENT_AGGREGATE_TTL);
+
+    Set<TypedTuple<String>> tuples =
+        stringRedisTemplate
+            .opsForZSet()
+            .reverseRangeWithScores(recentAggregateKey, 0, topKeywordScanEnd(limit));
+    if (tuples == null || tuples.isEmpty()) {
+      return List.of();
+    }
+
+    return tuples.stream()
+        .filter(tuple -> tuple.getValue() != null && tuple.getScore() != null)
+        .map(tuple -> new PopularKeyword(tuple.getValue(), tuple.getScore().longValue()))
         .sorted(
-            Map.Entry.<String, Long>comparingByValue(Comparator.reverseOrder())
-                .thenComparing(Map.Entry.comparingByKey()))
+            Comparator.comparingLong(PopularKeyword::searchCount)
+                .reversed()
+                .thenComparing(PopularKeyword::keyword))
         .limit(limit)
-        .map(entry -> new PopularKeyword(entry.getKey(), entry.getValue()))
         .toList();
   }
 
-  private void collectSearchCounts(String key, Map<String, Long> searchCounts) {
-    Set<TypedTuple<String>> tuples =
-        stringRedisTemplate.opsForZSet().reverseRangeWithScores(key, 0, -1);
-    if (tuples == null || tuples.isEmpty()) {
-      return;
-    }
+  private long topKeywordScanEnd(int limit) {
+    return (limit * 2L) - 1L;
+  }
 
-    for (TypedTuple<String> tuple : tuples) {
-      if (tuple.getValue() != null && tuple.getScore() != null) {
-        searchCounts.merge(tuple.getValue(), tuple.getScore().longValue(), Long::sum);
-      }
-    }
+  private List<String> recentBucketKeys(long currentEpochMinute) {
+    return LongStream.range(0, RECENT_WINDOW_MINUTES)
+        .mapToObj(offset -> bucketKey(currentEpochMinute - offset))
+        .toList();
   }
 
   private long currentEpochMinute() {
@@ -69,5 +87,9 @@ public class RedisPopularKeywordRepository implements PopularKeywordRepository {
 
   private String bucketKey(long epochMinute) {
     return KEY_PREFIX + epochMinute;
+  }
+
+  private String recentAggregateKey(long epochMinute) {
+    return RECENT_AGGREGATE_KEY_PREFIX + epochMinute;
   }
 }

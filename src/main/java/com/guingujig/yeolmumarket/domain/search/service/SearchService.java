@@ -1,5 +1,6 @@
 package com.guingujig.yeolmumarket.domain.search.service;
 
+import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductRequest;
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductResponse;
 import com.guingujig.yeolmumarket.domain.user.service.UserNicknameQueryService;
@@ -45,7 +46,9 @@ public class SearchService {
     SearchProductCondition condition = SearchProductCondition.from(request);
     recordSearchKeywordSafely(request.keyword());
     return assembleSearchResponse(
-        searchProductQueryService.searchProductIds(condition), authenticatedUserId);
+        searchProductQueryService.searchProductIds(condition),
+        authenticatedUserId,
+        condition.status());
   }
 
   /**
@@ -67,13 +70,13 @@ public class SearchService {
         new SearchProductCacheKey(
             condition, searchIndexVersionProvider.currentVersionKey(condition.status()));
     return assembleSearchResponse(
-        cachedSearchProductQueryService.search(cacheKey), authenticatedUserId);
+        cachedSearchProductQueryService.search(cacheKey), authenticatedUserId, condition.status());
   }
 
   private PageResponse<SearchProductResponse> assembleSearchResponse(
-      PageResponse<Long> response, Long authenticatedUserId) {
+      PageResponse<Long> response, Long authenticatedUserId, ProductStatus status) {
     List<SearchProductDisplay> displays =
-        productDisplayQueryService.getDisplays(response.content());
+        productDisplayQueryService.getDisplays(response.content(), status);
     List<Long> productIds = displays.stream().map(SearchProductDisplay::productId).toList();
     Map<Long, String> sellerNicknames =
         userNicknameQueryService.getNicknames(

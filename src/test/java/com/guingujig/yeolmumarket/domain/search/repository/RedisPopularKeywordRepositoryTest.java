@@ -1,7 +1,8 @@
 package com.guingujig.yeolmumarket.domain.search.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.never;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.connection.zset.Aggregate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.core.ZSetOperations.TypedTuple;
@@ -26,8 +28,10 @@ import org.springframework.data.redis.core.ZSetOperations.TypedTuple;
 class RedisPopularKeywordRepositoryTest {
 
   private static final String KEY_PREFIX = "search:popular-keywords:minute:";
+  private static final String RECENT_AGGREGATE_KEY_PREFIX = "search:popular-keywords:recent:";
   private static final Instant BASE_TIME = Instant.parse("2026-06-30T12:34:56Z");
   private static final Duration BUCKET_TTL = Duration.ofMinutes(70);
+  private static final Duration RECENT_AGGREGATE_TTL = Duration.ofSeconds(5);
 
   @Mock private StringRedisTemplate stringRedisTemplate;
   @Mock private ZSetOperations<String, String> zSetOperations;
@@ -56,41 +60,73 @@ class RedisPopularKeywordRepositoryTest {
   }
 
   @Test
-  void 최근_1시간_분단위_검색횟수를_합산해_상위_키워드를_조회한다() {
+  void 최근_1시간_분단위_검색횟수를_Redis에서_합산해_상위_키워드를_조회한다() {
     when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
     when(firstTuple.getValue()).thenReturn("아이패드");
-    when(firstTuple.getScore()).thenReturn(2.0);
+    when(firstTuple.getScore()).thenReturn(4.0);
     when(secondTuple.getValue()).thenReturn("맥북");
     when(secondTuple.getScore()).thenReturn(2.0);
-    when(thirdTuple.getValue()).thenReturn("아이패드");
-    when(thirdTuple.getScore()).thenReturn(2.0);
     long currentEpochMinute = currentEpochMinute();
-    Set<TypedTuple<String>> currentTuples = new LinkedHashSet<>(List.of(firstTuple, secondTuple));
-    Set<TypedTuple<String>> previousTuples = new LinkedHashSet<>(List.of(thirdTuple));
-    when(zSetOperations.reverseRangeWithScores(bucketKey(currentEpochMinute), 0, -1))
-        .thenReturn(currentTuples);
-    when(zSetOperations.reverseRangeWithScores(bucketKey(currentEpochMinute - 1), 0, -1))
-        .thenReturn(previousTuples);
+    Set<TypedTuple<String>> topTuples = new LinkedHashSet<>(List.of(firstTuple, secondTuple));
+    when(zSetOperations.reverseRangeWithScores(recentAggregateKey(currentEpochMinute), 0, 3))
+        .thenReturn(topTuples);
 
     List<PopularKeyword> popularKeywords = repository.findTopKeywords(2);
 
     assertThat(popularKeywords)
         .containsExactly(new PopularKeyword("아이패드", 4), new PopularKeyword("맥북", 2));
+    verify(zSetOperations)
+        .unionAndStore(
+            eq(bucketKey(currentEpochMinute)),
+            argThat(keys -> keys.size() == 59 && keys.contains(bucketKey(currentEpochMinute - 59))),
+            eq(recentAggregateKey(currentEpochMinute)),
+            eq(Aggregate.SUM));
+    verify(stringRedisTemplate)
+        .expire(recentAggregateKey(currentEpochMinute), RECENT_AGGREGATE_TTL);
   }
 
   @Test
-  void 최근_1시간_밖의_분단위_검색횟수는_제외한다() {
+  void 검색횟수_내림차순과_키워드_오름차순으로_정렬한_뒤_limit만_반환한다() {
+    when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
+    when(firstTuple.getValue()).thenReturn("아이패드");
+    when(firstTuple.getScore()).thenReturn(4.0);
+    when(secondTuple.getValue()).thenReturn("맥북");
+    when(secondTuple.getScore()).thenReturn(4.0);
+    when(thirdTuple.getValue()).thenReturn("에어팟");
+    when(thirdTuple.getScore()).thenReturn(2.0);
+    long currentEpochMinute = currentEpochMinute();
+    Set<TypedTuple<String>> topTuples =
+        new LinkedHashSet<>(List.of(firstTuple, secondTuple, thirdTuple));
+    when(zSetOperations.reverseRangeWithScores(recentAggregateKey(currentEpochMinute), 0, 3))
+        .thenReturn(topTuples);
+
+    List<PopularKeyword> popularKeywords = repository.findTopKeywords(2);
+
+    assertThat(popularKeywords)
+        .containsExactly(new PopularKeyword("맥북", 4), new PopularKeyword("아이패드", 4));
+  }
+
+  @Test
+  void 최근_1시간_밖의_분단위_검색횟수는_Redis_합산_대상에서_제외한다() {
     when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
     when(firstTuple.getValue()).thenReturn("아이패드");
     when(firstTuple.getScore()).thenReturn(1.0);
-    when(zSetOperations.reverseRangeWithScores(bucketKey(currentEpochMinute()), 0, -1))
+    when(zSetOperations.reverseRangeWithScores(recentAggregateKey(currentEpochMinute()), 0, 19))
         .thenReturn(new LinkedHashSet<>(List.of(firstTuple)));
 
     List<PopularKeyword> popularKeywords = repository.findTopKeywords(10);
 
     assertThat(popularKeywords).containsExactly(new PopularKeyword("아이패드", 1));
-    verify(zSetOperations, never())
-        .reverseRangeWithScores(bucketKey(currentEpochMinute() - 60), 0, -1);
+    verify(zSetOperations)
+        .unionAndStore(
+            eq(bucketKey(currentEpochMinute())),
+            argThat(
+                keys ->
+                    keys.size() == 59
+                        && keys.contains(bucketKey(currentEpochMinute() - 59))
+                        && !keys.contains(bucketKey(currentEpochMinute() - 60))),
+            eq(recentAggregateKey(currentEpochMinute())),
+            eq(Aggregate.SUM));
   }
 
   private long currentEpochMinute() {
@@ -99,5 +135,9 @@ class RedisPopularKeywordRepositoryTest {
 
   private String bucketKey(long epochMinute) {
     return KEY_PREFIX + epochMinute;
+  }
+
+  private String recentAggregateKey(long epochMinute) {
+    return RECENT_AGGREGATE_KEY_PREFIX + epochMinute;
   }
 }

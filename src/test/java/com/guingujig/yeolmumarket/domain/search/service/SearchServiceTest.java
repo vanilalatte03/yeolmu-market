@@ -380,6 +380,21 @@ class SearchServiceTest {
   }
 
   @Test
+  void v2_목록_캐시에_남은_ID라도_표시_조회시_요청_상태와_다르면_제외한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", "설명", 430000);
+    SearchProductRequest request = request("아이패드", null, null, ProductStatus.ON_SALE);
+
+    searchService.searchProductsV2(request);
+    clearSearchCache(SearchCacheNames.PRODUCT_DISPLAY_V2);
+    product.reserve();
+    productRepository.saveAndFlush(product);
+    PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
+
+    assertThat(response.content()).isEmpty();
+  }
+
+  @Test
   void v2_캐시_hit_상황에서도_사용자별_찜_여부는_섞이지_않는다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User viewer = saveUser("viewer@example.com", "조회자");
@@ -794,10 +809,14 @@ class SearchServiceTest {
   private void clearSearchCache() {
     for (String cacheName :
         List.of(SearchCacheNames.PRODUCT_SEARCH_LIST_V2, SearchCacheNames.PRODUCT_DISPLAY_V2)) {
-      org.springframework.cache.Cache cache = cacheManager.getCache(cacheName);
-      if (cache != null) {
-        cache.invalidate();
-      }
+      clearSearchCache(cacheName);
+    }
+  }
+
+  private void clearSearchCache(String cacheName) {
+    org.springframework.cache.Cache cache = cacheManager.getCache(cacheName);
+    if (cache != null) {
+      cache.invalidate();
     }
   }
 

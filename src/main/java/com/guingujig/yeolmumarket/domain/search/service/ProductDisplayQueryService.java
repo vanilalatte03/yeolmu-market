@@ -30,7 +30,7 @@ public class ProductDisplayQueryService {
   private final CacheManager cacheManager;
 
   @Transactional(readOnly = true)
-  public List<SearchProductDisplay> getDisplays(List<Long> productIds) {
+  public List<SearchProductDisplay> getDisplays(List<Long> productIds, ProductStatus status) {
     if (productIds == null || productIds.isEmpty()) {
       return List.of();
     }
@@ -55,14 +55,14 @@ public class ProductDisplayQueryService {
           log.warn("상품 표시 캐시 조회에 실패해 DB에서 조회합니다. productId={}", productId, exception);
         }
       }
-      if (cachedDisplay == null) {
+      if (!hasStatus(cachedDisplay, status)) {
         missingProductIds.add(productId);
       } else {
         displays.put(productId, cachedDisplay);
       }
     }
 
-    Map<Long, SearchProductDisplay> loadedDisplays = loadDisplays(missingProductIds);
+    Map<Long, SearchProductDisplay> loadedDisplays = loadDisplays(missingProductIds, status);
     displays.putAll(loadedDisplays);
     if (cacheAvailable) {
       putDisplays(cache, loadedDisplays.values());
@@ -71,17 +71,22 @@ public class ProductDisplayQueryService {
     return productIds.stream().map(displays::get).filter(Objects::nonNull).toList();
   }
 
-  private Map<Long, SearchProductDisplay> loadDisplays(Collection<Long> productIds) {
+  private Map<Long, SearchProductDisplay> loadDisplays(
+      Collection<Long> productIds, ProductStatus status) {
     if (productIds.isEmpty()) {
       return Map.of();
     }
 
     Map<Long, String> thumbnailUrls = productThumbnailQueryService.getThumbnailUrls(productIds);
-    return productRepository.findSearchDisplaysByIds(productIds, ProductStatus.DELETED).stream()
+    return productRepository.findSearchDisplaysByIds(productIds, status).stream()
         .map(projection -> toSearchProductDisplay(projection, thumbnailUrls))
         .collect(
             Collectors.toMap(
                 SearchProductDisplay::productId, display -> display, (first, second) -> first));
+  }
+
+  private boolean hasStatus(SearchProductDisplay display, ProductStatus status) {
+    return display != null && display.status() == status;
   }
 
   private SearchProductDisplay toSearchProductDisplay(

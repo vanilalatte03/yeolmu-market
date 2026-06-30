@@ -112,11 +112,10 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
       where product.id in :productIds
         and product.hidden = false
         and product.deletedAt is null
-        and product.status <> :deletedStatus
+        and product.status = :status
       """)
   List<ProductSearchDisplayProjection> findSearchDisplaysByIds(
-      @Param("productIds") Collection<Long> productIds,
-      @Param("deletedStatus") ProductStatus deletedStatus);
+      @Param("productIds") Collection<Long> productIds, @Param("status") ProductStatus status);
 
   interface ProductSearchDisplayProjection {
     Long getProductId();
