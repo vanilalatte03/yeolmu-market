@@ -11,8 +11,10 @@ import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
@@ -77,7 +79,7 @@ public class OrderService {
     Order order = Order.create(buyer, product);
     orderRepository.save(order);
 
-    publishProductSearchCacheEviction();
+    publishProductStatusChanged(product.getId(), ProductStatus.ON_SALE, ProductStatus.RESERVED);
     return CreateOrderResponse.from(order);
   }
 
@@ -214,7 +216,8 @@ public class OrderService {
     return normalizedTrackingNumber;
   }
 
-  private void publishProductSearchCacheEviction() {
-    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+  private void publishProductStatusChanged(Long productId, ProductStatus... affectedStatuses) {
+    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId, affectedStatuses));
+    eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
   }
 }

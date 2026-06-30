@@ -4,6 +4,7 @@ import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
 import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.refund.dto.ApproveRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.dto.CreateRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.dto.RefundResolution;
@@ -11,7 +12,8 @@ import com.guingujig.yeolmumarket.domain.refund.dto.RejectRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.dto.ResolveRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.entity.RefundRequest;
 import com.guingujig.yeolmumarket.domain.refund.repository.RefundRequestRepository;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.lock.LockBoundedTransactional;
@@ -81,7 +83,10 @@ public class RefundLockedCommandService {
     refundRequest.approveBySeller(sellerId, payment, approvedAt);
 
     flushRefundRequestChanges();
-    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+    publishProductStatusChanged(
+        refundRequest.getOrder().getProduct().getId(),
+        ProductStatus.RESERVED,
+        ProductStatus.ON_SALE);
 
     return ApproveRefundRequestResponse.from(refundRequest);
   }
@@ -118,7 +123,10 @@ public class RefundLockedCommandService {
     }
 
     flushRefundRequestChanges();
-    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+    publishProductStatusChanged(
+        refundRequest.getOrder().getProduct().getId(),
+        ProductStatus.RESERVED,
+        resolution == RefundResolution.REFUND ? ProductStatus.ON_SALE : ProductStatus.SOLD_OUT);
 
     return ResolveRefundRequestResponse.from(refundRequest);
   }
@@ -139,6 +147,11 @@ public class RefundLockedCommandService {
 
   private LocalDateTime nowUtc() {
     return LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
+  }
+
+  private void publishProductStatusChanged(Long productId, ProductStatus... affectedStatuses) {
+    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId, affectedStatuses));
+    eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
   }
 
   private boolean isDuplicateRefundRequestConstraint(Throwable throwable) {

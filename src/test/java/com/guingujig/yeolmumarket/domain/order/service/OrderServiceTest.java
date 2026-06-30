@@ -21,7 +21,8 @@ import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
@@ -651,8 +652,9 @@ class OrderServiceTest {
     Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
     Order order = saveShippingOrder(buyer, product);
     Payment payment = savePaidPayment(order);
-    long cacheEvictionEventsBefore =
-        applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count();
+    long searchIndexEventsBefore =
+        applicationEvents.stream(ProductSearchIndexChangedEvent.class).count();
+    long displayEventsBefore = applicationEvents.stream(ProductDisplayChangedEvent.class).count();
 
     ConfirmOrderResponse response = orderService.confirmOrder(buyer.getId(), order.getId());
 
@@ -670,8 +672,10 @@ class OrderServiceTest {
         .isEqualTo(ProductStatus.SOLD_OUT);
     assertThat(paymentRepository.findById(payment.getId()).orElseThrow().getStatus())
         .isEqualTo(PaymentStatus.PAID);
-    assertThat(applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count())
-        .isEqualTo(cacheEvictionEventsBefore + 1);
+    assertThat(applicationEvents.stream(ProductSearchIndexChangedEvent.class).count())
+        .isEqualTo(searchIndexEventsBefore + 1);
+    assertThat(applicationEvents.stream(ProductDisplayChangedEvent.class).count())
+        .isEqualTo(displayEventsBefore + 1);
   }
 
   @Test

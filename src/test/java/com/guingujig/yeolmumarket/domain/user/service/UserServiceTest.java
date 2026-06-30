@@ -1,14 +1,11 @@
 package com.guingujig.yeolmumarket.domain.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.isA;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.guingujig.yeolmumarket.domain.review.dto.ReviewRatingSummary;
 import com.guingujig.yeolmumarket.domain.review.service.ReviewRatingQueryService;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
 import com.guingujig.yeolmumarket.domain.user.dto.GetUserResponse;
 import com.guingujig.yeolmumarket.domain.user.dto.UpdateUserRequest;
 import com.guingujig.yeolmumarket.domain.user.dto.UpdateUserResponse;
@@ -21,7 +18,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -33,15 +29,13 @@ class UserServiceTest {
 
   @Mock private UserRepository userRepository;
   @Mock private PasswordEncoder passwordEncoder;
-  @Mock private ApplicationEventPublisher eventPublisher;
   @Mock private ReviewRatingQueryService reviewRatingQueryService;
 
   private UserService userService;
 
   @BeforeEach
   void setUp() {
-    userService =
-        new UserService(userRepository, passwordEncoder, eventPublisher, reviewRatingQueryService);
+    userService = new UserService(userRepository, passwordEncoder, reviewRatingQueryService);
   }
 
   @Test
@@ -58,7 +52,7 @@ class UserServiceTest {
   }
 
   @Test
-  void 닉네임을_변경하면_상품_검색_캐시_무효화_이벤트를_발행한다() {
+  void 닉네임을_변경하면_사용자_정보만_수정한다() {
     User user = user();
     when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 
@@ -67,7 +61,6 @@ class UserServiceTest {
 
     assertThat(response.nickname()).isEqualTo("새닉네임");
     verify(userRepository).flush();
-    verify(eventPublisher).publishEvent(isA(ProductSearchCacheEvictionEvent.class));
   }
 
   @Test
@@ -81,7 +74,6 @@ class UserServiceTest {
 
     assertThat(response.nickname()).isEqualTo("열무구매자");
     verify(userRepository).flush();
-    verify(eventPublisher, never()).publishEvent(isA(ProductSearchCacheEvictionEvent.class));
   }
 
   private User user() {

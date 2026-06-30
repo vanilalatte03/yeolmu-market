@@ -22,7 +22,8 @@ import com.guingujig.yeolmumarket.domain.refund.dto.ResolveRefundRequestResponse
 import com.guingujig.yeolmumarket.domain.refund.entity.RefundRequest;
 import com.guingujig.yeolmumarket.domain.refund.entity.RefundRequestStatus;
 import com.guingujig.yeolmumarket.domain.refund.repository.RefundRequestRepository;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
@@ -311,8 +312,8 @@ class RefundServiceTest {
     Order order = saveShippingOrder(buyer, product);
     Payment payment = savePaidPayment(order);
     RefundRequest refundRequest = saveRequestedRefund(order, "상품에 설명과 다른 하자가 있습니다.");
-    long cacheEvictionEventsBefore =
-        applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count();
+    long searchIndexEventsBefore = searchIndexChangedEventCount();
+    long displayEventsBefore = productDisplayChangedEventCount();
 
     ApproveRefundRequestResponse response =
         refundService.approveRefundRequest(seller.getId(), refundRequest.getId());
@@ -338,8 +339,8 @@ class RefundServiceTest {
     Payment refundedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
     assertThat(refundedPayment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
     assertThat(refundedPayment.getCanceledAt()).isEqualTo(approvedRefund.getApprovedAt());
-    assertThat(applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count())
-        .isEqualTo(cacheEvictionEventsBefore + 1);
+    assertThat(searchIndexChangedEventCount()).isEqualTo(searchIndexEventsBefore + 1);
+    assertThat(productDisplayChangedEventCount()).isEqualTo(displayEventsBefore + 1);
   }
 
   @Test
@@ -350,8 +351,8 @@ class RefundServiceTest {
     Order order = saveShippingOrder(buyer, product);
     Payment payment = savePaidPayment(order);
     RefundRequest refundRequest = saveRequestedRefund(order, "상품에 설명과 다른 하자가 있습니다.");
-    long cacheEvictionEventsBefore =
-        applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count();
+    long searchIndexEventsBefore = searchIndexChangedEventCount();
+    long displayEventsBefore = productDisplayChangedEventCount();
 
     RejectRefundRequestResponse response =
         refundService.rejectRefundRequest(seller.getId(), refundRequest.getId(), "  정상 상품입니다.  ");
@@ -375,8 +376,8 @@ class RefundServiceTest {
         .isEqualTo(ProductStatus.RESERVED);
     assertThat(paymentRepository.findById(payment.getId()).orElseThrow().getStatus())
         .isEqualTo(PaymentStatus.PAID);
-    assertThat(applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count())
-        .isEqualTo(cacheEvictionEventsBefore);
+    assertThat(searchIndexChangedEventCount()).isEqualTo(searchIndexEventsBefore);
+    assertThat(productDisplayChangedEventCount()).isEqualTo(displayEventsBefore);
   }
 
   @Test
@@ -406,8 +407,8 @@ class RefundServiceTest {
     Order order = saveShippingOrder(buyer, product);
     Payment payment = savePaidPayment(order);
     RefundRequest refundRequest = saveDisputedRefund(order, "상품에 설명과 다른 하자가 있습니다.", "정상 상품입니다.");
-    long cacheEvictionEventsBefore =
-        applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count();
+    long searchIndexEventsBefore = searchIndexChangedEventCount();
+    long displayEventsBefore = productDisplayChangedEventCount();
 
     ResolveRefundRequestResponse response =
         refundService.resolveRefundRequest(
@@ -435,8 +436,8 @@ class RefundServiceTest {
     assertThat(refundedPayment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
     assertThat(refundedPayment.getCanceledAt()).isEqualTo(resolvedRefund.getResolvedAt());
     assertThat(refundedPayment.getCancelReason()).isEqualTo("분쟁 환불 종료");
-    assertThat(applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count())
-        .isEqualTo(cacheEvictionEventsBefore + 1);
+    assertThat(searchIndexChangedEventCount()).isEqualTo(searchIndexEventsBefore + 1);
+    assertThat(productDisplayChangedEventCount()).isEqualTo(displayEventsBefore + 1);
   }
 
   @Test
@@ -447,8 +448,8 @@ class RefundServiceTest {
     Order order = saveShippingOrder(buyer, product);
     Payment payment = savePaidPayment(order);
     RefundRequest refundRequest = saveDisputedRefund(order, "상품에 설명과 다른 하자가 있습니다.", "정상 상품입니다.");
-    long cacheEvictionEventsBefore =
-        applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count();
+    long searchIndexEventsBefore = searchIndexChangedEventCount();
+    long displayEventsBefore = productDisplayChangedEventCount();
 
     ResolveRefundRequestResponse response =
         refundService.resolveRefundRequest(
@@ -475,8 +476,8 @@ class RefundServiceTest {
     Payment paidPayment = paymentRepository.findById(payment.getId()).orElseThrow();
     assertThat(paidPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
     assertThat(paidPayment.getCanceledAt()).isNull();
-    assertThat(applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count())
-        .isEqualTo(cacheEvictionEventsBefore + 1);
+    assertThat(searchIndexChangedEventCount()).isEqualTo(searchIndexEventsBefore + 1);
+    assertThat(productDisplayChangedEventCount()).isEqualTo(displayEventsBefore + 1);
   }
 
   @Test
@@ -952,6 +953,14 @@ class RefundServiceTest {
     assertThat(
             refundRequestRepository.findById(refundRequest.getId()).orElseThrow().getResolvedAt())
         .isNull();
+  }
+
+  private long searchIndexChangedEventCount() {
+    return applicationEvents.stream(ProductSearchIndexChangedEvent.class).count();
+  }
+
+  private long productDisplayChangedEventCount() {
+    return applicationEvents.stream(ProductDisplayChangedEvent.class).count();
   }
 
   private void deleteAll() {

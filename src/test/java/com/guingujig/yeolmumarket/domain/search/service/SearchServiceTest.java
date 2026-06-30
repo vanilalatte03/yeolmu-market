@@ -40,7 +40,11 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Collection;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -376,6 +380,21 @@ class SearchServiceTest {
   }
 
   @Test
+  void v2_목록_캐시에_남은_ID라도_표시_조회시_요청_상태와_다르면_제외한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product product = saveProduct(seller, "아이패드 미니 6세대", "설명", 430000);
+    SearchProductRequest request = request("아이패드", null, null, ProductStatus.ON_SALE);
+
+    searchService.searchProductsV2(request);
+    clearSearchCache(SearchCacheNames.PRODUCT_DISPLAY_V2);
+    product.reserve();
+    productRepository.saveAndFlush(product);
+    PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
+
+    assertThat(response.content()).isEmpty();
+  }
+
+  @Test
   void v2_캐시_hit_상황에서도_사용자별_찜_여부는_섞이지_않는다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User viewer = saveUser("viewer@example.com", "조회자");
@@ -531,6 +550,23 @@ class SearchServiceTest {
   }
 
   @Test
+  void 판매중_상품_등록은_RESERVED_검색_목록_캐시를_무효화하지_않는다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    saveProductWithStatus(seller, "예약 상품", "설명", 10000, ProductStatus.RESERVED);
+    SearchProductRequest reservedRequest = request(null, null, null, ProductStatus.RESERVED);
+
+    PageResponse<SearchProductResponse> firstResponse =
+        searchService.searchProductsV2(reservedRequest);
+    Category category = saveCategory("디지털기기");
+    productService.createProduct(
+        seller.getId(), new CreateProductRequest("판매중 상품", "설명", 20000, category.getId()));
+    PageResponse<SearchProductResponse> secondResponse =
+        searchService.searchProductsV2(reservedRequest);
+
+    assertThat(secondResponse).isEqualTo(firstResponse);
+  }
+
+  @Test
   void 상품_수정_후_v2_검색_캐시가_무효화되어_변경값이_반영된다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     Product product = saveProduct(seller, "변경 전 상품", "설명", 10000);
@@ -548,6 +584,24 @@ class SearchServiceTest {
   }
 
   @Test
+  void 가격_변경_후_v2_검색_캐시가_무효화되어_정렬_이동이_반영된다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product cheapProduct = saveProduct(seller, "저가 상품", "설명", 10000);
+    Product expensiveProduct = saveProduct(seller, "고가 상품", "설명", 50000);
+    SearchProductRequest request =
+        new SearchProductRequest(null, null, null, ProductStatus.ON_SALE, 0, 10, "priceAsc");
+
+    searchService.searchProductsV2(request);
+    productService.updateProduct(
+        seller.getId(), expensiveProduct.getId(), new UpdateProductRequest(null, null, 5000, null));
+    PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
+
+    assertThat(response.content())
+        .extracting(SearchProductResponse::productId)
+        .containsExactly(expensiveProduct.getId(), cheapProduct.getId());
+  }
+
+  @Test
   void 상품_삭제_후_v2_검색_캐시가_무효화되어_검색에서_제외된다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     Product product = saveProduct(seller, "삭제 대상 상품", "설명", 10000);
@@ -558,6 +612,44 @@ class SearchServiceTest {
     PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
 
     assertThat(response.content()).isEmpty();
+    assertThat(response.totalElements()).isZero();
+  }
+
+  @Test
+  void 상품_삭제_후_v2_검색_캐시가_무효화되어_뒤_페이지_상품이_당겨진다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product secondPageProduct = saveProduct(seller, "뒤 페이지 상품", "설명", 10000);
+    Product firstPageProduct = saveProduct(seller, "첫 페이지 상품", "설명", 20000);
+    SearchProductRequest request =
+        new SearchProductRequest(null, null, null, ProductStatus.ON_SALE, 0, 1, "latest");
+
+    searchService.searchProductsV2(request);
+    productService.deleteProduct(seller.getId(), firstPageProduct.getId());
+    PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
+
+    assertThat(response.content())
+        .extracting(SearchProductResponse::productId)
+        .containsExactly(secondPageProduct.getId());
+    assertThat(response.totalElements()).isEqualTo(1);
+  }
+
+  @Test
+  void 상품_숨김_후_v2_검색_캐시가_무효화되어_뒤_페이지_상품이_당겨진다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    Product secondPageProduct = saveProduct(seller, "뒤 페이지 상품", "설명", 10000);
+    Product firstPageProduct = saveProduct(seller, "첫 페이지 상품", "설명", 20000);
+    SearchProductRequest request =
+        new SearchProductRequest(null, null, null, ProductStatus.ON_SALE, 0, 1, "latest");
+
+    searchService.searchProductsV2(request);
+    productService.updateProductHiddenStatus(
+        firstPageProduct.getId(), new UpdateProductHiddenStatusRequest(true));
+    PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
+
+    assertThat(response.content())
+        .extracting(SearchProductResponse::productId)
+        .containsExactly(secondPageProduct.getId());
+    assertThat(response.totalElements()).isEqualTo(1);
   }
 
   @Test
@@ -612,6 +704,21 @@ class SearchServiceTest {
   }
 
   @Test
+  void 닉네임_변경_후_v2_캐시_hit_상황에서도_최신_닉네임을_조립한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    saveProduct(seller, "아이패드 미니 6세대", "설명", 430000);
+    SearchProductRequest request = request("아이패드", null, null, ProductStatus.ON_SALE);
+
+    PageResponse<SearchProductResponse> beforeResponse = searchService.searchProductsV2(request);
+    seller.updateNickname("새판매자");
+    userRepository.saveAndFlush(seller);
+    PageResponse<SearchProductResponse> afterResponse = searchService.searchProductsV2(request);
+
+    assertThat(beforeResponse.content().getFirst().sellerNickname()).isEqualTo("열무판매자");
+    assertThat(afterResponse.content().getFirst().sellerNickname()).isEqualTo("새판매자");
+  }
+
+  @Test
   void Redis_기반_CacheManager가_검색_캐시_TTL과_serializer를_적용한다() {
     RedisCacheManager redisCacheManager =
         (RedisCacheManager)
@@ -620,43 +727,52 @@ class SearchServiceTest {
                     org.mockito.Mockito.mock(RedisConnectionFactory.class), searchCacheProperties);
     redisCacheManager.afterPropertiesSet();
     assertThat(redisCacheManager.getCacheNames())
-        .containsExactly(SearchCacheNames.PRODUCT_SEARCH_V2);
+        .containsExactlyInAnyOrder(
+            SearchCacheNames.PRODUCT_SEARCH_LIST_V2, SearchCacheNames.PRODUCT_DISPLAY_V2);
 
-    RedisCache cache = (RedisCache) redisCacheManager.getCache(SearchCacheNames.PRODUCT_SEARCH_V2);
-    assertThat(cache).isNotNull();
-    RedisCacheConfiguration configuration = cache.getCacheConfiguration();
+    RedisCache listCache =
+        (RedisCache) redisCacheManager.getCache(SearchCacheNames.PRODUCT_SEARCH_LIST_V2);
+    RedisCache displayCache =
+        (RedisCache) redisCacheManager.getCache(SearchCacheNames.PRODUCT_DISPLAY_V2);
+    assertThat(listCache).isNotNull();
+    assertThat(displayCache).isNotNull();
+    RedisCacheConfiguration configuration = listCache.getCacheConfiguration();
+    RedisCacheConfiguration displayConfiguration = displayCache.getCacheConfiguration();
 
-    assertThat(searchCacheProperties.productsV2().ttl()).isEqualTo(Duration.ofMinutes(5));
+    assertThat(searchCacheProperties.productsV2().listTtl()).isEqualTo(Duration.ofSeconds(30));
+    assertThat(searchCacheProperties.productsV2().displayTtl()).isEqualTo(Duration.ofMinutes(5));
     assertThat(configuration.getTtlFunction().getTimeToLive("key", "value"))
+        .isEqualTo(Duration.ofSeconds(30));
+    assertThat(displayConfiguration.getTtlFunction().getTimeToLive("key", "value"))
         .isEqualTo(Duration.ofMinutes(5));
-    assertThat(configuration.getKeyPrefixFor(SearchCacheNames.PRODUCT_SEARCH_V2))
+    assertThat(configuration.getKeyPrefixFor(SearchCacheNames.PRODUCT_SEARCH_LIST_V2))
         .isEqualTo("cache:search:products:v2::");
+    assertThat(displayConfiguration.getKeyPrefixFor(SearchCacheNames.PRODUCT_DISPLAY_V2))
+        .isEqualTo("cache:search:products:v2:display::");
 
     byte[] keyBytes = toBytes(configuration.getKeySerializationPair().write("search-key"));
     assertThat(new String(keyBytes, StandardCharsets.UTF_8)).isEqualTo("search-key");
 
-    PageResponse<SearchProductResponse> pageResponse =
-        new PageResponse<>(
-            List.of(
-                new SearchProductResponse(
-                    1L,
-                    "아이패드",
-                    430000,
-                    ProductStatus.ON_SALE,
-                    null,
-                    "열무판매자",
-                    0,
-                    false,
-                    OffsetDateTime.of(2026, 6, 26, 0, 0, 0, 0, ZoneOffset.UTC))),
-            0,
-            10,
-            1,
-            1,
-            false);
+    PageResponse<Long> pageResponse = new PageResponse<>(List.of(1L), 0, 10, 1, 1, false);
     ByteBuffer valueBuffer = configuration.getValueSerializationPair().write(pageResponse);
     Object deserialized = configuration.getValueSerializationPair().read(valueBuffer);
 
     assertThat(deserialized).isEqualTo(pageResponse);
+
+    SearchProductDisplay display =
+        new SearchProductDisplay(
+            1L,
+            "아이패드",
+            430000,
+            ProductStatus.ON_SALE,
+            null,
+            2L,
+            OffsetDateTime.of(2026, 6, 26, 0, 0, 0, 0, ZoneOffset.UTC));
+    ByteBuffer displayValueBuffer = displayConfiguration.getValueSerializationPair().write(display);
+    Object displayDeserialized =
+        displayConfiguration.getValueSerializationPair().read(displayValueBuffer);
+
+    assertThat(displayDeserialized).isEqualTo(display);
   }
 
   @TestConfiguration
@@ -665,7 +781,33 @@ class SearchServiceTest {
     @Bean
     @Primary
     CacheManager testCacheManager() {
-      return new ConcurrentMapCacheManager(SearchCacheNames.PRODUCT_SEARCH_V2);
+      return new ConcurrentMapCacheManager(
+          SearchCacheNames.PRODUCT_SEARCH_LIST_V2, SearchCacheNames.PRODUCT_DISPLAY_V2);
+    }
+
+    @Bean
+    @Primary
+    SearchIndexVersionProvider searchIndexVersionProvider() {
+      return new InMemorySearchIndexVersionProvider();
+    }
+  }
+
+  static class InMemorySearchIndexVersionProvider implements SearchIndexVersionProvider {
+
+    private final Map<ProductStatus, AtomicLong> versions = new EnumMap<>(ProductStatus.class);
+
+    @Override
+    public String currentVersionKey(ProductStatus status) {
+      return Long.toString(version(status).get());
+    }
+
+    @Override
+    public void increaseVersions(Collection<ProductStatus> statuses) {
+      statuses.forEach(status -> version(status).incrementAndGet());
+    }
+
+    private AtomicLong version(ProductStatus status) {
+      return versions.computeIfAbsent(status, ignored -> new AtomicLong());
     }
   }
 
@@ -684,8 +826,14 @@ class SearchServiceTest {
   }
 
   private void clearSearchCache() {
-    org.springframework.cache.Cache cache =
-        cacheManager.getCache(SearchCacheNames.PRODUCT_SEARCH_V2);
+    for (String cacheName :
+        List.of(SearchCacheNames.PRODUCT_SEARCH_LIST_V2, SearchCacheNames.PRODUCT_DISPLAY_V2)) {
+      clearSearchCache(cacheName);
+    }
+  }
+
+  private void clearSearchCache(String cacheName) {
+    org.springframework.cache.Cache cache = cacheManager.getCache(cacheName);
     if (cache != null) {
       cache.invalidate();
     }

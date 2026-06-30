@@ -5,7 +5,9 @@ import com.guingujig.yeolmumarket.domain.order.dto.ConfirmOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.RegisterOrderShippingResponse;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.lock.LockBoundedTransactional;
@@ -40,7 +42,8 @@ public class OrderLockedCommandService {
     }
     entityManager.refresh(order);
 
-    publishProductSearchCacheEviction();
+    publishProductStatusChanged(
+        order.getProduct().getId(), ProductStatus.RESERVED, ProductStatus.ON_SALE);
     return CancelOrderResponse.from(order);
   }
 
@@ -78,7 +81,8 @@ public class OrderLockedCommandService {
     }
     entityManager.refresh(order);
 
-    publishProductSearchCacheEviction();
+    publishProductStatusChanged(
+        order.getProduct().getId(), ProductStatus.RESERVED, ProductStatus.SOLD_OUT);
     return ConfirmOrderResponse.from(order);
   }
 
@@ -88,7 +92,8 @@ public class OrderLockedCommandService {
         .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
   }
 
-  private void publishProductSearchCacheEviction() {
-    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+  private void publishProductStatusChanged(Long productId, ProductStatus... affectedStatuses) {
+    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId, affectedStatuses));
+    eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
   }
 }

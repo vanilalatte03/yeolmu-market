@@ -1,7 +1,9 @@
 package com.guingujig.yeolmumarket.domain.search.service;
 
+import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductRequest;
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductResponse;
+import com.guingujig.yeolmumarket.domain.user.service.UserNicknameQueryService;
 import com.guingujig.yeolmumarket.domain.wish.dto.ProductWishSummary;
 import com.guingujig.yeolmumarket.domain.wish.service.ProductWishSummaryService;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
@@ -22,7 +24,10 @@ public class SearchService {
 
   private final SearchProductQueryService searchProductQueryService;
   private final CachedSearchProductQueryService cachedSearchProductQueryService;
+  private final ProductDisplayQueryService productDisplayQueryService;
+  private final SearchIndexVersionProvider searchIndexVersionProvider;
   private final PopularKeywordService popularKeywordService;
+  private final UserNicknameQueryService userNicknameQueryService;
   private final ProductWishSummaryService productWishSummaryService;
 
   /**
@@ -40,7 +45,10 @@ public class SearchService {
       SearchProductRequest request, Long authenticatedUserId) {
     SearchProductCondition condition = SearchProductCondition.from(request);
     recordSearchKeywordSafely(request.keyword());
-    return withWishSummaries(searchProductQueryService.search(condition), authenticatedUserId);
+    return assembleSearchResponse(
+        searchProductQueryService.searchProductIds(condition),
+        authenticatedUserId,
+        condition.status());
   }
 
   /**
@@ -58,23 +66,32 @@ public class SearchService {
       SearchProductRequest request, Long authenticatedUserId) {
     SearchProductCondition condition = SearchProductCondition.from(request);
     recordSearchKeywordSafely(request.keyword());
-    return withWishSummaries(
-        cachedSearchProductQueryService.search(condition), authenticatedUserId);
+    SearchProductCacheKey cacheKey =
+        new SearchProductCacheKey(
+            condition, searchIndexVersionProvider.currentVersionKey(condition.status()));
+    return assembleSearchResponse(
+        cachedSearchProductQueryService.search(cacheKey), authenticatedUserId, condition.status());
   }
 
-  private PageResponse<SearchProductResponse> withWishSummaries(
-      PageResponse<SearchProductResponse> response, Long authenticatedUserId) {
-    List<Long> productIds =
-        response.content().stream().map(SearchProductResponse::productId).toList();
+  private PageResponse<SearchProductResponse> assembleSearchResponse(
+      PageResponse<Long> response, Long authenticatedUserId, ProductStatus status) {
+    List<SearchProductDisplay> displays =
+        productDisplayQueryService.getDisplays(response.content(), status);
+    List<Long> productIds = displays.stream().map(SearchProductDisplay::productId).toList();
+    Map<Long, String> sellerNicknames =
+        userNicknameQueryService.getNicknames(
+            displays.stream().map(SearchProductDisplay::sellerId).toList());
     Map<Long, ProductWishSummary> wishSummaries =
         productWishSummaryService.getSummaries(productIds, authenticatedUserId);
     List<SearchProductResponse> content =
-        response.content().stream()
+        displays.stream()
             .map(
-                product ->
-                    product.withWishSummary(
+                display ->
+                    SearchProductResponse.from(
+                        display,
+                        sellerNicknames.get(display.sellerId()),
                         wishSummaries.getOrDefault(
-                            product.productId(), ProductWishSummary.empty(product.productId()))))
+                            display.productId(), ProductWishSummary.empty(display.productId()))))
             .toList();
 
     return new PageResponse<>(

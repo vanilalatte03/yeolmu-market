@@ -4,6 +4,9 @@ import com.guingujig.yeolmumarket.domain.product.dto.ProductListItemProjection;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import jakarta.persistence.LockModeType;
+import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -86,26 +89,72 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
   Page<Product> findByHiddenTrueAndDeletedAtIsNullAndStatusNot(
       ProductStatus status, Pageable pageable);
 
-  @EntityGraph(attributePaths = "seller")
   @Query(
-      """
-      select product
-      from Product product
-      where product.hidden = false
-        and product.deletedAt is null
-        and product.status = :status
-        and (
-          :keyword is null
-          or lower(product.title) like lower(concat(concat('%', :keyword), '%')) escape '!'
-          or lower(product.description) like lower(concat(concat('%', :keyword), '%')) escape '!'
-        )
-        and (:minPrice is null or product.price >= :minPrice)
-        and (:maxPrice is null or product.price <= :maxPrice)
-      """)
-  Page<Product> searchPublicProducts(
+      value =
+          """
+          select product.id
+          from Product product
+          where product.hidden = false
+            and product.deletedAt is null
+            and product.status = :status
+            and (
+              :keyword is null
+              or lower(product.title) like lower(concat(concat('%', :keyword), '%')) escape '!'
+              or lower(product.description) like lower(concat(concat('%', :keyword), '%')) escape '!'
+            )
+            and (:minPrice is null or product.price >= :minPrice)
+            and (:maxPrice is null or product.price <= :maxPrice)
+          """,
+      countQuery =
+          """
+          select count(product)
+          from Product product
+          where product.hidden = false
+            and product.deletedAt is null
+            and product.status = :status
+            and (
+              :keyword is null
+              or lower(product.title) like lower(concat(concat('%', :keyword), '%')) escape '!'
+              or lower(product.description) like lower(concat(concat('%', :keyword), '%')) escape '!'
+            )
+            and (:minPrice is null or product.price >= :minPrice)
+            and (:maxPrice is null or product.price <= :maxPrice)
+          """)
+  Page<Long> searchPublicProductIds(
       @Param("keyword") String keyword,
       @Param("minPrice") Integer minPrice,
       @Param("maxPrice") Integer maxPrice,
       @Param("status") ProductStatus status,
       Pageable pageable);
+
+  @Query(
+      """
+      select product.id as productId,
+             product.title as title,
+             product.price as price,
+             product.status as status,
+             product.seller.id as sellerId,
+             product.createdAt as createdAt
+      from Product product
+      where product.id in :productIds
+        and product.hidden = false
+        and product.deletedAt is null
+        and product.status = :status
+      """)
+  List<ProductSearchDisplayProjection> findSearchDisplaysByIds(
+      @Param("productIds") Collection<Long> productIds, @Param("status") ProductStatus status);
+
+  interface ProductSearchDisplayProjection {
+    Long getProductId();
+
+    String getTitle();
+
+    Integer getPrice();
+
+    ProductStatus getStatus();
+
+    Long getSellerId();
+
+    LocalDateTime getCreatedAt();
+  }
 }

@@ -20,7 +20,8 @@ import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
@@ -373,7 +374,7 @@ class PaymentServiceTest {
   }
 
   @Test
-  void 결제_실패_시_검색_캐시_무효화_이벤트가_발행된다() {
+  void 결제_실패_시_상품_검색_인덱스와_표시_변경_이벤트가_발행된다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
@@ -385,8 +386,8 @@ class PaymentServiceTest {
         "idem-key-001",
         new CreatePaymentRequest(PaymentMethod.MOCK_CARD, MockPaymentResult.FAILED));
 
-    assertThat(applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count())
-        .isEqualTo(1);
+    assertThat(applicationEvents.stream(ProductSearchIndexChangedEvent.class).count()).isEqualTo(1);
+    assertThat(applicationEvents.stream(ProductDisplayChangedEvent.class).count()).isEqualTo(1);
   }
 
   @Test
@@ -899,7 +900,7 @@ class PaymentServiceTest {
   }
 
   @Test
-  void 결제_취소_성공_시_검색_캐시_무효화_이벤트가_발행된다() {
+  void 결제_취소_성공_시_상품_검색_인덱스와_표시_변경_이벤트가_발행된다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
@@ -908,8 +909,8 @@ class PaymentServiceTest {
 
     paymentService.cancelPayment(buyer.getId(), payment.getId(), null);
 
-    assertThat(applicationEvents.stream(ProductSearchCacheEvictionEvent.class).count())
-        .isEqualTo(1);
+    assertThat(applicationEvents.stream(ProductSearchIndexChangedEvent.class).count()).isEqualTo(1);
+    assertThat(applicationEvents.stream(ProductDisplayChangedEvent.class).count()).isEqualTo(1);
   }
 
   @Test

@@ -8,7 +8,9 @@ import com.guingujig.yeolmumarket.domain.payment.dto.MockPaymentResult;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentResponse;
 import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
 import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchCacheEvictionEvent;
+import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
+import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.lock.LockBoundedTransactional;
@@ -65,7 +67,8 @@ public class PaymentLockedCommandService {
     } else {
       payment = Payment.createFailed(order, request.method(), idempotencyKey, now);
       order.failPaymentAndReleaseProduct();
-      eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+      publishProductStatusChanged(
+          order.getProduct().getId(), ProductStatus.RESERVED, ProductStatus.ON_SALE);
     }
 
     try {
@@ -92,7 +95,8 @@ public class PaymentLockedCommandService {
       throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
     }
 
-    eventPublisher.publishEvent(new ProductSearchCacheEvictionEvent());
+    publishProductStatusChanged(
+        payment.getOrder().getProduct().getId(), ProductStatus.RESERVED, ProductStatus.ON_SALE);
 
     return CancelPaymentResponse.from(payment);
   }
@@ -103,5 +107,10 @@ public class PaymentLockedCommandService {
       return MockPaymentResult.PAID;
     }
     return result;
+  }
+
+  private void publishProductStatusChanged(Long productId, ProductStatus... affectedStatuses) {
+    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId, affectedStatuses));
+    eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
   }
 }
