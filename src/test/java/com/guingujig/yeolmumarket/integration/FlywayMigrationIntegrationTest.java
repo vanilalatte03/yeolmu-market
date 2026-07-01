@@ -40,7 +40,8 @@ class FlywayMigrationIntegrationTest {
 
     try (Connection connection =
         DriverManager.getConnection(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())) {
-      assertThat(appliedVersions(connection)).containsExactly("1", "2", "3", "4", "5", "6", "7");
+      assertThat(appliedVersions(connection))
+          .containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
       assertThat(tableExists(connection, "users")).isTrue();
       assertThat(tableExists(connection, "product_image")).isTrue();
       assertThat(tableExists(connection, "review")).isTrue();
@@ -49,6 +50,7 @@ class FlywayMigrationIntegrationTest {
       assertThat(columnExists(connection, "orders", "tracking_number")).isTrue();
       assertThat(columnExists(connection, "chatmessage", "accepted_message_id")).isTrue();
       assertThat(columnExists(connection, "product_image", "thumbnail_product_id")).isTrue();
+      assertThat(indexExists(connection, "product", "idx_product_public_list_latest")).isTrue();
     }
   }
 
@@ -102,6 +104,26 @@ class FlywayMigrationIntegrationTest {
       try (ResultSet resultSet = statement.executeQuery()) {
         resultSet.next();
         return resultSet.getInt(1) == 1;
+      }
+    }
+  }
+
+  private boolean indexExists(Connection connection, String tableName, String indexName)
+      throws SQLException {
+    String sql =
+        """
+        select count(*)
+        from information_schema.statistics
+        where table_schema = database()
+          and table_name = ?
+          and index_name = ?
+        """;
+    try (var statement = connection.prepareStatement(sql)) {
+      statement.setString(1, tableName);
+      statement.setString(2, indexName);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        resultSet.next();
+        return resultSet.getInt(1) > 0;
       }
     }
   }
