@@ -35,6 +35,7 @@ const SUMMARY_BASENAME = __ENV.SUMMARY_BASENAME || 'chat-websocket-summary';
 const SUMMARY_DIRECTORY = __ENV.SUMMARY_DIRECTORY || 'k6/results';
 
 const chatWsConnected = new Counter('chat_ws_connected');
+const chatWsUpgradeFailed = new Counter('chat_ws_upgrade_failed');
 const chatSubscriptionsReady = new Counter('chat_subscriptions_ready');
 const chatMessagesSent = new Counter('chat_messages_sent');
 const chatMessagesAccepted = new Counter('chat_messages_accepted');
@@ -53,8 +54,10 @@ export const options = {
   },
   summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
   thresholds: {
-    chat_ws_connected: ['count>0'],
-    chat_messages_accepted: ['count>0'],
+    checks: ['rate==1'],
+    chat_ws_connected: [`count>=${VUS}`],
+    chat_ws_upgrade_failed: ['count==0'],
+    chat_messages_accepted: [`count>=${VUS}`],
     chat_errors: ['count==0'],
     chat_message_latency: ['p(95)<1000', 'p(99)<2000'],
     ws_connecting: ['p(95)<1000', 'p(99)<2000'],
@@ -152,9 +155,12 @@ export default function (data) {
     }
   });
 
-  check(response, {
+  const upgraded = check(response, {
     'websocket upgrade status is 101': (res) => res && res.status === 101,
   });
+  if (!upgraded) {
+    chatWsUpgradeFailed.add(1);
+  }
 }
 
 export function handleSummary(data) {
