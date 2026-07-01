@@ -1339,10 +1339,20 @@ hr {
   align-self: flex-start;
 }
 
+.message.failed {
+  background: #ffe1da;
+  border-color: #d98678;
+}
+
 .message strong {
   display: block;
   margin-bottom: 2px;
   font-size: 15px;
+}
+
+.message-error {
+  color: #9f2f20;
+  font-weight: 700;
 }
 
 .message-form {

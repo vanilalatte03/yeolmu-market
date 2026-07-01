@@ -51,6 +51,11 @@ export class StompClient {
     return id;
   }
 
+  unsubscribe(id) {
+    if (!id || !this.isOpen()) return;
+    this.sendFrame("UNSUBSCRIBE", { id });
+  }
+
   send(destination, body) {
     if (!this.isOpen()) {
       throw new Error("채팅 서버에 먼저 연결해 주세요.");

@@ -125,6 +125,8 @@ const state = {
   chatMessages: [],
   stomp: null,
   stompConnected: false,
+  chatSubscriptions: { userErrors: null, roomId: null, messages: null, errors: null },
+  handledChatSaveFailures: new Set(),
   adminHiddenProducts: [],
   selectedOrder: null,
   selectedPayment: null,
@@ -757,11 +759,12 @@ function activeChatPanel() {
 
 function messageBubble(message) {
   const mine = session.user && message.senderId === session.user.userId;
+  const failed = message.deliveryStatus === "failed";
   return `
-    <div class="message ${mine ? "mine" : "other"}">
+    <div class="message ${mine ? "mine" : "other"} ${failed ? "failed" : ""}">
       <strong>${escapeHtml(message.senderNickname || (mine ? "나" : "이웃"))}</strong>
       <div>${escapeHtml(message.content || "")}</div>
-      <small class="muted">${dateShort(message.createdAt)}</small>
+      <small class="${failed ? "message-error" : "muted"}">${failed ? "저장 실패" : dateShort(message.createdAt)}</small>
     </div>
   `;
 }
@@ -1185,6 +1188,9 @@ async function loadChatRooms() {
   if (state.activeRoomId) {
     await loadMessages();
   }
+  if (state.stomp?.isOpen()) {
+    syncChatRoomSubscriptions();
+  }
 }
 
 async function loadMessages(beforeMessageId) {
@@ -1376,31 +1382,105 @@ async function createOrder(productId) {
 }
 
 async function connectChat() {
-  if (state.stomp?.isOpen()) return;
-  state.stomp = new StompClient({
-    token: session.token,
-    onStatus: toast,
-    onError: (error) => toast(error.message, "error"),
-    onMessage: (message, headers) => {
-      const destination = headers.destination || "";
-      if (destination.includes("/queue/errors")) {
-        toast(message.message || message.code || "채팅 오류가 발생했어요.", "error");
-        return;
-      }
-      state.chatMessages = [...state.chatMessages, message];
-      render();
-    },
-  });
-  await state.stomp.connect();
-  state.stompConnected = true;
-  state.stomp.subscribe("/user/queue/errors");
-  if (state.activeRoomId) state.stomp.subscribe(`/sub/chat-rooms/${state.activeRoomId}`);
+  if (!state.stomp?.isOpen()) {
+    state.chatSubscriptions = { userErrors: null, roomId: null, messages: null, errors: null };
+    state.stomp = new StompClient({
+      token: session.token,
+      onStatus: toast,
+      onError: (error) => toast(error.message, "error"),
+      onMessage: handleChatFrame,
+    });
+    await state.stomp.connect();
+    state.stompConnected = true;
+  }
+  syncChatRoomSubscriptions();
   render();
 }
 
 async function sendChatMessage(content) {
   await connectChat();
   state.stomp.send(`/pub/chat-rooms/${state.activeRoomId}/message`, { content });
+}
+
+function syncChatRoomSubscriptions() {
+  if (!state.stomp?.isOpen()) return;
+  if (!state.chatSubscriptions.userErrors) {
+    state.chatSubscriptions.userErrors = state.stomp.subscribe("/user/queue/errors");
+  }
+
+  const roomId = state.activeRoomId ? String(state.activeRoomId) : null;
+  const subscriptions = state.chatSubscriptions;
+  if (!roomId || (subscriptions.roomId && subscriptions.roomId !== roomId)) {
+    unsubscribeChatRoom();
+  }
+  if (!roomId || (subscriptions.roomId === roomId && subscriptions.messages && subscriptions.errors)) {
+    return;
+  }
+
+  unsubscribeChatRoom();
+  state.chatSubscriptions.roomId = roomId;
+  state.chatSubscriptions.messages = state.stomp.subscribe(`/sub/chat-rooms/${roomId}`);
+  state.chatSubscriptions.errors = state.stomp.subscribe(`/sub/chat-rooms/${roomId}/errors`);
+}
+
+function unsubscribeChatRoom() {
+  const { messages, errors } = state.chatSubscriptions;
+  state.stomp?.unsubscribe(messages);
+  state.stomp?.unsubscribe(errors);
+  state.chatSubscriptions.roomId = null;
+  state.chatSubscriptions.messages = null;
+  state.chatSubscriptions.errors = null;
+}
+
+function handleChatFrame(message, headers) {
+  const destination = headers.destination || "";
+  if (message.code === "CHAT_MESSAGE_SAVE_FAILED" && message.acceptedMessageId) {
+    handleChatSaveFailure(message);
+    return;
+  }
+  if (destination.includes("/queue/errors")) {
+    toast(message.message || message.code || "채팅 오류가 발생했어요.", "error");
+    return;
+  }
+  if (!belongsToActiveRoom(message) || hasChatMessage(message)) return;
+  state.chatMessages = [...state.chatMessages, withChatDeliveryStatus(message)];
+  render();
+}
+
+function handleChatSaveFailure(error) {
+  const acceptedMessageId = String(error.acceptedMessageId);
+  if (state.handledChatSaveFailures.has(acceptedMessageId)) return;
+  state.handledChatSaveFailures.add(acceptedMessageId);
+
+  let changed = false;
+  state.chatMessages = state.chatMessages.map((message) => {
+    if (String(message.acceptedMessageId) !== acceptedMessageId) return message;
+    if (error.roomId && String(message.roomId) !== String(error.roomId)) return message;
+    changed = true;
+    return { ...message, deliveryStatus: "failed" };
+  });
+  toast(error.message || "채팅 메시지 저장에 실패했어요.", "error");
+  if (changed) render();
+}
+
+function belongsToActiveRoom(message) {
+  return state.activeRoomId && String(message.roomId) === String(state.activeRoomId);
+}
+
+function withChatDeliveryStatus(message) {
+  if (message.acceptedMessageId && state.handledChatSaveFailures.has(String(message.acceptedMessageId))) {
+    return { ...message, deliveryStatus: "failed" };
+  }
+  return message;
+}
+
+function hasChatMessage(message) {
+  return state.chatMessages.some((current) => {
+    if (message.acceptedMessageId && current.acceptedMessageId) {
+      return String(current.acceptedMessageId) === String(message.acceptedMessageId);
+    }
+    return message.messageId && current.messageId && String(current.messageId) === String(message.messageId);
+  });
 }
 
 async function loadMoreMessages() {
