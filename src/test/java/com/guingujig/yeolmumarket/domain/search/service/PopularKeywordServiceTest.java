@@ -8,8 +8,10 @@ import static org.mockito.Mockito.when;
 import com.guingujig.yeolmumarket.domain.search.dto.PopularKeyword;
 import com.guingujig.yeolmumarket.domain.search.dto.PopularKeywordsResponse;
 import com.guingujig.yeolmumarket.domain.search.repository.PopularKeywordRepository;
+import com.guingujig.yeolmumarket.global.config.YeolmuProperties;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
+import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,13 +23,20 @@ import org.springframework.dao.DataAccessResourceFailureException;
 @ExtendWith(MockitoExtension.class)
 class PopularKeywordServiceTest {
 
+  private static final YeolmuProperties YEOLMU_PROPERTIES =
+      new YeolmuProperties(
+          null,
+          new YeolmuProperties.Search(
+              new YeolmuProperties.PopularKeywords(
+                  10, 50, 60, Duration.ofMinutes(70), Duration.ofSeconds(5))));
+
   @Mock private PopularKeywordRepository popularKeywordRepository;
 
   private PopularKeywordService popularKeywordService;
 
   @BeforeEach
   void setUp() {
-    popularKeywordService = new PopularKeywordService(popularKeywordRepository);
+    popularKeywordService = new PopularKeywordService(popularKeywordRepository, YEOLMU_PROPERTIES);
   }
 
   @Test

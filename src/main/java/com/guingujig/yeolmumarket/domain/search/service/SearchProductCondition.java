@@ -16,11 +16,10 @@ public record SearchProductCondition(
     int size,
     String sort) {
 
-  private static final int MAX_PAGE_SIZE = 100;
   private static final String DEFAULT_SORT = "latest";
 
-  public static SearchProductCondition from(SearchProductRequest request) {
-    validatePagination(request.page(), request.size());
+  public static SearchProductCondition from(SearchProductRequest request, int maxPageSize) {
+    validatePagination(request.page(), request.size(), maxPageSize);
     validatePriceRange(request.minPrice(), request.maxPrice());
 
     ProductStatus status = resolveStatus(request.status());
@@ -42,8 +41,8 @@ public record SearchProductCondition(
     return PageRequest.of(page, size, resolveSort(sort));
   }
 
-  private static void validatePagination(int page, int size) {
-    if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
+  private static void validatePagination(int page, int size, int maxPageSize) {
+    if (page < 0 || size < 1 || size > maxPageSize) {
       throw new BusinessException(ErrorCode.INVALID_PAGINATION);
     }
   }

@@ -12,6 +12,7 @@ import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.global.config.YeolmuProperties;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
@@ -36,8 +37,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ChatRoomService {
 
-  private static final int MAX_PAGE_SIZE = 100;
-
   private final ChatRoomRepository chatRoomRepository;
   private final ChatMessageRepository chatMessageRepository;
   private final ProductRepository productRepository;
@@ -45,6 +44,7 @@ public class ChatRoomService {
   private final ChatRoomAuthorizationService chatRoomAuthorizationService;
   private final ChatMessagePersistenceService chatMessagePersistenceService;
   private final ChatMessageSaveFailureNotifier chatMessageSaveFailureNotifier;
+  private final YeolmuProperties yeolmuProperties;
 
   /**
    * 구매자와 상품 판매자 사이의 채팅방을 생성하거나 기존 방을 반환한다.
@@ -172,13 +172,15 @@ public class ChatRoomService {
   }
 
   private void validatePagination(int page, int size) {
-    if (page < 0 || size <= 0 || size > MAX_PAGE_SIZE) {
+    if (page < 0 || size <= 0 || size > yeolmuProperties.pagination().maxPageSize()) {
       throw new BusinessException(ErrorCode.INVALID_PAGINATION);
     }
   }
 
   private void validateMessageCursor(Long beforeMessageId, int size) {
-    if (size <= 0 || size > MAX_PAGE_SIZE || (beforeMessageId != null && beforeMessageId <= 0)) {
+    if (size <= 0
+        || size > yeolmuProperties.pagination().maxPageSize()
+        || (beforeMessageId != null && beforeMessageId <= 0)) {
       throw new BusinessException(ErrorCode.INVALID_PAGINATION);
     }
   }

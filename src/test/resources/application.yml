@@ -39,6 +39,8 @@ auth:
     secure: false
 
 yeolmu:
+  pagination:
+    max-page-size: 100
   async:
     chat-message:
       core-pool-size: 2
@@ -56,6 +58,13 @@ yeolmu:
       products-v2:
         list-ttl: 30s
         display-ttl: 5m
+  search:
+    popular-keywords:
+      default-limit: 10
+      max-limit: 50
+      recent-window-minutes: 60
+      bucket-ttl: 70m
+      recent-aggregate-ttl: 5s
   storage:
     local:
       root-path: build/test-uploads

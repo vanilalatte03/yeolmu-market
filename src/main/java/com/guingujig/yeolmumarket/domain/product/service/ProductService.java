@@ -26,6 +26,7 @@ import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.domain.wish.dto.ProductWishSummary;
 import com.guingujig.yeolmumarket.domain.wish.service.ProductWishSummaryService;
+import com.guingujig.yeolmumarket.global.config.YeolmuProperties;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
@@ -46,8 +47,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ProductService {
 
-  private static final int MAX_PAGE_SIZE = 100;
-
   private final ProductRepository productRepository;
   private final ProductImageRepository productImageRepository;
   private final UserRepository userRepository;
@@ -55,6 +54,7 @@ public class ProductService {
   private final ProductWishSummaryService productWishSummaryService;
   private final ReviewRatingQueryService reviewRatingQueryService;
   private final ApplicationEventPublisher eventPublisher;
+  private final YeolmuProperties yeolmuProperties;
 
   /**
    * 인증된 회원을 판매자로 지정해 상품을 등록한다.
@@ -301,7 +301,7 @@ public class ProductService {
   }
 
   private void validatePagination(int page, int size) {
-    if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
+    if (page < 0 || size < 1 || size > yeolmuProperties.pagination().maxPageSize()) {
       throw new BusinessException(ErrorCode.INVALID_PAGINATION);
     }
   }

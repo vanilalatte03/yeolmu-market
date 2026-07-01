@@ -9,6 +9,7 @@ import com.guingujig.yeolmumarket.domain.review.dto.WrittenReviewListItemRespons
 import com.guingujig.yeolmumarket.domain.review.entity.Review;
 import com.guingujig.yeolmumarket.domain.review.repository.ReviewRepository;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.global.config.YeolmuProperties;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.lock.DistributedLockExecutor;
@@ -29,8 +30,7 @@ public class ReviewService {
   private final UserRepository userRepository;
   private final DistributedLockExecutor distributedLockExecutor;
   private final ReviewLockedCommandService reviewLockedCommandService;
-
-  private static final int MAX_PAGE_SIZE = 100;
+  private final YeolmuProperties yeolmuProperties;
 
   /**
    * 거래 완료 주문 참여자가 같은 주문의 상대방에게 리뷰를 작성한다.
@@ -174,7 +174,7 @@ public class ReviewService {
   }
 
   private void validatePagination(int page, int size) {
-    if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
+    if (page < 0 || size < 1 || size > yeolmuProperties.pagination().maxPageSize()) {
       throw new BusinessException(ErrorCode.INVALID_PAGINATION);
     }
   }
