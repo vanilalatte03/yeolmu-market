@@ -1,6 +1,5 @@
 package com.guingujig.yeolmumarket.global.security;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -48,7 +47,14 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.ObjectMapper;
 
-@SpringBootTest(classes = {YeolmuMarketApplication.class, SecurityConfigTest.TestController.class})
+@SpringBootTest(
+    classes = {YeolmuMarketApplication.class, SecurityConfigTest.TestController.class},
+    properties = {
+      "management.health.redis.enabled=false",
+      "management.endpoint.health.probes.enabled=true",
+      "management.endpoint.health.group.liveness.include=livenessState",
+      "management.endpoint.health.group.readiness.include=readinessState"
+    })
 @AutoConfigureMockMvc
 @Transactional
 class SecurityConfigTest {
@@ -142,9 +148,9 @@ class SecurityConfigTest {
 
   @Test
   void Actuator_health_endpoint는_인증_없이_조회할_수_있다() throws Exception {
-    assertNotAuthenticationError("/actuator/health");
-    assertNotAuthenticationError("/actuator/health/liveness");
-    assertNotAuthenticationError("/actuator/health/readiness");
+    mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
+    mockMvc.perform(get("/actuator/health/liveness")).andExpect(status().isOk());
+    mockMvc.perform(get("/actuator/health/readiness")).andExpect(status().isOk());
   }
 
   @Test
@@ -405,12 +411,6 @@ class SecurityConfigTest {
         jwtSecret,
         jwtTokenProvider.getAccessTokenValiditySeconds(),
         jwtTokenProvider.getRefreshTokenValiditySeconds());
-  }
-
-  private void assertNotAuthenticationError(String path) throws Exception {
-    mockMvc
-        .perform(get(path))
-        .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotIn(401, 403));
   }
 
   @RestController
