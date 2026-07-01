@@ -18,8 +18,8 @@ spring:
     password: "${SPRING_DATASOURCE_PASSWORD}"
     driver-class-name: com.mysql.cj.jdbc.Driver
   flyway:
-    enabled: ${SPRING_FLYWAY_ENABLED:false}
-    baseline-on-migrate: true
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
+    baseline-on-migrate: ${SPRING_FLYWAY_BASELINE_ON_MIGRATE:false}
     baseline-version: 1
     validate-on-migrate: true
   data:
@@ -38,6 +38,22 @@ auth:
     path: /api/auth/refresh
     same-site: Lax
     secure: ${AUTH_REFRESH_TOKEN_COOKIE_SECURE:false}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db,redis
 
 yeolmu:
   pagination:

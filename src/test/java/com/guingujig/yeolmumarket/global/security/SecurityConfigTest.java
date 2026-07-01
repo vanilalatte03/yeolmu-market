@@ -47,7 +47,14 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.ObjectMapper;
 
-@SpringBootTest(classes = {YeolmuMarketApplication.class, SecurityConfigTest.TestController.class})
+@SpringBootTest(
+    classes = {YeolmuMarketApplication.class, SecurityConfigTest.TestController.class},
+    properties = {
+      "management.health.redis.enabled=false",
+      "management.endpoint.health.probes.enabled=true",
+      "management.endpoint.health.group.liveness.include=livenessState",
+      "management.endpoint.health.group.readiness.include=readinessState"
+    })
 @AutoConfigureMockMvc
 @Transactional
 class SecurityConfigTest {
@@ -137,6 +144,13 @@ class SecurityConfigTest {
     mockMvc.perform(get("/api.js")).andExpect(status().isOk());
     mockMvc.perform(get("/stomp-client.js")).andExpect(status().isOk());
     mockMvc.perform(get("/assets/radish.svg")).andExpect(status().isOk());
+  }
+
+  @Test
+  void Actuator_health_endpoint는_인증_없이_조회할_수_있다() throws Exception {
+    mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
+    mockMvc.perform(get("/actuator/health/liveness")).andExpect(status().isOk());
+    mockMvc.perform(get("/actuator/health/readiness")).andExpect(status().isOk());
   }
 
   @Test
