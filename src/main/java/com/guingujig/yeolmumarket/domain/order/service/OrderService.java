@@ -34,6 +34,8 @@ public class OrderService {
    */
   @Transactional
   public CreateOrderResponse createOrder(User buyer, Product product) {
+    validateReservedProduct(product);
+
     Order order = Order.create(buyer, product);
     Order savedOrder = orderRepository.save(order);
     return CreateOrderResponse.from(savedOrder);
@@ -109,5 +111,11 @@ public class OrderService {
       return orderRepository.findBySellerId(sellerId, pageable);
     }
     return orderRepository.findBySellerIdAndOrderStatus(sellerId, status, pageable);
+  }
+
+  private void validateReservedProduct(Product product) {
+    if (!product.isReserved()) {
+      throw new BusinessException(ErrorCode.PRODUCT_INVALID_STATUS);
+    }
   }
 }

@@ -3,6 +3,7 @@ package com.guingujig.yeolmumarket.domain.order.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -61,6 +62,19 @@ class OrderServiceTest {
     assertThat(response.buyer().userId()).isEqualTo(2L);
     assertThat(response.seller().userId()).isEqualTo(1L);
     verify(orderRepository).save(any(Order.class));
+  }
+
+  @Test
+  void 예약되지_않은_상품으로_주문_저장을_시도하면_실패한다() {
+    User buyer = user(2L, "buyer@example.com", "열무구매자");
+    Product product = product(10L, user(1L, "seller@example.com", "열무판매자"), ProductStatus.ON_SALE);
+
+    assertThatThrownBy(() -> orderService.createOrder(buyer, product))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_INVALID_STATUS));
+    verify(orderRepository, never()).save(any(Order.class));
   }
 
   @Test
@@ -145,10 +159,14 @@ class OrderServiceTest {
   }
 
   private Product reservedProduct(Long productId, User seller) {
+    return product(productId, seller, ProductStatus.RESERVED);
+  }
+
+  private Product product(Long productId, User seller, ProductStatus status) {
     Product product =
         Product.create(seller, "아이패드 미니 6세대", "생활기스 조금 있습니다.", 430000, Category.create("디지털기기"));
     ReflectionTestUtils.setField(product, "id", productId);
-    ReflectionTestUtils.setField(product, "status", ProductStatus.RESERVED);
+    ReflectionTestUtils.setField(product, "status", status);
     return product;
   }
 
