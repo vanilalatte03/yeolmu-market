@@ -45,14 +45,15 @@ public class ChatRoomService {
   /**
    * 구매자와 상품 판매자 사이의 채팅방을 생성하거나 기존 방을 반환한다.
    *
-   * <p>구매자, 상품, 판매자 조회와 상품 채팅 가능 검증은 호출자가 완료한 뒤 전달한다.
+   * <p>구매자, 상품 조회와 상품 채팅 가능 검증은 호출자가 완료한 뒤 전달한다.
    */
   @Transactional
-  public CreateChatRoomResponse findOrCreateChatRoom(User buyer, Product product, User seller) {
+  public CreateChatRoomResponse findOrCreateChatRoom(User buyer, Product product) {
+    User seller = product.getSeller();
     ChatRoom chatRoom =
         chatRoomRepository
             .findByProductAndBuyerAndSeller(product, buyer, seller)
-            .orElseGet(() -> chatRoomRepository.save(ChatRoom.create(product, buyer, seller)));
+            .orElseGet(() -> chatRoomRepository.save(ChatRoom.create(product, buyer)));
     return CreateChatRoomResponse.from(chatRoom);
   }
 

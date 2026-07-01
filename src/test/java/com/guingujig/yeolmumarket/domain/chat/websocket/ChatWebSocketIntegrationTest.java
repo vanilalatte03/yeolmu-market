@@ -454,7 +454,7 @@ class ChatWebSocketIntegrationTest {
     Product product =
         ProductTestFactory.saveProduct(
             productRepository, categoryRepository, seller, "아이패드 미니 6", "생활기스", 450000);
-    return chatRoomRepository.saveAndFlush(ChatRoom.create(product, buyer, seller));
+    return chatRoomRepository.saveAndFlush(ChatRoom.create(product, buyer));
   }
 
   private User saveUser(String email, String nickname) {

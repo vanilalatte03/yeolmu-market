@@ -75,7 +75,9 @@ class ChatMessagePersistenceServiceTest {
   }
 
   private ChatRoom chatRoom(Long id, User buyer, User seller) {
-    ChatRoom chatRoom = ChatRoom.create(mock(Product.class), buyer, seller);
+    Product product = mock(Product.class);
+    when(product.getSeller()).thenReturn(seller);
+    ChatRoom chatRoom = ChatRoom.create(product, buyer);
     ReflectionTestUtils.setField(chatRoom, "id", id);
     return chatRoom;
   }

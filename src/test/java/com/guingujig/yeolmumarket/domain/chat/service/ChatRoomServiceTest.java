@@ -411,7 +411,7 @@ class ChatRoomServiceTest {
   }
 
   private CreateChatRoomResponse createChatRoom(User buyer, Product product) {
-    return chatRoomService.findOrCreateChatRoom(buyer, product, product.getSeller());
+    return chatRoomService.findOrCreateChatRoom(buyer, product);
   }
 
   private Product saveProduct(User seller) {

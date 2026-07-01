@@ -26,8 +26,7 @@ public class ChatRoomFacade {
   public CreateChatRoomResponse createChatRoom(Long buyerId, Long productId) {
     User buyer = userService.getExistingUser(buyerId);
     Product product = productService.getChatCreatableProductForUpdate(productId, buyerId);
-    User seller = product.getSeller();
 
-    return chatRoomService.findOrCreateChatRoom(buyer, product, seller);
+    return chatRoomService.findOrCreateChatRoom(buyer, product);
   }
 }
