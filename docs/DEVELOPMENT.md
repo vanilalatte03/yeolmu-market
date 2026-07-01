@@ -65,6 +65,19 @@ SPRING_DATA_REDIS_PORT=6379
 | 빌드 | `./gradlew build` | `.\gradlew.bat build` |
 | 실행 | `./gradlew bootRun` | `.\gradlew.bat bootRun` |
 
+## 성능 테스트용 더미 데이터 적재
+
+상품 검색 성능 테스트용 대용량 더미 데이터는 `src/test`의 수동 테스트로만 적재한다. 일반 `test`에서는 실행되지 않고, `YEOLMU_PERF_SEED=true` 환경변수를 명시한 경우에만 `JdbcTemplate.batchUpdate`로 로컬 MySQL에 데이터를 넣는다.
+
+수동 테스트는 `perf-seed` profile로 실행되며 `.env`의 `SPRING_DATASOURCE_*`, `SPRING_DATA_REDIS_*` 값을 사용한다. 기본값은 관계형 테이블별 50,000건, batch size 1,000이다. 대상 테이블은 `users`, `category`, `product`, `product_image`, `wish`, `chatroom`, `chatmessage`, `orders`, `payment`, `refund_request`, `review`다. 적재가 끝나면 검색 인덱스 버전을 증가시킨다.
+
+| 작업 | macOS/Linux | Windows PowerShell |
+| --- | --- | --- |
+| 기본 적재 | `YEOLMU_PERF_SEED=true ./gradlew test --tests "com.guingujig.yeolmumarket.support.PerfDummyDataSeedTest"` | `$env:YEOLMU_PERF_SEED='true'; .\gradlew.bat test --tests "com.guingujig.yeolmumarket.support.PerfDummyDataSeedTest"; Remove-Item Env:\YEOLMU_PERF_SEED` |
+| 100,000건 적재 | `YEOLMU_PERF_SEED=true YEOLMU_PERF_DUMMY_DATA_TABLE_ROW_COUNT=100000 ./gradlew test --tests "com.guingujig.yeolmumarket.support.PerfDummyDataSeedTest"` | `$env:YEOLMU_PERF_SEED='true'; $env:YEOLMU_PERF_DUMMY_DATA_TABLE_ROW_COUNT='100000'; .\gradlew.bat test --tests "com.guingujig.yeolmumarket.support.PerfDummyDataSeedTest"; Remove-Item Env:\YEOLMU_PERF_SEED; Remove-Item Env:\YEOLMU_PERF_DUMMY_DATA_TABLE_ROW_COUNT` |
+
+반복 실행하면 모든 대상 테이블에 새 run key로 추가 적재한다. 실행 전 로컬 MySQL과 Redis는 `docker compose up -d mysql redis`로 먼저 띄운다.
+
 ## 테스트와 포맷
 
 자동 테스트는 `src/test/resources/application.yml`을 사용한다. 테스트 DB는 H2 인메모리이고 Flyway는 비활성화되어 있다. 대부분의 Redis 연동 지점은 테스트에서 mock 또는 fallback 검증으로 다룬다.
