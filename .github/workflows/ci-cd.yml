@@ -1,0 +1,167 @@
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-2
+  EKS_CLUSTER_NAME: yeolmu-eks
+  ECR_REPOSITORY: yeolmu-market
+  K8S_NAMESPACE: yeolmu
+
+jobs:
+  validate:
+    name: Test and format
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run tests
+        run: ./gradlew test --no-daemon
+        env:
+          # 분산 락의 실 Redisson wiring·동작 검증 테스트 활성화 (ADR-013, docs/DEVELOPMENT.md)
+          YEOLMU_REDIS_LOCK_TEST: "true"
+
+      - name: Check formatting
+        run: ./gradlew spotlessCheck --no-daemon
+
+  deploy:
+    name: Build image and deploy
+    needs: validate
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Resolve image URI
+        id: image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          image_uri="${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          echo "image_uri=${image_uri}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.image.outputs.image_uri }}
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region "$AWS_REGION" \
+            --name "$EKS_CLUSTER_NAME"
+
+      - name: Apply namespace
+        run: kubectl apply -f k8s/namespace.yaml
+
+      - name: Apply application configuration
+        env:
+          SPRING_DATASOURCE_URL: ${{ secrets.SPRING_DATASOURCE_URL }}
+          SPRING_DATASOURCE_USERNAME: ${{ secrets.SPRING_DATASOURCE_USERNAME }}
+          SPRING_DATASOURCE_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: |
+          kubectl create secret generic yeolmu-secret \
+            -n "$K8S_NAMESPACE" \
+            --from-literal=SPRING_DATASOURCE_URL="$SPRING_DATASOURCE_URL" \
+            --from-literal=SPRING_DATASOURCE_USERNAME="$SPRING_DATASOURCE_USERNAME" \
+            --from-literal=SPRING_DATASOURCE_PASSWORD="$SPRING_DATASOURCE_PASSWORD" \
+            --from-literal=JWT_SECRET="$JWT_SECRET" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create configmap yeolmu-config \
+            -n "$K8S_NAMESPACE" \
+            --from-literal=SPRING_FLYWAY_ENABLED=true \
+            --from-literal=SPRING_FLYWAY_BASELINE_ON_MIGRATE=false \
+            --from-literal=SPRING_DATA_REDIS_HOST=redis \
+            --from-literal=SPRING_DATA_REDIS_PORT=6379 \
+            --from-literal=JWT_ACCESS_TOKEN_VALIDITY_SECONDS=3600 \
+            --from-literal=JWT_REFRESH_TOKEN_VALIDITY_SECONDS=1209600 \
+            --from-literal=AUTH_REFRESH_TOKEN_COOKIE_SECURE=true \
+            --from-literal=YEOLMU_STORAGE_LOCAL_ROOT_PATH=/app/uploads \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Render Kubernetes manifests
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.image_uri }}
+          ALB_SUBNET_IDS: ${{ vars.ALB_SUBNET_IDS }}
+          ACM_CERTIFICATE_ARN: ${{ vars.ACM_CERTIFICATE_ARN }}
+        run: |
+          mkdir -p rendered-k8s
+          if [ -z "$ALB_SUBNET_IDS" ] || [ -z "$ACM_CERTIFICATE_ARN" ]; then
+            echo "ALB_SUBNET_IDS and ACM_CERTIFICATE_ARN GitHub Variables are required."
+            exit 1
+          fi
+          subnet_ids_yaml="$(printf '%s' "$ALB_SUBNET_IDS" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; /^$/d; s/^/      - /')"
+          for file in k8s/*.yaml; do
+            ALB_SUBNET_IDS_YAML="$subnet_ids_yaml" perl -0pe '
+              s#__IMAGE_URI__#$ENV{IMAGE_URI}#g;
+              s#      __ALB_SUBNET_IDS__#$ENV{ALB_SUBNET_IDS_YAML}#g;
+              s#__ACM_CERTIFICATE_ARN__#$ENV{ACM_CERTIFICATE_ARN}#g;
+            ' "$file" > "rendered-k8s/$(basename "$file")"
+          done
+
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -f rendered-k8s/storage-class.yaml
+          kubectl apply -f rendered-k8s/uploads-pvc.yaml
+          kubectl apply -f rendered-k8s/redis.yaml
+          kubectl apply -f rendered-k8s/app-service.yaml
+          kubectl apply -f rendered-k8s/app-deployment.yaml
+          kubectl rollout status deployment/yeolmu-market -n "$K8S_NAMESPACE" --timeout=300s
+          kubectl apply -f rendered-k8s/ingress.yaml
+
+      - name: Show deployment status
+        run: |
+          kubectl get pods -n "$K8S_NAMESPACE"
+          kubectl get ingress -n "$K8S_NAMESPACE"

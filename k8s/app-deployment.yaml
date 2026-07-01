@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yeolmu-market
+  namespace: yeolmu
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yeolmu-market
+  template:
+    metadata:
+      labels:
+        app: yeolmu-market
+    spec:
+      containers:
+        - name: app
+          image: __IMAGE_URI__
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: yeolmu-config
+            - secretRef:
+                name: yeolmu-secret
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploads
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: uploads-data
