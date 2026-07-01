@@ -1,6 +1,6 @@
 # ADR-009: Flyway 기반 DB 스키마 마이그레이션
 
-- 상태: 채택됨
+- 상태: 대체됨 (ADR-014)
 - 날짜: 2026-06-27
 - 관련: GitHub Issue #68, `docs/ERD.md`, `docs/CONVENTIONS.md`
 
