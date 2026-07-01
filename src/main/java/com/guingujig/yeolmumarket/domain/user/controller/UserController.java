@@ -3,7 +3,7 @@ package com.guingujig.yeolmumarket.domain.user.controller;
 import com.guingujig.yeolmumarket.domain.order.dto.MyOrderListItemResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.MySaleListItemResponse;
 import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
-import com.guingujig.yeolmumarket.domain.order.service.OrderService;
+import com.guingujig.yeolmumarket.domain.order.service.OrderFacade;
 import com.guingujig.yeolmumarket.domain.user.dto.GetUserResponse;
 import com.guingujig.yeolmumarket.domain.user.dto.UpdateUserRequest;
 import com.guingujig.yeolmumarket.domain.user.dto.UpdateUserResponse;
@@ -31,7 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
 
   private final UserService userService;
-  private final OrderService orderService;
+  private final OrderFacade orderFacade;
   private final WishFacade wishFacade;
 
   @GetMapping("/{userId}")
@@ -54,7 +54,7 @@ public class UserController {
       @RequestParam(defaultValue = "10") int size,
       @RequestParam(required = false) OrderStatus status) {
     PageResponse<MyOrderListItemResponse> response =
-        orderService.getMyOrders(authenticatedUser.userId(), page, size, status);
+        orderFacade.getMyOrders(authenticatedUser.userId(), page, size, status);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
@@ -65,7 +65,7 @@ public class UserController {
       @RequestParam(defaultValue = "10") int size,
       @RequestParam(required = false) OrderStatus status) {
     PageResponse<MySaleListItemResponse> response =
-        orderService.getMySales(authenticatedUser.userId(), page, size, status);
+        orderFacade.getMySales(authenticatedUser.userId(), page, size, status);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
