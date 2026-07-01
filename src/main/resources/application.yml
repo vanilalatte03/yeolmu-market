@@ -39,6 +39,22 @@ auth:
     same-site: Lax
     secure: ${AUTH_REFRESH_TOKEN_COOKIE_SECURE:false}
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db,redis
+
 yeolmu:
   pagination:
     max-page-size: 100

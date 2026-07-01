@@ -1,5 +1,6 @@
 package com.guingujig.yeolmumarket.global.security;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -137,6 +138,13 @@ class SecurityConfigTest {
     mockMvc.perform(get("/api.js")).andExpect(status().isOk());
     mockMvc.perform(get("/stomp-client.js")).andExpect(status().isOk());
     mockMvc.perform(get("/assets/radish.svg")).andExpect(status().isOk());
+  }
+
+  @Test
+  void Actuator_health_endpoint는_인증_없이_조회할_수_있다() throws Exception {
+    assertNotAuthenticationError("/actuator/health");
+    assertNotAuthenticationError("/actuator/health/liveness");
+    assertNotAuthenticationError("/actuator/health/readiness");
   }
 
   @Test
@@ -397,6 +405,12 @@ class SecurityConfigTest {
         jwtSecret,
         jwtTokenProvider.getAccessTokenValiditySeconds(),
         jwtTokenProvider.getRefreshTokenValiditySeconds());
+  }
+
+  private void assertNotAuthenticationError(String path) throws Exception {
+    mockMvc
+        .perform(get(path))
+        .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotIn(401, 403));
   }
 
   @RestController
