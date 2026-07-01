@@ -26,6 +26,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -42,8 +43,7 @@ class PerfDummyDataSeedTest {
   private static final String USER_EMAIL_PREFIX = "perf-user-";
   private static final String USER_EMAIL_DOMAIN = "@example.com";
   private static final String PRODUCT_TITLE_PREFIX = "[PERF]";
-  private static final String DUMMY_PASSWORD =
-      "$2a$10$7EqJtq98hPqEX7fNZaFWoOYoXb8nV4bGzH0LbK9Gp1c7RgaWw4p1W";
+  private static final String DUMMY_RAW_PASSWORD = "password";
 
   private static final String INSERT_CATEGORY_SQL =
       """
@@ -118,6 +118,7 @@ class PerfDummyDataSeedTest {
   @Autowired private SearchIndexVersionProvider searchIndexVersionProvider;
   @Autowired private Environment environment;
   @Autowired private Clock clock;
+  @Autowired private PasswordEncoder passwordEncoder;
 
   @Test
   void 모든_DB_테이블에_성능테스트용_더미_데이터를_JDBC_Batch로_적재한다() {
@@ -163,6 +164,7 @@ class PerfDummyDataSeedTest {
   }
 
   private void insertUsers(String runKey, SeedOptions options) {
+    String dummyPassword = passwordEncoder.encode(DUMMY_RAW_PASSWORD);
     batchInsert(
         INSERT_USER_SQL,
         options,
@@ -170,7 +172,7 @@ class PerfDummyDataSeedTest {
           LocalDateTime createdAt = createdAt(sequence);
           preparedStatement.setString(1, userNickname(runKey, sequence));
           preparedStatement.setString(2, userEmail(runKey, sequence));
-          preparedStatement.setString(3, DUMMY_PASSWORD);
+          preparedStatement.setString(3, dummyPassword);
           preparedStatement.setTimestamp(4, Timestamp.valueOf(createdAt));
           preparedStatement.setTimestamp(5, Timestamp.valueOf(createdAt));
         });
