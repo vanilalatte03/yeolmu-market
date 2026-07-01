@@ -143,6 +143,11 @@ public class ProductService {
         PageRequest.of(query.page(), query.size(), resolveSort(query.sort())));
   }
 
+  /** 카테고리 상품 조회 Facade가 기존 에러 우선순위를 유지하기 위해 먼저 호출하는 페이지 검증 계약이다. */
+  public void validateCategoryProductsPagination(CategoryProductsQuery query) {
+    validatePagination(query.page(), query.size());
+  }
+
   @Transactional(readOnly = true)
   public List<ProductImage> getProductImages(Long productId) {
     return productImageRepository.findByProductIdOrderByCreatedAtAscIdAsc(productId);

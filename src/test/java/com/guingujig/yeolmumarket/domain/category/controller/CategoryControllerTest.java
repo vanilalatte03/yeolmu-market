@@ -165,6 +165,15 @@ class CategoryControllerTest {
   }
 
   @Test
+  void 존재하지_않는_카테고리라도_페이지_요청이_잘못되면_400으로_응답한다() throws Exception {
+    mockMvc
+        .perform(get("/api/categories/{categoryId}/products", Long.MAX_VALUE).param("page", "-1"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_PAGINATION"));
+  }
+
+  @Test
   void 관리자는_카테고리를_생성할_수_있다() throws Exception {
     User admin = saveAdmin("admin@example.com", "열무관리자");
 

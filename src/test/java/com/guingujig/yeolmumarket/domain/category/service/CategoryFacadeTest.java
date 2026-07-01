@@ -159,6 +159,15 @@ class CategoryFacadeTest {
   }
 
   @Test
+  void 존재하지_않는_카테고리라도_페이지_조건이_잘못되면_페이지_오류가_우선한다() {
+    assertThatThrownBy(() -> categoryFacade.getCategoryProducts(Long.MAX_VALUE, -1, 10, "latest"))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_PAGINATION));
+  }
+
+  @Test
   void 카테고리별_상품_조회_지원하지_않는_정렬은_실패한다() {
     Category category = saveCategory("디지털기기");
 

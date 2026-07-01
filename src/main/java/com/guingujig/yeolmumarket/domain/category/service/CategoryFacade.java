@@ -24,15 +24,15 @@ public class CategoryFacade {
   /**
    * 특정 카테고리에 속한 공개 상품 목록을 조회한다.
    *
-   * <p>카테고리 존재 확인, 공개 상품 Page 조회, 대표 이미지 조합을 각 도메인 Service 계약으로 분리해 조합한다.
+   * <p>페이지 검증, 카테고리 존재 확인, 공개 상품 Page 조회, 대표 이미지 조합을 각 도메인 Service 계약으로 분리해 조합한다.
    */
   @Transactional(readOnly = true)
   public PageResponse<CategoryProductListItemResponse> getCategoryProducts(
       Long categoryId, int page, int size, String sort) {
+    CategoryProductsQuery query = new CategoryProductsQuery(categoryId, page, size, sort);
+    productService.validateCategoryProductsPagination(query);
     categoryService.validateCategoryExists(categoryId);
-    Page<Product> products =
-        productService.getPublicCategoryProducts(
-            new CategoryProductsQuery(categoryId, page, size, sort));
+    Page<Product> products = productService.getPublicCategoryProducts(query);
     Map<Long, String> thumbnailUrls =
         productThumbnailQueryService.getThumbnailUrls(productIds(products));
 
