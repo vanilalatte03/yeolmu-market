@@ -1,16 +1,13 @@
 package com.guingujig.yeolmumarket.domain.payment.service;
 
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
-import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
+import com.guingujig.yeolmumarket.domain.order.service.OrderService;
 import com.guingujig.yeolmumarket.domain.payment.dto.CancelPaymentResponse;
-import com.guingujig.yeolmumarket.domain.payment.dto.CreatePaymentRequest;
 import com.guingujig.yeolmumarket.domain.payment.dto.MockPaymentResult;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentResponse;
 import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
-import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
-import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
+import com.guingujig.yeolmumarket.domain.product.service.ProductChangeEventPublisher;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.lock.LockBoundedTransactional;
@@ -18,7 +15,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
@@ -27,70 +23,65 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class PaymentLockedCommandService {
 
-  private final PaymentRepository paymentRepository;
-  private final OrderRepository orderRepository;
-  private final ApplicationEventPublisher eventPublisher;
+  private final PaymentService paymentService;
+  private final OrderService orderService;
+  private final ProductChangeEventPublisher productChangeEventPublisher;
 
   @LockBoundedTransactional
-  public PaymentService.ProcessPaymentResult processPayment(
-      Long buyerId, Long orderId, String idempotencyKey, CreatePaymentRequest request) {
-    Order order =
-        orderRepository
-            .findWithDetailsById(orderId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+  public ProcessPaymentResult processPayment(ProcessPaymentCommand command) {
+    Order order = orderService.getExistingOrderWithDetails(command.orderId());
 
-    order.validateBuyer(buyerId);
+    order.validateBuyer(command.buyerId());
 
-    Optional<Payment> existingByOrder = paymentRepository.findByOrder_Id(orderId);
+    Optional<Payment> existingByOrder = paymentService.findByOrderId(command.orderId());
     if (existingByOrder.isPresent()) {
       Payment existing = existingByOrder.get();
-      if (existing.hasIdempotencyKey(idempotencyKey)) {
-        return new PaymentService.ProcessPaymentResult(PaymentResponse.from(existing), false);
+      if (existing.hasIdempotencyKey(command.idempotencyKey())) {
+        return new ProcessPaymentResult(PaymentResponse.from(existing), false);
       }
       throw new BusinessException(ErrorCode.PAYMENT_ALREADY_EXISTS);
     }
 
-    paymentRepository
-        .findByIdempotencyKey(idempotencyKey)
+    paymentService
+        .findByIdempotencyKey(command.idempotencyKey())
         .ifPresent(
             p -> {
               throw new BusinessException(ErrorCode.PAYMENT_ALREADY_EXISTS);
             });
 
-    MockPaymentResult result = resolvePaymentResult(request);
+    MockPaymentResult result = resolvePaymentResult(command);
     LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
 
     Payment payment;
     if (result == MockPaymentResult.PAID) {
-      payment = Payment.createPaid(order, request.method(), idempotencyKey, now);
+      payment =
+          Payment.createPaid(order, command.request().method(), command.idempotencyKey(), now);
       order.markAsPaid();
     } else {
-      payment = Payment.createFailed(order, request.method(), idempotencyKey, now);
+      payment =
+          Payment.createFailed(order, command.request().method(), command.idempotencyKey(), now);
       order.failPaymentAndReleaseProduct();
       publishProductStatusChanged(
           order.getProduct().getId(), ProductStatus.RESERVED, ProductStatus.ON_SALE);
     }
 
     try {
-      paymentRepository.saveAndFlush(payment);
+      paymentService.saveAndFlush(payment);
     } catch (DataIntegrityViolationException e) {
       throw new BusinessException(ErrorCode.PAYMENT_ALREADY_EXISTS);
     }
-    return new PaymentService.ProcessPaymentResult(PaymentResponse.from(payment), true);
+    return new ProcessPaymentResult(PaymentResponse.from(payment), true);
   }
 
   @LockBoundedTransactional
-  public CancelPaymentResponse cancelPayment(Long buyerId, Long paymentId, String reason) {
-    Payment payment =
-        paymentRepository
-            .findWithOrderBuyerSellerAndProductById(paymentId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+  public CancelPaymentResponse cancelPayment(CancelPaymentCommand command) {
+    Payment payment = paymentService.getPaymentForCancel(command.paymentId());
 
     LocalDateTime canceledAt = LocalDateTime.now(ZoneOffset.UTC);
-    payment.cancelByBuyer(buyerId, canceledAt, reason);
+    payment.cancelByBuyer(command.buyerId(), canceledAt, command.reason());
 
     try {
-      paymentRepository.flush();
+      paymentService.flush();
     } catch (ObjectOptimisticLockingFailureException e) {
       throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
     }
@@ -101,8 +92,8 @@ public class PaymentLockedCommandService {
     return CancelPaymentResponse.from(payment);
   }
 
-  private MockPaymentResult resolvePaymentResult(CreatePaymentRequest request) {
-    MockPaymentResult result = request.result();
+  private MockPaymentResult resolvePaymentResult(ProcessPaymentCommand command) {
+    MockPaymentResult result = command.request().result();
     if (result == null) {
       return MockPaymentResult.PAID;
     }
@@ -110,7 +101,6 @@ public class PaymentLockedCommandService {
   }
 
   private void publishProductStatusChanged(Long productId, ProductStatus... affectedStatuses) {
-    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId, affectedStatuses));
-    eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
+    productChangeEventPublisher.publishSearchIndexAndDisplayChanged(productId, affectedStatuses);
   }
 }

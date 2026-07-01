@@ -3,7 +3,7 @@ package com.guingujig.yeolmumarket.domain.product.controller;
 import com.guingujig.yeolmumarket.domain.product.dto.AdminHiddenProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusResponse;
-import com.guingujig.yeolmumarket.domain.product.service.ProductService;
+import com.guingujig.yeolmumarket.domain.product.service.ProductFacade;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
 import jakarta.validation.Valid;
@@ -22,13 +22,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/admin/products")
 public class AdminProductController {
 
-  private final ProductService productService;
+  private final ProductFacade productFacade;
 
   @GetMapping("/hidden")
   public ResponseEntity<ApiResponse<PageResponse<AdminHiddenProductResponse>>> getHiddenProducts(
       @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "10") int size) {
-    PageResponse<AdminHiddenProductResponse> response =
-        productService.getHiddenProducts(page, size);
+    PageResponse<AdminHiddenProductResponse> response = productFacade.getHiddenProducts(page, size);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
@@ -36,7 +35,7 @@ public class AdminProductController {
   public ResponseEntity<ApiResponse<UpdateProductHiddenStatusResponse>> updateProductHiddenStatus(
       @PathVariable Long productId, @Valid @RequestBody UpdateProductHiddenStatusRequest request) {
     UpdateProductHiddenStatusResponse response =
-        productService.updateProductHiddenStatus(productId, request);
+        productFacade.updateProductHiddenStatus(productId, request);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 }

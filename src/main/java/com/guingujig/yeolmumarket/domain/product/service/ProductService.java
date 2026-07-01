@@ -1,14 +1,9 @@
 package com.guingujig.yeolmumarket.domain.product.service;
 
-import com.guingujig.yeolmumarket.domain.category.entity.Category;
-import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.product.dto.AdminHiddenProductResponse;
-import com.guingujig.yeolmumarket.domain.product.dto.CreateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.CreateProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.DeleteProductResponse;
-import com.guingujig.yeolmumarket.domain.product.dto.ProductDetailResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.ProductListItemProjection;
-import com.guingujig.yeolmumarket.domain.product.dto.ProductListItemResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductRequest;
@@ -19,13 +14,6 @@ import com.guingujig.yeolmumarket.domain.product.entity.ProductImage;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductImageRepository;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
-import com.guingujig.yeolmumarket.domain.review.service.ReviewRatingQueryService;
-import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
-import com.guingujig.yeolmumarket.domain.user.entity.User;
-import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
-import com.guingujig.yeolmumarket.domain.wish.dto.ProductWishSummary;
-import com.guingujig.yeolmumarket.domain.wish.service.ProductWishSummaryService;
 import com.guingujig.yeolmumarket.global.config.YeolmuProperties;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
@@ -33,9 +21,7 @@ import com.guingujig.yeolmumarket.global.response.PageResponse;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -49,11 +35,7 @@ public class ProductService {
 
   private final ProductRepository productRepository;
   private final ProductImageRepository productImageRepository;
-  private final UserRepository userRepository;
-  private final CategoryRepository categoryRepository;
-  private final ProductWishSummaryService productWishSummaryService;
-  private final ReviewRatingQueryService reviewRatingQueryService;
-  private final ApplicationEventPublisher eventPublisher;
+  private final ProductChangeEventPublisher productChangeEventPublisher;
   private final YeolmuProperties yeolmuProperties;
 
   /**
@@ -62,17 +44,17 @@ public class ProductService {
    * <p>P1부터 상품 카테고리는 필수이며, 신규 상품의 기본 상태는 판매 중이다.
    */
   @Transactional
-  public CreateProductResponse createProduct(Long sellerId, CreateProductRequest request) {
-    User seller =
-        userRepository
-            .findById(sellerId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-    Category category = getCategory(request.categoryId());
-
+  public CreateProductResponse createProduct(CreateProductCommand command) {
     Product product =
-        Product.create(seller, request.title(), request.description(), request.price(), category);
+        Product.create(
+            command.seller(),
+            command.request().title(),
+            command.request().description(),
+            command.request().price(),
+            command.category());
     Product savedProduct = productRepository.save(product);
-    publishProductSearchIndexChanged(savedProduct.getId(), savedProduct.getStatus());
+    productChangeEventPublisher.publishSearchIndexChanged(
+        savedProduct.getId(), savedProduct.getStatus());
     return CreateProductResponse.from(savedProduct);
   }
 
@@ -82,33 +64,15 @@ public class ProductService {
    * <p>숨김 상품과 삭제 상품은 공개 목록에 노출하지 않으며, 상품에 대표 이미지가 있으면 {@code thumbnailUrl}에 반영한다.
    */
   @Transactional(readOnly = true)
-  public PageResponse<ProductListItemResponse> getProducts(
-      int page, int size, ProductStatus status, String sort, Long authenticatedUserId) {
-    validatePagination(page, size);
-    ProductStatus queryStatus = resolveStatus(status);
+  public PageResponse<ProductListItemProjection> getPublicListItems(ProductListQuery query) {
+    validatePagination(query.page(), query.size());
+    ProductStatus queryStatus = resolveStatus(query.status());
     validatePublicListStatus(queryStatus);
 
     Page<ProductListItemProjection> products =
         productRepository.findPublicListItemsByStatus(
-            queryStatus, PageRequest.of(page, size, resolveSort(sort)));
-    List<Long> productIds =
-        products.getContent().stream().map(ProductListItemProjection::productId).toList();
-    Map<Long, ProductWishSummary> wishSummaries =
-        productWishSummaryService.getSummaries(productIds, authenticatedUserId);
-
-    Page<ProductListItemResponse> productResponses =
-        products.map(product -> toProductListItemResponse(product, wishSummaries));
-
-    return PageResponse.from(productResponses);
-  }
-
-  private ProductListItemResponse toProductListItemResponse(
-      ProductListItemProjection product, Map<Long, ProductWishSummary> wishSummaries) {
-    Long productId = product.productId();
-    ProductWishSummary wishSummary =
-        wishSummaries.getOrDefault(productId, ProductWishSummary.empty(productId));
-
-    return ProductListItemResponse.from(product, wishSummary);
+            queryStatus, PageRequest.of(query.page(), query.size(), resolveSort(query.sort())));
+    return PageResponse.from(products);
   }
 
   /**
@@ -117,21 +81,15 @@ public class ProductService {
    * <p>존재하지 않거나, 숨김 처리되었거나, 삭제된 상품은 모두 {@code PRODUCT_NOT_FOUND}로 응답한다.
    */
   @Transactional(readOnly = true)
-  public ProductDetailResponse getProduct(Long productId, Long authenticatedUserId) {
-    Product product =
-        productRepository
-            .findByIdAndHiddenFalseAndDeletedAtIsNullAndStatusNot(productId, ProductStatus.DELETED)
-            .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
-    ProductWishSummary wishSummary =
-        productWishSummaryService.getSummary(productId, authenticatedUserId);
-    List<ProductImage> images =
-        productImageRepository.findByProductIdOrderByCreatedAtAscIdAsc(productId);
+  public Product getPublicProduct(Long productId) {
+    return productRepository
+        .findByIdAndHiddenFalseAndDeletedAtIsNullAndStatusNot(productId, ProductStatus.DELETED)
+        .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+  }
 
-    return ProductDetailResponse.from(
-        product,
-        wishSummary,
-        images,
-        reviewRatingQueryService.getSummary(product.getSeller().getId()));
+  @Transactional(readOnly = true)
+  public List<ProductImage> getProductImages(Long productId) {
+    return productImageRepository.findByProductIdOrderByCreatedAtAscIdAsc(productId);
   }
 
   /**
@@ -141,12 +99,11 @@ public class ProductService {
    */
   @Transactional(readOnly = true)
   public PageResponse<UserProductListItemResponse> getPublicSellerProducts(
-      Long sellerId, int page, int size, ProductStatus status) {
-    validatePagination(page, size);
-    validateSellerExists(sellerId);
+      SellerProductsQuery query) {
+    validatePagination(query.page(), query.size());
 
-    Pageable pageable = PageRequest.of(page, size, resolveSort(null));
-    Page<Product> products = findVisibleSellerProducts(sellerId, status, pageable);
+    Pageable pageable = PageRequest.of(query.page(), query.size(), resolveSort(null));
+    Page<Product> products = findVisibleSellerProducts(query.sellerId(), query.status(), pageable);
 
     return PageResponse.from(products.map(UserProductListItemResponse::from));
   }
@@ -157,13 +114,11 @@ public class ProductService {
    * <p>숨김 상품도 포함하지만, 상태 필터가 없으면 삭제 상품은 제외한다. 삭제 상태를 명시하면 삭제 상품만 조회할 수 있다.
    */
   @Transactional(readOnly = true)
-  public PageResponse<UserProductListItemResponse> getMyProducts(
-      Long sellerId, int page, int size, ProductStatus status) {
-    validatePagination(page, size);
-    validateSellerExists(sellerId);
+  public PageResponse<UserProductListItemResponse> getMyProducts(SellerProductsQuery query) {
+    validatePagination(query.page(), query.size());
 
-    Pageable pageable = PageRequest.of(page, size, resolveSort(null));
-    Page<Product> products = findMyProducts(sellerId, status, pageable);
+    Pageable pageable = PageRequest.of(query.page(), query.size(), resolveSort(null));
+    Page<Product> products = findMyProducts(query.sellerId(), query.status(), pageable);
 
     return PageResponse.from(products.map(UserProductListItemResponse::from));
   }
@@ -174,26 +129,31 @@ public class ProductService {
    * <p>삭제된 상품은 존재하지 않는 상품처럼 처리한다.
    */
   @Transactional
-  public UpdateProductResponse updateProduct(
-      Long sellerId, Long productId, UpdateProductRequest request) {
-    validateUpdatableValue(request);
-    Product product = getExistingProduct(productId);
-    product.validateSeller(sellerId);
+  public UpdateProductResponse updateProduct(UpdateProductCommand command) {
+    UpdateProductRequest request = command.request();
+    Product product = command.product();
 
     boolean searchIndexChanged = isSearchIndexChanged(request);
     boolean productDisplayChanged = isProductDisplayChanged(request);
     product.updateInfo(request.title(), request.description(), request.price());
-    if (request.categoryId() != null) {
-      product.changeCategory(getCategory(request.categoryId()));
+    if (command.category() != null) {
+      product.changeCategory(command.category());
     }
     productRepository.flush();
     if (searchIndexChanged) {
-      publishProductSearchIndexChanged(product.getId(), product.getStatus());
+      productChangeEventPublisher.publishSearchIndexChanged(product.getId(), product.getStatus());
     }
     if (productDisplayChanged) {
-      publishProductDisplayChanged(product.getId());
+      productChangeEventPublisher.publishDisplayChanged(product.getId());
     }
     return UpdateProductResponse.from(product);
+  }
+
+  Product getUpdateTarget(Long sellerId, Long productId, UpdateProductRequest request) {
+    validateUpdatableValue(request);
+    Product product = getExistingProduct(productId);
+    product.validateSeller(sellerId);
+    return product;
   }
 
   /**
@@ -208,7 +168,8 @@ public class ProductService {
 
     product.deleteBySeller(sellerId, LocalDateTime.now(ZoneOffset.UTC));
 
-    publishProductSearchIndexAndDisplayChanged(product.getId(), previousStatus);
+    productChangeEventPublisher.publishSearchIndexAndDisplayChanged(
+        product.getId(), previousStatus);
     return DeleteProductResponse.success();
   }
 
@@ -225,7 +186,8 @@ public class ProductService {
     boolean hiddenChanged = product.isHidden() != request.hidden();
     product.changeHidden(request.hidden());
     if (hiddenChanged) {
-      publishProductSearchIndexAndDisplayChanged(product.getId(), product.getStatus());
+      productChangeEventPublisher.publishSearchIndexAndDisplayChanged(
+          product.getId(), product.getStatus());
     }
     return UpdateProductHiddenStatusResponse.from(product);
   }
@@ -253,21 +215,9 @@ public class ProductService {
         .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
   }
 
-  private Category getCategory(Long categoryId) {
-    return categoryRepository
-        .findById(categoryId)
-        .orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND));
-  }
-
   private void validateUpdatableValue(UpdateProductRequest request) {
     if (!request.isUpdatableValuePresent()) {
       throw new BusinessException(ErrorCode.VALIDATION_FAILED, "수정할 값은 하나 이상이어야 합니다.");
-    }
-  }
-
-  private void validateSellerExists(Long sellerId) {
-    if (!userRepository.existsById(sellerId)) {
-      throw new BusinessException(ErrorCode.USER_NOT_FOUND);
     }
   }
 
@@ -300,7 +250,7 @@ public class ProductService {
     return productRepository.findBySellerIdAndDeletedAtIsNullAndStatus(sellerId, status, pageable);
   }
 
-  private void validatePagination(int page, int size) {
+  void validatePagination(int page, int size) {
     if (page < 0 || size < 1 || size > yeolmuProperties.pagination().maxPageSize()) {
       throw new BusinessException(ErrorCode.INVALID_PAGINATION);
     }
@@ -340,19 +290,5 @@ public class ProductService {
 
   private boolean isProductDisplayChanged(UpdateProductRequest request) {
     return request.title() != null || request.price() != null;
-  }
-
-  private void publishProductSearchIndexAndDisplayChanged(
-      Long productId, ProductStatus... affectedStatuses) {
-    publishProductSearchIndexChanged(productId, affectedStatuses);
-    publishProductDisplayChanged(productId);
-  }
-
-  private void publishProductSearchIndexChanged(Long productId, ProductStatus... affectedStatuses) {
-    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId, affectedStatuses));
-  }
-
-  private void publishProductDisplayChanged(Long productId) {
-    eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
   }
 }

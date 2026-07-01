@@ -48,11 +48,11 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 @SpringBootTest
 @RecordApplicationEvents
-class PaymentServiceTest {
+class PaymentFacadeTest {
 
   @Autowired private ApplicationEvents applicationEvents;
 
-  private final PaymentService paymentService;
+  private final PaymentFacade paymentFacade;
   private final PaymentRepository paymentRepository;
   private final OrderRepository orderRepository;
   private final ProductRepository productRepository;
@@ -61,15 +61,15 @@ class PaymentServiceTest {
   private final PasswordEncoder passwordEncoder;
 
   @Autowired
-  PaymentServiceTest(
-      PaymentService paymentService,
+  PaymentFacadeTest(
+      PaymentFacade paymentFacade,
       PaymentRepository paymentRepository,
       OrderRepository orderRepository,
       ProductRepository productRepository,
       CategoryRepository categoryRepository,
       UserRepository userRepository,
       PasswordEncoder passwordEncoder) {
-    this.paymentService = paymentService;
+    this.paymentFacade = paymentFacade;
     this.paymentRepository = paymentRepository;
     this.orderRepository = orderRepository;
     this.productRepository = productRepository;
@@ -95,8 +95,8 @@ class PaymentServiceTest {
     Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
     Order order = saveOrder(buyer, product);
 
-    PaymentService.ProcessPaymentResult result =
-        paymentService.processPayment(
+    ProcessPaymentResult result =
+        processPayment(
             buyer.getId(),
             order.getId(),
             "idem-key-001",
@@ -120,7 +120,7 @@ class PaymentServiceTest {
     Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
     Order order = saveOrder(buyer, product);
 
-    paymentService.processPayment(
+    processPayment(
         buyer.getId(),
         order.getId(),
         "idem-key-001",
@@ -139,8 +139,8 @@ class PaymentServiceTest {
     Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
     Order order = saveOrder(buyer, product);
 
-    PaymentService.ProcessPaymentResult result =
-        paymentService.processPayment(
+    ProcessPaymentResult result =
+        processPayment(
             buyer.getId(),
             order.getId(),
             "idem-key-001",
@@ -166,8 +166,8 @@ class PaymentServiceTest {
     Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
     Order order = saveOrder(buyer, product);
 
-    PaymentService.ProcessPaymentResult result =
-        paymentService.processPayment(
+    ProcessPaymentResult result =
+        processPayment(
             buyer.getId(),
             order.getId(),
             "idem-key-001",
@@ -188,8 +188,8 @@ class PaymentServiceTest {
     freshProduct.updateInfo(null, null, 999999);
     productRepository.saveAndFlush(freshProduct);
 
-    PaymentService.ProcessPaymentResult result =
-        paymentService.processPayment(
+    ProcessPaymentResult result =
+        processPayment(
             buyer.getId(),
             order.getId(),
             "idem-key-001",
@@ -207,15 +207,15 @@ class PaymentServiceTest {
     Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
     Order order = saveOrder(buyer, product);
 
-    PaymentService.ProcessPaymentResult first =
-        paymentService.processPayment(
+    ProcessPaymentResult first =
+        processPayment(
             buyer.getId(),
             order.getId(),
             "idem-key-001",
             new CreatePaymentRequest(PaymentMethod.MOCK_CARD, MockPaymentResult.PAID));
 
-    PaymentService.ProcessPaymentResult replay =
-        paymentService.processPayment(
+    ProcessPaymentResult replay =
+        processPayment(
             buyer.getId(),
             order.getId(),
             "idem-key-001",
@@ -233,7 +233,7 @@ class PaymentServiceTest {
     Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
     Order order = saveOrder(buyer, product);
 
-    paymentService.processPayment(
+    processPayment(
         buyer.getId(),
         order.getId(),
         "idem-key-001",
@@ -241,7 +241,7 @@ class PaymentServiceTest {
 
     assertThatThrownBy(
             () ->
-                paymentService.processPayment(
+                processPayment(
                     buyer.getId(),
                     order.getId(),
                     "idem-key-002",
@@ -260,7 +260,7 @@ class PaymentServiceTest {
     Order order1 = saveOrder(buyer, product1);
     Order order2 = saveOrder(buyer, product2);
 
-    paymentService.processPayment(
+    processPayment(
         buyer.getId(),
         order1.getId(),
         "idem-key-001",
@@ -268,7 +268,7 @@ class PaymentServiceTest {
 
     assertThatThrownBy(
             () ->
-                paymentService.processPayment(
+                processPayment(
                     buyer.getId(),
                     order2.getId(),
                     "idem-key-001",
@@ -287,7 +287,7 @@ class PaymentServiceTest {
 
     assertThatThrownBy(
             () ->
-                paymentService.processPayment(
+                processPayment(
                     seller.getId(),
                     order.getId(),
                     "idem-key-001",
@@ -307,7 +307,7 @@ class PaymentServiceTest {
 
     assertThatThrownBy(
             () ->
-                paymentService.processPayment(
+                processPayment(
                     other.getId(),
                     order.getId(),
                     "idem-key-001",
@@ -323,7 +323,7 @@ class PaymentServiceTest {
 
     assertThatThrownBy(
             () ->
-                paymentService.processPayment(
+                processPayment(
                     buyer.getId(),
                     Long.MAX_VALUE,
                     "idem-key-001",
@@ -344,7 +344,7 @@ class PaymentServiceTest {
 
     assertThatThrownBy(
             () ->
-                paymentService.processPayment(
+                processPayment(
                     buyer.getId(),
                     order.getId(),
                     "idem-key-001",
@@ -363,7 +363,7 @@ class PaymentServiceTest {
 
     assertThatThrownBy(
             () ->
-                paymentService.processPayment(
+                processPayment(
                     buyer.getId(),
                     order.getId(),
                     null,
@@ -380,7 +380,7 @@ class PaymentServiceTest {
     Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
     Order order = saveOrder(buyer, product);
 
-    paymentService.processPayment(
+    processPayment(
         buyer.getId(),
         order.getId(),
         "idem-key-001",
@@ -397,8 +397,8 @@ class PaymentServiceTest {
     Product product = saveProduct(seller, "아이패드 미니 6세대", 430000);
     Order order = saveOrder(buyer, product);
 
-    PaymentService.ProcessPaymentResult first =
-        paymentService.processPayment(
+    ProcessPaymentResult first =
+        processPayment(
             buyer.getId(),
             order.getId(),
             "idem-key-001",
@@ -407,8 +407,8 @@ class PaymentServiceTest {
     assertThat(first.created()).isTrue();
     assertThat(first.response().status()).isEqualTo(PaymentStatus.FAILED);
 
-    PaymentService.ProcessPaymentResult replay =
-        paymentService.processPayment(
+    ProcessPaymentResult replay =
+        processPayment(
             buyer.getId(),
             order.getId(),
             "idem-key-001",
@@ -441,7 +441,7 @@ class PaymentServiceTest {
         () -> {
           try {
             startLatch.await();
-            paymentService.processPayment(
+            processPayment(
                 buyer1.getId(),
                 order1.getId(),
                 sharedKey,
@@ -458,7 +458,7 @@ class PaymentServiceTest {
         () -> {
           try {
             startLatch.await();
-            paymentService.processPayment(
+            processPayment(
                 buyer2.getId(),
                 order2.getId(),
                 sharedKey,
@@ -493,8 +493,7 @@ class PaymentServiceTest {
             Payment.createPaid(
                 order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
 
-    PaymentStatusResponse response =
-        paymentService.getPaymentStatus(buyer.getId(), payment.getId());
+    PaymentStatusResponse response = paymentFacade.getPaymentStatus(buyer.getId(), payment.getId());
 
     assertThat(response.paymentId()).isEqualTo(payment.getId());
     assertThat(response.orderId()).isEqualTo(order.getId());
@@ -515,7 +514,7 @@ class PaymentServiceTest {
                 order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
 
     PaymentStatusResponse response =
-        paymentService.getPaymentStatus(seller.getId(), payment.getId());
+        paymentFacade.getPaymentStatus(seller.getId(), payment.getId());
 
     assertThat(response.status()).isEqualTo(PaymentStatus.PAID);
   }
@@ -531,8 +530,7 @@ class PaymentServiceTest {
             Payment.createPaid(
                 order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
 
-    PaymentDetailResponse response =
-        paymentService.getPaymentDetail(buyer.getId(), payment.getId());
+    PaymentDetailResponse response = paymentFacade.getPaymentDetail(buyer.getId(), payment.getId());
 
     assertThat(response.paymentId()).isEqualTo(payment.getId());
     assertThat(response.orderId()).isEqualTo(order.getId());
@@ -554,8 +552,7 @@ class PaymentServiceTest {
             Payment.createFailed(
                 order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
 
-    PaymentDetailResponse response =
-        paymentService.getPaymentDetail(buyer.getId(), payment.getId());
+    PaymentDetailResponse response = paymentFacade.getPaymentDetail(buyer.getId(), payment.getId());
 
     assertThat(response.status()).isEqualTo(PaymentStatus.FAILED);
     assertThat(response.paidAt()).isNull();
@@ -566,7 +563,7 @@ class PaymentServiceTest {
   void 존재하지_않는_결제_조회시_PAYMENT_NOT_FOUND가_발생한다() {
     User buyer = saveUser("buyer@example.com", "열무구매자");
 
-    assertThatThrownBy(() -> paymentService.getPaymentStatus(buyer.getId(), Long.MAX_VALUE))
+    assertThatThrownBy(() -> paymentFacade.getPaymentStatus(buyer.getId(), Long.MAX_VALUE))
         .isInstanceOfSatisfying(
             BusinessException.class,
             e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_NOT_FOUND));
@@ -584,7 +581,7 @@ class PaymentServiceTest {
             Payment.createPaid(
                 order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
 
-    assertThatThrownBy(() -> paymentService.getPaymentStatus(other.getId(), payment.getId()))
+    assertThatThrownBy(() -> paymentFacade.getPaymentStatus(other.getId(), payment.getId()))
         .isInstanceOfSatisfying(
             BusinessException.class,
             e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_ACCESS_DENIED));
@@ -601,7 +598,7 @@ class PaymentServiceTest {
             Payment.createPaid(
                 order, PaymentMethod.MOCK_CARD, "idem-key-001", LocalDateTime.now(ZoneOffset.UTC)));
 
-    paymentService.getPaymentStatus(buyer.getId(), payment.getId());
+    paymentFacade.getPaymentStatus(buyer.getId(), payment.getId());
 
     Payment reloadedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
     Order reloadedOrder = orderRepository.findById(order.getId()).orElseThrow();
@@ -619,8 +616,7 @@ class PaymentServiceTest {
     Order order = saveOrder(buyer, product);
     Payment payment = savePendingPayment(order, "idem-key-001");
 
-    CancelPaymentResponse response =
-        paymentService.cancelPayment(buyer.getId(), payment.getId(), null);
+    CancelPaymentResponse response = cancelPayment(buyer.getId(), payment.getId(), null);
 
     assertThat(response.paymentId()).isEqualTo(payment.getId());
     assertThat(response.orderId()).isEqualTo(order.getId());
@@ -647,8 +643,7 @@ class PaymentServiceTest {
     Order order = saveOrder(buyer, product);
     Payment payment = savePaidPayment(order, "idem-key-001");
 
-    CancelPaymentResponse response =
-        paymentService.cancelPayment(buyer.getId(), payment.getId(), "배송 전 취소");
+    CancelPaymentResponse response = cancelPayment(buyer.getId(), payment.getId(), "배송 전 취소");
 
     assertThat(response.status()).isEqualTo(PaymentStatus.REFUNDED);
     assertThat(response.orderStatus()).isEqualTo(OrderStatus.REFUNDED);
@@ -683,7 +678,7 @@ class PaymentServiceTest {
           () -> {
             try {
               startLatch.await();
-              paymentService.cancelPayment(buyer.getId(), payment.getId(), "동시 취소");
+              cancelPayment(buyer.getId(), payment.getId(), "동시 취소");
               successCount.incrementAndGet();
             } catch (Exception e) {
               failures.add(e);
@@ -724,8 +719,7 @@ class PaymentServiceTest {
     order.registerShipping("1234-5678-9012", LocalDateTime.now(ZoneOffset.UTC));
     orderRepository.saveAndFlush(order);
 
-    assertThatThrownBy(
-            () -> paymentService.cancelPayment(buyer.getId(), payment.getId(), "배송 등록 중 취소"))
+    assertThatThrownBy(() -> cancelPayment(buyer.getId(), payment.getId(), "배송 등록 중 취소"))
         .isInstanceOfSatisfying(
             BusinessException.class,
             e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_PAYMENT_STATUS));
@@ -748,8 +742,7 @@ class PaymentServiceTest {
     Order order = saveOrder(buyer, product);
     Payment payment = savePaidPayment(order, "idem-key-001");
 
-    CancelPaymentResponse response =
-        paymentService.cancelPayment(buyer.getId(), payment.getId(), "  단순 변심  ");
+    CancelPaymentResponse response = cancelPayment(buyer.getId(), payment.getId(), "  단순 변심  ");
 
     Payment reloadedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
     assertThat(reloadedPayment.getCancelReason()).isEqualTo("단순 변심");
@@ -767,7 +760,7 @@ class PaymentServiceTest {
     Order order = saveOrder(buyer, product);
     Payment payment = savePaidPayment(order, "idem-key-001");
 
-    paymentService.cancelPayment(buyer.getId(), payment.getId(), "   ");
+    cancelPayment(buyer.getId(), payment.getId(), "   ");
 
     Payment reloadedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
     assertThat(reloadedPayment.getCancelReason()).isNull();
@@ -781,8 +774,7 @@ class PaymentServiceTest {
     Order order = saveOrder(buyer, product);
     Payment payment = savePaidPayment(order, "idem-key-001");
 
-    assertThatThrownBy(
-            () -> paymentService.cancelPayment(buyer.getId(), payment.getId(), "a".repeat(256)))
+    assertThatThrownBy(() -> cancelPayment(buyer.getId(), payment.getId(), "a".repeat(256)))
         .isInstanceOfSatisfying(
             BusinessException.class,
             e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
@@ -804,7 +796,7 @@ class PaymentServiceTest {
     Order order = saveOrder(buyer, product);
     Payment payment = savePaidPayment(order, "idem-key-001");
 
-    assertThatThrownBy(() -> paymentService.cancelPayment(seller.getId(), payment.getId(), null))
+    assertThatThrownBy(() -> cancelPayment(seller.getId(), payment.getId(), null))
         .isInstanceOfSatisfying(
             BusinessException.class,
             e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_ACCESS_DENIED));
@@ -819,7 +811,7 @@ class PaymentServiceTest {
     Order order = saveOrder(buyer, product);
     Payment payment = savePaidPayment(order, "idem-key-001");
 
-    assertThatThrownBy(() -> paymentService.cancelPayment(other.getId(), payment.getId(), null))
+    assertThatThrownBy(() -> cancelPayment(other.getId(), payment.getId(), null))
         .isInstanceOfSatisfying(
             BusinessException.class,
             e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_ACCESS_DENIED));
@@ -829,7 +821,7 @@ class PaymentServiceTest {
   void 존재하지_않는_결제_취소는_PAYMENT_NOT_FOUND가_발생한다() {
     User buyer = saveUser("buyer@example.com", "열무구매자");
 
-    assertThatThrownBy(() -> paymentService.cancelPayment(buyer.getId(), Long.MAX_VALUE, null))
+    assertThatThrownBy(() -> cancelPayment(buyer.getId(), Long.MAX_VALUE, null))
         .isInstanceOfSatisfying(
             BusinessException.class,
             e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_NOT_FOUND));
@@ -850,7 +842,7 @@ class PaymentServiceTest {
       ReflectionTestUtils.setField(payment, "status", invalidStatus);
       paymentRepository.saveAndFlush(payment);
 
-      assertThatThrownBy(() -> paymentService.cancelPayment(buyer.getId(), payment.getId(), null))
+      assertThatThrownBy(() -> cancelPayment(buyer.getId(), payment.getId(), null))
           .as("%s 결제는 취소할 수 없어야 합니다", invalidStatus)
           .isInstanceOfSatisfying(
               BusinessException.class,
@@ -883,7 +875,7 @@ class PaymentServiceTest {
       ReflectionTestUtils.setField(order, "orderStatus", invalidOrderStatus);
       orderRepository.saveAndFlush(order);
 
-      assertThatThrownBy(() -> paymentService.cancelPayment(buyer.getId(), payment.getId(), null))
+      assertThatThrownBy(() -> cancelPayment(buyer.getId(), payment.getId(), null))
           .as("%s 주문 연결 결제는 취소할 수 없어야 합니다", invalidOrderStatus)
           .isInstanceOfSatisfying(
               BusinessException.class,
@@ -907,7 +899,7 @@ class PaymentServiceTest {
     Order order = saveOrder(buyer, product);
     Payment payment = savePaidPayment(order, "idem-key-001");
 
-    paymentService.cancelPayment(buyer.getId(), payment.getId(), null);
+    cancelPayment(buyer.getId(), payment.getId(), null);
 
     assertThat(applicationEvents.stream(ProductSearchIndexChangedEvent.class).count()).isEqualTo(1);
     assertThat(applicationEvents.stream(ProductDisplayChangedEvent.class).count()).isEqualTo(1);
@@ -922,7 +914,7 @@ class PaymentServiceTest {
 
     assertThatThrownBy(
             () ->
-                paymentService.processPayment(
+                processPayment(
                     buyer.getId(),
                     order.getId(),
                     "   ",
@@ -930,6 +922,16 @@ class PaymentServiceTest {
         .isInstanceOfSatisfying(
             BusinessException.class,
             e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+  }
+
+  private ProcessPaymentResult processPayment(
+      Long buyerId, Long orderId, String idempotencyKey, CreatePaymentRequest request) {
+    return paymentFacade.processPayment(
+        new ProcessPaymentCommand(buyerId, orderId, idempotencyKey, request));
+  }
+
+  private CancelPaymentResponse cancelPayment(Long buyerId, Long paymentId, String reason) {
+    return paymentFacade.cancelPayment(new CancelPaymentCommand(buyerId, paymentId, reason));
   }
 
   private Payment savePendingPayment(Order order, String idempotencyKey) {

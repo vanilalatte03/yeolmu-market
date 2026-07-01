@@ -6,7 +6,10 @@ import com.guingujig.yeolmumarket.domain.payment.dto.CreatePaymentRequest;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentDetailResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentResponse;
 import com.guingujig.yeolmumarket.domain.payment.dto.PaymentStatusResponse;
-import com.guingujig.yeolmumarket.domain.payment.service.PaymentService;
+import com.guingujig.yeolmumarket.domain.payment.service.CancelPaymentCommand;
+import com.guingujig.yeolmumarket.domain.payment.service.PaymentFacade;
+import com.guingujig.yeolmumarket.domain.payment.service.ProcessPaymentCommand;
+import com.guingujig.yeolmumarket.domain.payment.service.ProcessPaymentResult;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import com.guingujig.yeolmumarket.global.security.AuthenticatedUser;
 import jakarta.validation.Valid;
@@ -28,7 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class PaymentController {
 
-  private final PaymentService paymentService;
+  private final PaymentFacade paymentFacade;
 
   @PostMapping("/api/orders/{orderId}/payment")
   public ResponseEntity<ApiResponse<PaymentResponse>> processPayment(
@@ -37,8 +40,10 @@ public class PaymentController {
       @Size(max = 100) @RequestHeader(value = "Idempotency-Key", required = false)
           String idempotencyKey,
       @Valid @RequestBody CreatePaymentRequest request) {
-    PaymentService.ProcessPaymentResult result =
-        paymentService.processPayment(authenticatedUser.userId(), orderId, idempotencyKey, request);
+    ProcessPaymentResult result =
+        paymentFacade.processPayment(
+            new ProcessPaymentCommand(
+                authenticatedUser.userId(), orderId, idempotencyKey, request));
     if (result.created()) {
       return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(result.response()));
     }
@@ -49,7 +54,7 @@ public class PaymentController {
   public ResponseEntity<ApiResponse<PaymentStatusResponse>> getPaymentStatus(
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long paymentId) {
     PaymentStatusResponse response =
-        paymentService.getPaymentStatus(authenticatedUser.userId(), paymentId);
+        paymentFacade.getPaymentStatus(authenticatedUser.userId(), paymentId);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
@@ -57,7 +62,7 @@ public class PaymentController {
   public ResponseEntity<ApiResponse<PaymentDetailResponse>> getPaymentDetail(
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long paymentId) {
     PaymentDetailResponse response =
-        paymentService.getPaymentDetail(authenticatedUser.userId(), paymentId);
+        paymentFacade.getPaymentDetail(authenticatedUser.userId(), paymentId);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
@@ -68,7 +73,8 @@ public class PaymentController {
       @RequestBody(required = false) CancelPaymentRequest request) {
     String reason = resolveCancelReason(request);
     CancelPaymentResponse response =
-        paymentService.cancelPayment(authenticatedUser.userId(), paymentId, reason);
+        paymentFacade.cancelPayment(
+            new CancelPaymentCommand(authenticatedUser.userId(), paymentId, reason));
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
