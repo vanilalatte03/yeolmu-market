@@ -3,6 +3,7 @@ package com.guingujig.yeolmumarket.domain.chat.controller;
 import com.guingujig.yeolmumarket.domain.chat.dto.ChatMessagesResponse;
 import com.guingujig.yeolmumarket.domain.chat.dto.ChatRoomListItemResponse;
 import com.guingujig.yeolmumarket.domain.chat.dto.CreateChatRoomResponse;
+import com.guingujig.yeolmumarket.domain.chat.service.ChatRoomFacade;
 import com.guingujig.yeolmumarket.domain.chat.service.ChatRoomService;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
@@ -23,13 +24,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class ChatRoomController {
 
+  private final ChatRoomFacade chatRoomFacade;
   private final ChatRoomService chatRoomService;
 
   @PostMapping("/products/{productId}/chat-rooms")
   public ResponseEntity<ApiResponse<CreateChatRoomResponse>> createChatRoom(
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long productId) {
     CreateChatRoomResponse response =
-        chatRoomService.createChatRoom(authenticatedUser.userId(), productId);
+        chatRoomFacade.createChatRoom(authenticatedUser.userId(), productId);
     return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
   }
 

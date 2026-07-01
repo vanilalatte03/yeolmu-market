@@ -58,11 +58,11 @@ public class ChatRoom {
   @Column(name = "last_message_at")
   private LocalDateTime lastMessageAt;
 
-  public static ChatRoom create(Product product, User buyer, User seller) {
+  public static ChatRoom create(Product product, User buyer) {
     ChatRoom chatRoom = new ChatRoom();
     chatRoom.product = Objects.requireNonNull(product, "product는 필수입니다.");
     chatRoom.buyer = Objects.requireNonNull(buyer, "buyer는 필수입니다.");
-    chatRoom.seller = Objects.requireNonNull(seller, "seller는 필수입니다.");
+    chatRoom.seller = Objects.requireNonNull(product.getSeller(), "seller는 필수입니다.");
     return chatRoom;
   }
 

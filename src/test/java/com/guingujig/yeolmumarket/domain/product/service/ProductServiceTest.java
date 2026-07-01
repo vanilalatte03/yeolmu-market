@@ -114,6 +114,17 @@ class ProductServiceTest {
   }
 
   @Test
+  void 채팅방용_상품_조회는_없는_상품이면_실패한다() {
+    when(productRepository.findWithSellerByIdForUpdate(10L)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> productService.getChatCreatableProductForUpdate(10L, 2L))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_NOT_FOUND));
+  }
+
+  @Test
   void 카테고리_상품_조회는_썸네일_없이_공개_상품_Page만_조회한다() {
     Page<Product> emptyPage = Page.empty();
     when(productRepository.findByCategoryIdAndHiddenFalseAndDeletedAtIsNullAndStatusNot(

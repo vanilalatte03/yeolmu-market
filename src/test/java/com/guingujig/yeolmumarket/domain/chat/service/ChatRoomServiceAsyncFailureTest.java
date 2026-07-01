@@ -11,8 +11,6 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.guingujig.yeolmumarket.domain.chat.dto.ChatMessageResponse;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatMessageRepository;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatRoomRepository;
-import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
-import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import java.time.LocalDateTime;
@@ -29,8 +27,6 @@ class ChatRoomServiceAsyncFailureTest {
 
   @Mock private ChatRoomRepository chatRoomRepository;
   @Mock private ChatMessageRepository chatMessageRepository;
-  @Mock private ProductRepository productRepository;
-  @Mock private UserRepository userRepository;
   @Mock private ChatRoomAuthorizationService chatRoomAuthorizationService;
   @Mock private ChatMessagePersistenceService chatMessagePersistenceService;
   @Mock private ChatMessageSaveFailureNotifier chatMessageSaveFailureNotifier;

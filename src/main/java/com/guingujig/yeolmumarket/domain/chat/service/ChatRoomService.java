@@ -9,9 +9,7 @@ import com.guingujig.yeolmumarket.domain.chat.entity.ChatRoom;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatMessageRepository;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatRoomRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
-import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
-import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.config.YeolmuProperties;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
@@ -39,8 +37,6 @@ public class ChatRoomService {
 
   private final ChatRoomRepository chatRoomRepository;
   private final ChatMessageRepository chatMessageRepository;
-  private final ProductRepository productRepository;
-  private final UserRepository userRepository;
   private final ChatRoomAuthorizationService chatRoomAuthorizationService;
   private final ChatMessagePersistenceService chatMessagePersistenceService;
   private final ChatMessageSaveFailureNotifier chatMessageSaveFailureNotifier;
@@ -49,22 +45,16 @@ public class ChatRoomService {
   /**
    * 구매자와 상품 판매자 사이의 채팅방을 생성하거나 기존 방을 반환한다.
    *
-   * <p>상품 row lock으로 같은 상품의 채팅방 생성 요청을 직렬화해, 기존 방 조회와 신규 생성의 책임을 명확히 나눈다.
+   * <p>구매자, 상품 조회와 상품 채팅 가능 검증은 호출자가 완료한 뒤 전달한다.
    */
   @Transactional
-  public CreateChatRoomResponse createChatRoom(Long buyerId, Long productId) {
-    User buyer =
-        userRepository
-            .findById(buyerId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-    Product product =
-        productRepository
-            .findWithSellerByIdForUpdate(productId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
-    product.validateChatCreatableBy(buyerId);
+  public CreateChatRoomResponse findOrCreateChatRoom(User buyer, Product product) {
     User seller = product.getSeller();
-
-    return CreateChatRoomResponse.from(findOrCreateChatRoom(product, buyer, seller));
+    ChatRoom chatRoom =
+        chatRoomRepository
+            .findByProductAndBuyerAndSeller(product, buyer, seller)
+            .orElseGet(() -> chatRoomRepository.save(ChatRoom.create(product, buyer)));
+    return CreateChatRoomResponse.from(chatRoom);
   }
 
   /**
@@ -163,12 +153,6 @@ public class ChatRoomService {
           response.acceptedMessageId(),
           exception);
     }
-  }
-
-  private ChatRoom findOrCreateChatRoom(Product product, User buyer, User seller) {
-    return chatRoomRepository
-        .findByProductAndBuyerAndSeller(product, buyer, seller)
-        .orElseGet(() -> chatRoomRepository.save(ChatRoom.create(product, buyer, seller)));
   }
 
   private void validatePagination(int page, int size) {

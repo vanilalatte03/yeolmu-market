@@ -103,7 +103,7 @@ class ChatRoomControllerTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller);
-    ChatRoom chatRoom = chatRoomRepository.saveAndFlush(ChatRoom.create(product, buyer, seller));
+    ChatRoom chatRoom = chatRoomRepository.saveAndFlush(ChatRoom.create(product, buyer));
     chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, buyer, "거래 가능할까요?"));
     String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(buyer);
 
@@ -130,7 +130,7 @@ class ChatRoomControllerTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller);
-    ChatRoom chatRoom = chatRoomRepository.saveAndFlush(ChatRoom.create(product, buyer, seller));
+    ChatRoom chatRoom = chatRoomRepository.saveAndFlush(ChatRoom.create(product, buyer));
     LocalDateTime baseTime = LocalDateTime.of(2026, 6, 30, 10, 0);
     chatMessageRepository.saveAndFlush(
         ChatMessage.create(chatRoom, buyer, "거래 가능할까요?", baseTime.minusMinutes(1)));
@@ -186,7 +186,7 @@ class ChatRoomControllerTest {
     User buyer = saveUser("buyer@example.com", "열무구매자");
     User otherUser = saveUser("other@example.com", "열무구경꾼");
     Product product = saveProduct(seller);
-    ChatRoom chatRoom = chatRoomRepository.saveAndFlush(ChatRoom.create(product, buyer, seller));
+    ChatRoom chatRoom = chatRoomRepository.saveAndFlush(ChatRoom.create(product, buyer));
     String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(otherUser);
 
     mockMvc

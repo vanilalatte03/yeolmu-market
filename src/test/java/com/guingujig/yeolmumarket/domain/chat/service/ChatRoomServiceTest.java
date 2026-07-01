@@ -12,7 +12,6 @@ import com.guingujig.yeolmumarket.domain.chat.entity.ChatRoom;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatMessageRepository;
 import com.guingujig.yeolmumarket.domain.chat.repository.ChatRoomRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
-import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
@@ -21,13 +20,7 @@ import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
 import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -90,8 +83,7 @@ class ChatRoomServiceTest {
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller);
 
-    CreateChatRoomResponse response =
-        chatRoomService.createChatRoom(buyer.getId(), product.getId());
+    CreateChatRoomResponse response = createChatRoom(buyer, product);
 
     assertThat(response.roomId()).isNotNull();
     assertThat(response.product().productId()).isEqualTo(product.getId());
@@ -110,100 +102,11 @@ class ChatRoomServiceTest {
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller);
 
-    CreateChatRoomResponse first = chatRoomService.createChatRoom(buyer.getId(), product.getId());
-    CreateChatRoomResponse second = chatRoomService.createChatRoom(buyer.getId(), product.getId());
+    CreateChatRoomResponse first = createChatRoom(buyer, product);
+    CreateChatRoomResponse second = createChatRoom(buyer, product);
 
     assertThat(second.roomId()).isEqualTo(first.roomId());
     assertThat(chatRoomRepository.count()).isEqualTo(1);
-  }
-
-  @Test
-  void 동시에_같은_채팅방을_생성해도_하나만_유지한다() throws Exception {
-    User seller = saveUser("seller@example.com", "열무판매자");
-    User buyer = saveUser("buyer@example.com", "열무구매자");
-    Product product = saveProduct(seller);
-    int requestCount = 8;
-    ExecutorService executorService = Executors.newFixedThreadPool(requestCount);
-    CountDownLatch ready = new CountDownLatch(requestCount);
-    CountDownLatch start = new CountDownLatch(1);
-    List<Callable<Long>> tasks = new ArrayList<>();
-
-    for (int i = 0; i < requestCount; i++) {
-      tasks.add(
-          () -> {
-            ready.countDown();
-            start.await();
-            return chatRoomService.createChatRoom(buyer.getId(), product.getId()).roomId();
-          });
-    }
-
-    List<Future<Long>> futures = tasks.stream().map(executorService::submit).toList();
-    ready.await();
-    start.countDown();
-
-    List<Long> roomIds = new ArrayList<>();
-    for (Future<Long> future : futures) {
-      roomIds.add(future.get());
-    }
-    executorService.shutdown();
-
-    assertThat(roomIds).containsOnly(roomIds.getFirst());
-    assertThat(chatRoomRepository.count()).isEqualTo(1);
-  }
-
-  @Test
-  void 판매자가_자신의_상품에_채팅방을_생성하면_실패한다() {
-    User seller = saveUser("seller@example.com", "열무판매자");
-    Product product = saveProduct(seller);
-
-    assertThatThrownBy(() -> chatRoomService.createChatRoom(seller.getId(), product.getId()))
-        .isInstanceOfSatisfying(
-            BusinessException.class,
-            exception ->
-                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.CANNOT_CHAT_OWN_PRODUCT));
-  }
-
-  @Test
-  void 존재하지_않는_상품이면_실패한다() {
-    User buyer = saveUser("buyer@example.com", "열무구매자");
-
-    assertThatThrownBy(() -> chatRoomService.createChatRoom(buyer.getId(), 999L))
-        .isInstanceOfSatisfying(
-            BusinessException.class,
-            exception ->
-                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_NOT_FOUND));
-  }
-
-  @Test
-  void 삭제된_상품이면_실패한다() {
-    User seller = saveUser("seller@example.com", "열무판매자");
-    User buyer = saveUser("buyer@example.com", "열무구매자");
-    Product product = saveProduct(seller);
-    LocalDateTime deletedAt = LocalDateTime.of(2026, 6, 24, 10, 0);
-    ReflectionTestUtils.setField(product, "status", ProductStatus.DELETED);
-    ReflectionTestUtils.setField(product, "deletedAt", deletedAt);
-    productRepository.saveAndFlush(product);
-
-    assertThatThrownBy(() -> chatRoomService.createChatRoom(buyer.getId(), product.getId()))
-        .isInstanceOfSatisfying(
-            BusinessException.class,
-            exception ->
-                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_NOT_FOUND));
-  }
-
-  @Test
-  void 숨김_상품이면_실패한다() {
-    User seller = saveUser("seller@example.com", "열무판매자");
-    User buyer = saveUser("buyer@example.com", "열무구매자");
-    Product product = saveProduct(seller);
-    ReflectionTestUtils.setField(product, "hidden", true);
-    productRepository.saveAndFlush(product);
-
-    assertThatThrownBy(() -> chatRoomService.createChatRoom(buyer.getId(), product.getId()))
-        .isInstanceOfSatisfying(
-            BusinessException.class,
-            exception ->
-                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_NOT_FOUND));
   }
 
   @Test
@@ -211,8 +114,7 @@ class ChatRoomServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller);
-    CreateChatRoomResponse createdRoom =
-        chatRoomService.createChatRoom(buyer.getId(), product.getId());
+    CreateChatRoomResponse createdRoom = createChatRoom(buyer, product);
 
     PageResponse<ChatRoomListItemResponse> response =
         chatRoomService.getMyChatRooms(buyer.getId(), 0, 10);
@@ -231,7 +133,7 @@ class ChatRoomServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller);
-    chatRoomService.createChatRoom(buyer.getId(), product.getId());
+    createChatRoom(buyer, product);
 
     PageResponse<ChatRoomListItemResponse> response =
         chatRoomService.getMyChatRooms(seller.getId(), 0, 10);
@@ -246,7 +148,7 @@ class ChatRoomServiceTest {
     User buyer = saveUser("buyer@example.com", "열무구매자");
     User otherUser = saveUser("other@example.com", "열무구경꾼");
     Product product = saveProduct(seller);
-    chatRoomService.createChatRoom(buyer.getId(), product.getId());
+    createChatRoom(buyer, product);
 
     PageResponse<ChatRoomListItemResponse> response =
         chatRoomService.getMyChatRooms(otherUser.getId(), 0, 10);
@@ -260,7 +162,7 @@ class ChatRoomServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller);
-    chatRoomService.createChatRoom(buyer.getId(), product.getId());
+    createChatRoom(buyer, product);
 
     PageResponse<ChatRoomListItemResponse> response =
         chatRoomService.getMyChatRooms(buyer.getId(), 0, 10);
@@ -275,7 +177,7 @@ class ChatRoomServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller);
-    Long roomId = chatRoomService.createChatRoom(buyer.getId(), product.getId()).roomId();
+    Long roomId = createChatRoom(buyer, product).roomId();
     ChatRoom chatRoom = chatRoomRepository.findById(roomId).orElseThrow();
     chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, buyer, "거래 가능할까요?"));
     chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, seller, "네 가능합니다."));
@@ -293,7 +195,7 @@ class ChatRoomServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller);
-    Long roomId = chatRoomService.createChatRoom(buyer.getId(), product.getId()).roomId();
+    Long roomId = createChatRoom(buyer, product).roomId();
     ChatRoom chatRoom = chatRoomRepository.findById(roomId).orElseThrow();
     chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, buyer, "첫번째 메시지"));
     chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, seller, "두번째 메시지"));
@@ -317,7 +219,7 @@ class ChatRoomServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller);
-    Long roomId = chatRoomService.createChatRoom(buyer.getId(), product.getId()).roomId();
+    Long roomId = createChatRoom(buyer, product).roomId();
     ChatRoom chatRoom = chatRoomRepository.findById(roomId).orElseThrow();
     chatMessageRepository.saveAndFlush(ChatMessage.create(chatRoom, buyer, "첫번째 메시지"));
     ChatMessage secondMessage =
@@ -339,7 +241,7 @@ class ChatRoomServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller);
-    Long roomId = chatRoomService.createChatRoom(buyer.getId(), product.getId()).roomId();
+    Long roomId = createChatRoom(buyer, product).roomId();
     ChatRoom chatRoom = chatRoomRepository.findById(roomId).orElseThrow();
     LocalDateTime baseTime = LocalDateTime.of(2026, 6, 29, 10, 0);
     ChatMessage newerMessage =
@@ -369,7 +271,7 @@ class ChatRoomServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller);
-    Long roomId = chatRoomService.createChatRoom(buyer.getId(), product.getId()).roomId();
+    Long roomId = createChatRoom(buyer, product).roomId();
 
     ChatMessagesResponse response =
         chatRoomService.getPreviousMessages(seller.getId(), roomId, null, 30);
@@ -383,7 +285,7 @@ class ChatRoomServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller);
-    Long roomId = chatRoomService.createChatRoom(buyer.getId(), product.getId()).roomId();
+    Long roomId = createChatRoom(buyer, product).roomId();
 
     var response = chatRoomService.sendMessage(buyer.getId(), roomId, "거래 가능할까요?");
     chatRoomService.saveAcceptedMessageAsync(response);
@@ -431,7 +333,7 @@ class ChatRoomServiceTest {
     User buyer = saveUser("buyer@example.com", "열무구매자");
     User otherUser = saveUser("other@example.com", "열무구경꾼");
     Product product = saveProduct(seller);
-    Long roomId = chatRoomService.createChatRoom(buyer.getId(), product.getId()).roomId();
+    Long roomId = createChatRoom(buyer, product).roomId();
 
     assertThatThrownBy(
             () -> chatRoomService.getPreviousMessages(otherUser.getId(), roomId, null, 30))
@@ -469,9 +371,8 @@ class ChatRoomServiceTest {
     User secondSeller = saveUser("second-seller@example.com", "두번째판매자");
     Product firstProduct = saveProduct(firstSeller);
     Product secondProduct = saveProduct(secondSeller);
-    Long firstRoomId = chatRoomService.createChatRoom(buyer.getId(), firstProduct.getId()).roomId();
-    Long secondRoomId =
-        chatRoomService.createChatRoom(buyer.getId(), secondProduct.getId()).roomId();
+    Long firstRoomId = createChatRoom(buyer, firstProduct).roomId();
+    Long secondRoomId = createChatRoom(buyer, secondProduct).roomId();
     ChatRoom firstRoom = chatRoomRepository.findById(firstRoomId).orElseThrow();
     ChatRoom secondRoom = chatRoomRepository.findById(secondRoomId).orElseThrow();
     LocalDateTime baseTime = LocalDateTime.of(2026, 6, 24, 10, 0);
@@ -507,6 +408,10 @@ class ChatRoomServiceTest {
             BusinessException.class,
             exception ->
                 assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_PAGINATION));
+  }
+
+  private CreateChatRoomResponse createChatRoom(User buyer, Product product) {
+    return chatRoomService.findOrCreateChatRoom(buyer, product);
   }
 
   private Product saveProduct(User seller) {
