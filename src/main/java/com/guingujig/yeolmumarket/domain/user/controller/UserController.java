@@ -9,7 +9,7 @@ import com.guingujig.yeolmumarket.domain.user.dto.UpdateUserRequest;
 import com.guingujig.yeolmumarket.domain.user.dto.UpdateUserResponse;
 import com.guingujig.yeolmumarket.domain.user.service.UserService;
 import com.guingujig.yeolmumarket.domain.wish.dto.WishListItemResponse;
-import com.guingujig.yeolmumarket.domain.wish.service.WishService;
+import com.guingujig.yeolmumarket.domain.wish.service.WishFacade;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
 import com.guingujig.yeolmumarket.global.security.AuthenticatedUser;
@@ -32,7 +32,7 @@ public class UserController {
 
   private final UserService userService;
   private final OrderService orderService;
-  private final WishService wishService;
+  private final WishFacade wishFacade;
 
   @GetMapping("/{userId}")
   public ResponseEntity<ApiResponse<GetUserResponse>> getUser(@PathVariable Long userId) {
@@ -75,7 +75,7 @@ public class UserController {
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "10") int size) {
     PageResponse<WishListItemResponse> response =
-        wishService.getMyWishes(authenticatedUser.userId(), page, size);
+        wishFacade.getMyWishes(authenticatedUser.userId(), page, size);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 }

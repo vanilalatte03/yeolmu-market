@@ -1,7 +1,9 @@
 package com.guingujig.yeolmumarket.domain.user.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -19,6 +21,8 @@ import com.guingujig.yeolmumarket.domain.review.entity.Review;
 import com.guingujig.yeolmumarket.domain.review.repository.ReviewRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.domain.wish.entity.Wish;
+import com.guingujig.yeolmumarket.domain.wish.repository.WishRepository;
 import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
 import com.guingujig.yeolmumarket.support.ProductTestFactory;
 import org.junit.jupiter.api.Test;
@@ -44,6 +48,7 @@ class UserControllerTest {
   private final CategoryRepository categoryRepository;
   private final OrderRepository orderRepository;
   private final ReviewRepository reviewRepository;
+  private final WishRepository wishRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtTokenProvider jwtTokenProvider;
   @MockitoBean private ActiveRefreshTokenRepository activeRefreshTokenRepository;
@@ -57,6 +62,7 @@ class UserControllerTest {
       CategoryRepository categoryRepository,
       OrderRepository orderRepository,
       ReviewRepository reviewRepository,
+      WishRepository wishRepository,
       PasswordEncoder passwordEncoder,
       JwtTokenProvider jwtTokenProvider) {
     this.mockMvc = mockMvc;
@@ -65,6 +71,7 @@ class UserControllerTest {
     this.categoryRepository = categoryRepository;
     this.orderRepository = orderRepository;
     this.reviewRepository = reviewRepository;
+    this.wishRepository = wishRepository;
     this.passwordEncoder = passwordEncoder;
     this.jwtTokenProvider = jwtTokenProvider;
   }
@@ -280,6 +287,59 @@ class UserControllerTest {
   }
 
   @Test
+  void 인증된_사용자는_내_찜_목록을_조회할_수_있다() throws Exception {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User user = saveUser("user@example.com", "열무유저");
+    Product product = saveProduct(seller);
+    wishRepository.saveAndFlush(Wish.create(user, product));
+
+    mockMvc
+        .perform(
+            get("/api/users/me/wishes")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken(user))
+                .param("page", "0")
+                .param("size", "10"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.content", hasSize(1)))
+        .andExpect(jsonPath("$.data.content[0].productId").value(product.getId()))
+        .andExpect(jsonPath("$.data.content[0].title").value("아이패드 미니 6세대"))
+        .andExpect(jsonPath("$.data.content[0].price").value(430000))
+        .andExpect(jsonPath("$.data.content[0].status").value("ON_SALE"))
+        .andExpect(jsonPath("$.data.content[0].thumbnailUrl").value(nullValue()))
+        .andExpect(jsonPath("$.data.content[0].wishedAt", matchesPattern(".*(Z|\\+00:00)$")))
+        .andExpect(jsonPath("$.data.page").value(0))
+        .andExpect(jsonPath("$.data.size").value(10))
+        .andExpect(jsonPath("$.data.totalElements").value(1))
+        .andExpect(jsonPath("$.data.totalPages").value(1))
+        .andExpect(jsonPath("$.data.hasNext").value(false));
+  }
+
+  @Test
+  void 인증_없이_내_찜_목록을_조회하면_401로_응답한다() throws Exception {
+    mockMvc
+        .perform(get("/api/users/me/wishes"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+  }
+
+  @Test
+  void 잘못된_페이지_파라미터로_내_찜_목록을_조회하면_400으로_응답한다() throws Exception {
+    User user = saveUser("user@example.com", "열무유저");
+
+    mockMvc
+        .perform(
+            get("/api/users/me/wishes")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken(user))
+                .param("page", "-1"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_PAGINATION"));
+  }
+
+  @Test
   void 인증된_회원을_찾을_수_없으면_404로_응답한다() throws Exception {
     User user = saveUser("customer@example.com", "열무구매자");
     String accessToken = "Bearer " + jwtTokenProvider.issueAccessToken(user);
@@ -302,6 +362,10 @@ class UserControllerTest {
 
   private User saveUser(String email, String nickname) {
     return userRepository.save(new User(email, passwordEncoder.encode("Password123!"), nickname));
+  }
+
+  private String bearerToken(User user) {
+    return "Bearer " + jwtTokenProvider.issueAccessToken(user);
   }
 
   private Product saveProduct(User seller) {

@@ -78,7 +78,7 @@ class WishServiceTest {
     User user = saveUser("user@example.com", "열무유저");
     Product product = saveProduct(seller);
 
-    WishResponse response = wishService.createWish(user.getId(), product.getId());
+    WishResponse response = wishService.createWish(user, product);
 
     assertThat(response.productId()).isEqualTo(product.getId());
     assertThat(response.wished()).isTrue();
@@ -91,9 +91,9 @@ class WishServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User user = saveUser("user@example.com", "열무유저");
     Product product = saveProduct(seller);
-    wishService.createWish(user.getId(), product.getId());
+    wishService.createWish(user, product);
 
-    WishResponse response = wishService.deleteWish(user.getId(), product.getId());
+    WishResponse response = wishService.deleteWish(user, product);
 
     assertThat(response.productId()).isEqualTo(product.getId());
     assertThat(response.wished()).isFalse();
@@ -106,9 +106,9 @@ class WishServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User user = saveUser("user@example.com", "열무유저");
     Product product = saveProduct(seller);
-    wishService.createWish(user.getId(), product.getId());
+    wishService.createWish(user, product);
 
-    assertThatThrownBy(() -> wishService.createWish(user.getId(), product.getId()))
+    assertThatThrownBy(() -> wishService.createWish(user, product))
         .isInstanceOfSatisfying(
             BusinessException.class,
             exception ->
@@ -121,41 +121,10 @@ class WishServiceTest {
     User user = saveUser("user@example.com", "열무유저");
     Product product = saveProduct(seller);
 
-    assertThatThrownBy(() -> wishService.deleteWish(user.getId(), product.getId()))
+    assertThatThrownBy(() -> wishService.deleteWish(user, product))
         .isInstanceOfSatisfying(
             BusinessException.class,
             exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.WISH_NOT_FOUND));
-  }
-
-  @Test
-  void 숨김_상품은_찜할_수_없다() {
-    User seller = saveUser("seller@example.com", "열무판매자");
-    User user = saveUser("user@example.com", "열무유저");
-    Product product = saveProduct(seller);
-    ReflectionTestUtils.setField(product, "hidden", true);
-    productRepository.saveAndFlush(product);
-
-    assertThatThrownBy(() -> wishService.createWish(user.getId(), product.getId()))
-        .isInstanceOfSatisfying(
-            BusinessException.class,
-            exception ->
-                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_NOT_FOUND));
-  }
-
-  @Test
-  void 삭제된_상품은_찜할_수_없다() {
-    User seller = saveUser("seller@example.com", "열무판매자");
-    User user = saveUser("user@example.com", "열무유저");
-    Product product = saveProduct(seller);
-    ReflectionTestUtils.setField(product, "status", ProductStatus.DELETED);
-    ReflectionTestUtils.setField(product, "deletedAt", LocalDateTime.of(2026, 6, 26, 10, 0));
-    productRepository.saveAndFlush(product);
-
-    assertThatThrownBy(() -> wishService.createWish(user.getId(), product.getId()))
-        .isInstanceOfSatisfying(
-            BusinessException.class,
-            exception ->
-                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_NOT_FOUND));
   }
 
   @Test
