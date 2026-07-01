@@ -26,6 +26,8 @@ public class SecurityConfig {
     pathPattern(HttpMethod.GET, "/stomp-client.js"),
     pathPattern(HttpMethod.GET, "/assets/**"),
     pathPattern(HttpMethod.GET, "/favicon.ico"),
+    pathPattern(HttpMethod.GET, "/actuator/health"),
+    pathPattern(HttpMethod.GET, "/actuator/health/**"),
     pathPattern(HttpMethod.POST, "/api/auth/signup"),
     pathPattern(HttpMethod.POST, "/api/auth/login"),
     pathPattern(HttpMethod.POST, "/api/auth/refresh"),
