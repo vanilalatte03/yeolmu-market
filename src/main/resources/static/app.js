@@ -123,8 +123,11 @@ const state = {
   chatRooms: [],
   activeRoomId: null,
   chatMessages: [],
+  chatMessageCache: new Map(),
   stomp: null,
   stompConnected: false,
+  chatSubscriptions: { userErrors: null, roomId: null, messages: null, errors: null },
+  handledChatSaveFailures: new Set(),
   adminHiddenProducts: [],
   selectedOrder: null,
   selectedPayment: null,
@@ -757,11 +760,12 @@ function activeChatPanel() {
 
 function messageBubble(message) {
   const mine = session.user && message.senderId === session.user.userId;
+  const failed = message.deliveryStatus === "failed";
   return `
-    <div class="message ${mine ? "mine" : "other"}">
+    <div class="message ${mine ? "mine" : "other"} ${failed ? "failed" : ""}">
       <strong>${escapeHtml(message.senderNickname || (mine ? "나" : "이웃"))}</strong>
       <div>${escapeHtml(message.content || "")}</div>
-      <small class="muted">${dateShort(message.createdAt)}</small>
+      <small class="${failed ? "message-error" : "muted"}">${failed ? "저장 실패" : dateShort(message.createdAt)}</small>
     </div>
   `;
 }
@@ -1180,18 +1184,24 @@ async function loadChatRooms() {
   const response = await api.chat.rooms({ page: 0, size: 30 }).catch(() => ({ content: [] }));
   state.chatRooms = response.content || [];
   if (!state.activeRoomId && state.chatRooms.length) {
-    state.activeRoomId = state.chatRooms[0].roomId;
+    setActiveChatRoom(state.chatRooms[0].roomId);
   }
+  syncChatRoomSubscriptions();
   if (state.activeRoomId) {
-    await loadMessages();
+    await loadMessages(undefined, state.activeRoomId);
   }
 }
 
-async function loadMessages(beforeMessageId) {
-  if (!state.activeRoomId) return;
-  const response = await api.chat.messages(state.activeRoomId, { beforeMessageId, size: 30 });
+async function loadMessages(beforeMessageId, roomId = state.activeRoomId) {
+  if (!roomId) return;
+  const response = await api.chat.messages(roomId, { beforeMessageId, size: 30 });
   const messages = response.messages || [];
-  state.chatMessages = beforeMessageId ? [...messages, ...state.chatMessages] : messages;
+  const currentMessages = getCachedChatMessages(roomId);
+  const mergedMessages = mergeChatMessages(messages, currentMessages);
+  setCachedChatMessages(roomId, mergedMessages);
+  if (isActiveChatRoom(roomId)) {
+    state.chatMessages = mergedMessages;
+  }
 }
 
 async function loadAdmin() {
@@ -1245,7 +1255,7 @@ async function handleClick(event) {
   if (action === "create-chat") await createChat(target.dataset.id);
   if (action === "create-order") await createOrder(target.dataset.id);
   if (action === "select-chat-room") {
-    state.activeRoomId = target.dataset.id;
+    setActiveChatRoom(target.dataset.id);
     await routeChanged();
   }
   if (action === "connect-chat") await connectChat();
@@ -1359,7 +1369,7 @@ async function createChat(productId) {
     return;
   }
   await runAction("채팅방을 열었어요.", () => api.chat.createRoom(productId), (room) => {
-    state.activeRoomId = room.roomId;
+    setActiveChatRoom(room.roomId);
     navigate("#/chat");
   });
 }
@@ -1376,25 +1386,18 @@ async function createOrder(productId) {
 }
 
 async function connectChat() {
-  if (state.stomp?.isOpen()) return;
-  state.stomp = new StompClient({
-    token: session.token,
-    onStatus: toast,
-    onError: (error) => toast(error.message, "error"),
-    onMessage: (message, headers) => {
-      const destination = headers.destination || "";
-      if (destination.includes("/queue/errors")) {
-        toast(message.message || message.code || "채팅 오류가 발생했어요.", "error");
-        return;
-      }
-      state.chatMessages = [...state.chatMessages, message];
-      render();
-    },
-  });
-  await state.stomp.connect();
-  state.stompConnected = true;
-  state.stomp.subscribe("/user/queue/errors");
-  if (state.activeRoomId) state.stomp.subscribe(`/sub/chat-rooms/${state.activeRoomId}`);
+  if (!state.stomp?.isOpen()) {
+    state.chatSubscriptions = { userErrors: null, roomId: null, messages: null, errors: null };
+    state.stomp = new StompClient({
+      token: session.token,
+      onStatus: toast,
+      onError: (error) => toast(error.message, "error"),
+      onMessage: handleChatFrame,
+    });
+    await state.stomp.connect();
+    state.stompConnected = true;
+  }
+  syncChatRoomSubscriptions();
   render();
 }
 
@@ -1403,9 +1406,188 @@ async function sendChatMessage(content) {
   state.stomp.send(`/pub/chat-rooms/${state.activeRoomId}/message`, { content });
 }
 
+function syncChatRoomSubscriptions() {
+  if (!state.stomp?.isOpen()) return;
+  if (!state.chatSubscriptions.userErrors) {
+    state.chatSubscriptions.userErrors = state.stomp.subscribe("/user/queue/errors");
+  }
+
+  const roomId = state.activeRoomId ? String(state.activeRoomId) : null;
+  const subscriptions = state.chatSubscriptions;
+  if (!roomId || (subscriptions.roomId && subscriptions.roomId !== roomId)) {
+    unsubscribeChatRoom();
+  }
+  if (!roomId || (subscriptions.roomId === roomId && subscriptions.messages && subscriptions.errors)) {
+    return;
+  }
+
+  unsubscribeChatRoom();
+  state.chatSubscriptions.roomId = roomId;
+  state.chatSubscriptions.messages = state.stomp.subscribe(`/sub/chat-rooms/${roomId}`);
+  state.chatSubscriptions.errors = state.stomp.subscribe(`/sub/chat-rooms/${roomId}/errors`);
+}
+
+function setActiveChatRoom(roomId) {
+  if (state.activeRoomId && String(state.activeRoomId) === String(roomId)) return;
+  cacheActiveChatMessages();
+  state.activeRoomId = roomId;
+  state.chatMessages = getCachedChatMessages(roomId);
+  syncChatRoomSubscriptions();
+}
+
+function isActiveChatRoom(roomId) {
+  return Boolean(state.activeRoomId) && String(state.activeRoomId) === String(roomId);
+}
+
+function unsubscribeChatRoom() {
+  const { messages, errors } = state.chatSubscriptions;
+  state.stomp?.unsubscribe(messages);
+  state.stomp?.unsubscribe(errors);
+  state.chatSubscriptions.roomId = null;
+  state.chatSubscriptions.messages = null;
+  state.chatSubscriptions.errors = null;
+}
+
+function handleChatFrame(message, headers) {
+  const destination = headers.destination || "";
+  if (message.code === "CHAT_MESSAGE_SAVE_FAILED" && message.acceptedMessageId) {
+    handleChatSaveFailure(message);
+    return;
+  }
+  if (destination.includes("/queue/errors")) {
+    toast(message.message || message.code || "채팅 오류가 발생했어요.", "error");
+    return;
+  }
+  if (!message.roomId) return;
+  const mergedMessages = mergeCachedChatMessages(message.roomId, [message]);
+  if (belongsToActiveRoom(message)) {
+    state.chatMessages = mergedMessages;
+    render();
+  }
+}
+
+function handleChatSaveFailure(error) {
+  const acceptedMessageId = String(error.acceptedMessageId);
+  if (state.handledChatSaveFailures.has(acceptedMessageId)) return;
+  state.handledChatSaveFailures.add(acceptedMessageId);
+
+  let changed = false;
+  getFailureCandidateRoomIds(error.roomId).forEach((roomId) => {
+    const messages = getCachedChatMessages(roomId);
+    const failedMessages = messages.map((message) => {
+      if (String(message.acceptedMessageId) !== acceptedMessageId) return message;
+      if (error.roomId && String(message.roomId) !== String(error.roomId)) return message;
+      changed = true;
+      return { ...message, deliveryStatus: "failed" };
+    });
+    setCachedChatMessages(roomId, failedMessages);
+    if (isActiveChatRoom(roomId)) {
+      state.chatMessages = failedMessages;
+    }
+  });
+  toast(error.message || "채팅 메시지 저장에 실패했어요.", "error");
+  if (changed) render();
+}
+
+function belongsToActiveRoom(message) {
+  return state.activeRoomId && String(message.roomId) === String(state.activeRoomId);
+}
+
+function withChatDeliveryStatus(message) {
+  if (message.acceptedMessageId && state.handledChatSaveFailures.has(String(message.acceptedMessageId))) {
+    return { ...message, deliveryStatus: "failed" };
+  }
+  return message;
+}
+
+function cacheActiveChatMessages() {
+  if (!state.activeRoomId) return;
+  setCachedChatMessages(state.activeRoomId, state.chatMessages);
+}
+
+function getCachedChatMessages(roomId) {
+  return state.chatMessageCache.get(String(roomId)) || [];
+}
+
+function setCachedChatMessages(roomId, messages) {
+  state.chatMessageCache.set(String(roomId), sortChatMessages(messages.map(withChatDeliveryStatus)));
+}
+
+function mergeCachedChatMessages(roomId, messages) {
+  const mergedMessages = mergeChatMessages(getCachedChatMessages(roomId), messages);
+  setCachedChatMessages(roomId, mergedMessages);
+  return getCachedChatMessages(roomId);
+}
+
+function getFailureCandidateRoomIds(roomId) {
+  const roomIds = new Set(roomId ? [String(roomId)] : []);
+  state.chatMessageCache.forEach((_, cachedRoomId) => roomIds.add(cachedRoomId));
+  if (state.activeRoomId) roomIds.add(String(state.activeRoomId));
+  return [...roomIds];
+}
+
+function mergeChatMessages(firstMessages, secondMessages) {
+  return sortChatMessages(
+    [...firstMessages, ...secondMessages].reduce((merged, message) => {
+      const normalized = withChatDeliveryStatus(message);
+      const existingIndex = merged.findIndex((current) => isSameChatMessage(current, normalized));
+      if (existingIndex === -1) {
+        merged.push(normalized);
+        return merged;
+      }
+      merged[existingIndex] = mergeChatMessage(merged[existingIndex], normalized);
+      return merged;
+    }, [])
+  );
+}
+
+function mergeChatMessage(existing, incoming) {
+  const merged = { ...existing };
+  Object.entries(incoming).forEach(([key, value]) => {
+    if (value !== null && value !== undefined) {
+      merged[key] = value;
+      return;
+    }
+    if (!(key in merged)) {
+      merged[key] = value;
+    }
+  });
+  if (existing.deliveryStatus === "failed" || incoming.deliveryStatus === "failed") {
+    merged.deliveryStatus = "failed";
+  }
+  return withChatDeliveryStatus(merged);
+}
+
+function isSameChatMessage(first, second) {
+  if (first.acceptedMessageId && second.acceptedMessageId) {
+    return String(first.acceptedMessageId) === String(second.acceptedMessageId);
+  }
+  return Boolean(first.messageId && second.messageId) && String(first.messageId) === String(second.messageId);
+}
+
+function sortChatMessages(messages) {
+  return [...messages].sort(compareChatMessages);
+}
+
+function compareChatMessages(first, second) {
+  const firstCreatedAt = Date.parse(first.createdAt || "") || 0;
+  const secondCreatedAt = Date.parse(second.createdAt || "") || 0;
+  if (firstCreatedAt !== secondCreatedAt) return secondCreatedAt - firstCreatedAt;
+
+  const firstMessageId = Number(first.messageId) || 0;
+  const secondMessageId = Number(second.messageId) || 0;
+  if (firstMessageId !== secondMessageId) return secondMessageId - firstMessageId;
+
+  return String(second.acceptedMessageId || "").localeCompare(String(first.acceptedMessageId || ""));
+}
+
+function findOldestLoadedMessageId(messages) {
+  return [...messages].reverse().find((message) => message.messageId)?.messageId;
+}
+
 async function loadMoreMessages() {
-  const first = state.chatMessages[0];
-  await runAction("이전 메시지를 불러왔어요.", () => loadMessages(first?.messageId), () => render());
+  const beforeMessageId = findOldestLoadedMessageId(state.chatMessages);
+  await runAction("이전 메시지를 불러왔어요.", () => loadMessages(beforeMessageId), () => render());
 }
 
 async function submitUpdateMe(data) {
