@@ -6,8 +6,7 @@ import com.guingujig.yeolmumarket.domain.order.dto.RegisterOrderShippingResponse
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
-import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
+import com.guingujig.yeolmumarket.domain.product.service.ProductChangeEventPublisher;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.lock.LockBoundedTransactional;
@@ -15,7 +14,6 @@ import jakarta.persistence.EntityManager;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
@@ -25,7 +23,7 @@ public class OrderLockedCommandService {
 
   private final OrderRepository orderRepository;
   private final EntityManager entityManager;
-  private final ApplicationEventPublisher eventPublisher;
+  private final ProductChangeEventPublisher productChangeEventPublisher;
 
   @LockBoundedTransactional
   public CancelOrderResponse cancelOrder(Long requesterId, Long orderId) {
@@ -93,7 +91,6 @@ public class OrderLockedCommandService {
   }
 
   private void publishProductStatusChanged(Long productId, ProductStatus... affectedStatuses) {
-    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId, affectedStatuses));
-    eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
+    productChangeEventPublisher.publishSearchIndexAndDisplayChanged(productId, affectedStatuses);
   }
 }
