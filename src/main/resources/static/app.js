@@ -1183,21 +1183,21 @@ async function loadChatRooms() {
   const response = await api.chat.rooms({ page: 0, size: 30 }).catch(() => ({ content: [] }));
   state.chatRooms = response.content || [];
   if (!state.activeRoomId && state.chatRooms.length) {
-    state.activeRoomId = state.chatRooms[0].roomId;
+    setActiveChatRoom(state.chatRooms[0].roomId);
   }
+  syncChatRoomSubscriptions();
   if (state.activeRoomId) {
-    await loadMessages();
-  }
-  if (state.stomp?.isOpen()) {
-    syncChatRoomSubscriptions();
+    await loadMessages(undefined, state.activeRoomId);
   }
 }
 
-async function loadMessages(beforeMessageId) {
-  if (!state.activeRoomId) return;
-  const response = await api.chat.messages(state.activeRoomId, { beforeMessageId, size: 30 });
+async function loadMessages(beforeMessageId, roomId = state.activeRoomId) {
+  if (!roomId) return;
+  const response = await api.chat.messages(roomId, { beforeMessageId, size: 30 });
+  if (!isActiveChatRoom(roomId)) return;
   const messages = response.messages || [];
-  state.chatMessages = beforeMessageId ? [...messages, ...state.chatMessages] : messages;
+  const currentMessages = state.chatMessages.filter((message) => String(message.roomId) === String(roomId));
+  state.chatMessages = mergeChatMessages(messages, currentMessages);
 }
 
 async function loadAdmin() {
@@ -1251,7 +1251,7 @@ async function handleClick(event) {
   if (action === "create-chat") await createChat(target.dataset.id);
   if (action === "create-order") await createOrder(target.dataset.id);
   if (action === "select-chat-room") {
-    state.activeRoomId = target.dataset.id;
+    setActiveChatRoom(target.dataset.id);
     await routeChanged();
   }
   if (action === "connect-chat") await connectChat();
@@ -1365,7 +1365,7 @@ async function createChat(productId) {
     return;
   }
   await runAction("채팅방을 열었어요.", () => api.chat.createRoom(productId), (room) => {
-    state.activeRoomId = room.roomId;
+    setActiveChatRoom(room.roomId);
     navigate("#/chat");
   });
 }
@@ -1423,6 +1423,17 @@ function syncChatRoomSubscriptions() {
   state.chatSubscriptions.errors = state.stomp.subscribe(`/sub/chat-rooms/${roomId}/errors`);
 }
 
+function setActiveChatRoom(roomId) {
+  if (state.activeRoomId && String(state.activeRoomId) === String(roomId)) return;
+  state.activeRoomId = roomId;
+  state.chatMessages = [];
+  syncChatRoomSubscriptions();
+}
+
+function isActiveChatRoom(roomId) {
+  return Boolean(state.activeRoomId) && String(state.activeRoomId) === String(roomId);
+}
+
 function unsubscribeChatRoom() {
   const { messages, errors } = state.chatSubscriptions;
   state.stomp?.unsubscribe(messages);
@@ -1442,8 +1453,8 @@ function handleChatFrame(message, headers) {
     toast(message.message || message.code || "채팅 오류가 발생했어요.", "error");
     return;
   }
-  if (!belongsToActiveRoom(message) || hasChatMessage(message)) return;
-  state.chatMessages = [...state.chatMessages, withChatDeliveryStatus(message)];
+  if (!belongsToActiveRoom(message)) return;
+  state.chatMessages = mergeChatMessages(state.chatMessages, [message]);
   render();
 }
 
@@ -1474,13 +1485,41 @@ function withChatDeliveryStatus(message) {
   return message;
 }
 
-function hasChatMessage(message) {
-  return state.chatMessages.some((current) => {
-    if (message.acceptedMessageId && current.acceptedMessageId) {
-      return String(current.acceptedMessageId) === String(message.acceptedMessageId);
+function mergeChatMessages(firstMessages, secondMessages) {
+  return [...firstMessages, ...secondMessages].reduce((merged, message) => {
+    const normalized = withChatDeliveryStatus(message);
+    const existingIndex = merged.findIndex((current) => isSameChatMessage(current, normalized));
+    if (existingIndex === -1) {
+      merged.push(normalized);
+      return merged;
     }
-    return message.messageId && current.messageId && String(current.messageId) === String(message.messageId);
+    merged[existingIndex] = mergeChatMessage(merged[existingIndex], normalized);
+    return merged;
+  }, []);
+}
+
+function mergeChatMessage(existing, incoming) {
+  const merged = { ...existing };
+  Object.entries(incoming).forEach(([key, value]) => {
+    if (value !== null && value !== undefined) {
+      merged[key] = value;
+      return;
+    }
+    if (!(key in merged)) {
+      merged[key] = value;
+    }
   });
+  if (existing.deliveryStatus === "failed" || incoming.deliveryStatus === "failed") {
+    merged.deliveryStatus = "failed";
+  }
+  return withChatDeliveryStatus(merged);
+}
+
+function isSameChatMessage(first, second) {
+  if (first.acceptedMessageId && second.acceptedMessageId) {
+    return String(first.acceptedMessageId) === String(second.acceptedMessageId);
+  }
+  return Boolean(first.messageId && second.messageId) && String(first.messageId) === String(second.messageId);
 }
 
 async function loadMoreMessages() {
