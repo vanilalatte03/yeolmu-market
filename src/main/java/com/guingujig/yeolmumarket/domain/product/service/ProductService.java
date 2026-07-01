@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -85,6 +86,61 @@ public class ProductService {
     return productRepository
         .findByIdAndHiddenFalseAndDeletedAtIsNullAndStatusNot(productId, ProductStatus.DELETED)
         .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+  }
+
+  /**
+   * 주문 생성 Facade가 사용할 상품 예약 계약이다.
+   *
+   * <p>공개 상품만 조회하고, 판매자 본인 주문과 판매 중이 아닌 상품을 검증한 뒤 RESERVED로 전이한다. Product.@Version flush 경합은 {@code
+   * ORDER_ALREADY_EXISTS}로 변환한다.
+   */
+  @Transactional
+  public Product reservePublicProductForOrder(Long buyerId, Long productId) {
+    Product product =
+        productRepository
+            .findWithSellerById(productId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+
+    product.reserveForOrder(buyerId);
+
+    try {
+      productRepository.flush();
+    } catch (OptimisticLockingFailureException e) {
+      throw new BusinessException(ErrorCode.ORDER_ALREADY_EXISTS);
+    }
+
+    productChangeEventPublisher.publishSearchIndexAndDisplayChanged(
+        product.getId(), ProductStatus.ON_SALE, ProductStatus.RESERVED);
+    return product;
+  }
+
+  /**
+   * 채팅방 생성 Facade가 사용할 상품 조회 계약이다.
+   *
+   * <p>상품과 판매자를 pessimistic lock으로 조회하고, 요청자가 해당 상품으로 채팅방을 만들 수 있는지까지 검증한다.
+   */
+  @Transactional
+  public Product getChatCreatableProductForUpdate(Long productId, Long buyerId) {
+    Product product =
+        productRepository
+            .findWithSellerByIdForUpdate(productId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+    product.validateChatCreatableBy(buyerId);
+    return product;
+  }
+
+  /**
+   * 카테고리 상품 목록 Facade가 사용할 공개 상품 조회 계약이다.
+   *
+   * <p>카테고리 존재 검증과 썸네일 조합은 호출자가 담당하고, 이 메서드는 숨김/삭제 상품을 제외한 상품 Page만 반환한다.
+   */
+  @Transactional(readOnly = true)
+  public Page<Product> getPublicCategoryProducts(CategoryProductsQuery query) {
+    validatePagination(query.page(), query.size());
+    return productRepository.findByCategoryIdAndHiddenFalseAndDeletedAtIsNullAndStatusNot(
+        query.categoryId(),
+        ProductStatus.DELETED,
+        PageRequest.of(query.page(), query.size(), resolveSort(query.sort())));
   }
 
   @Transactional(readOnly = true)

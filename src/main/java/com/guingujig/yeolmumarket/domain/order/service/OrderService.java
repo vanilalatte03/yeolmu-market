@@ -13,8 +13,7 @@ import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
-import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
+import com.guingujig.yeolmumarket.domain.product.service.ProductChangeEventPublisher;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
 import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
 import com.guingujig.yeolmumarket.global.config.YeolmuProperties;
@@ -24,7 +23,6 @@ import com.guingujig.yeolmumarket.global.lock.DistributedLockExecutor;
 import com.guingujig.yeolmumarket.global.lock.LockKeys;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -40,7 +38,7 @@ public class OrderService {
   private final OrderRepository orderRepository;
   private final ProductRepository productRepository;
   private final UserRepository userRepository;
-  private final ApplicationEventPublisher eventPublisher;
+  private final ProductChangeEventPublisher productChangeEventPublisher;
   private final DistributedLockExecutor distributedLockExecutor;
   private final OrderLockedCommandService orderLockedCommandService;
   private final YeolmuProperties yeolmuProperties;
@@ -221,7 +219,6 @@ public class OrderService {
   }
 
   private void publishProductStatusChanged(Long productId, ProductStatus... affectedStatuses) {
-    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId, affectedStatuses));
-    eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
+    productChangeEventPublisher.publishSearchIndexAndDisplayChanged(productId, affectedStatuses);
   }
 }

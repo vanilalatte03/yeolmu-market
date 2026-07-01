@@ -5,6 +5,7 @@ import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
 import com.guingujig.yeolmumarket.domain.payment.entity.Payment;
 import com.guingujig.yeolmumarket.domain.payment.repository.PaymentRepository;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import com.guingujig.yeolmumarket.domain.product.service.ProductChangeEventPublisher;
 import com.guingujig.yeolmumarket.domain.refund.dto.ApproveRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.dto.CreateRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.dto.RefundResolution;
@@ -12,8 +13,6 @@ import com.guingujig.yeolmumarket.domain.refund.dto.RejectRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.dto.ResolveRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.entity.RefundRequest;
 import com.guingujig.yeolmumarket.domain.refund.repository.RefundRequestRepository;
-import com.guingujig.yeolmumarket.domain.search.service.ProductDisplayChangedEvent;
-import com.guingujig.yeolmumarket.domain.search.service.ProductSearchIndexChangedEvent;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.lock.LockBoundedTransactional;
@@ -22,7 +21,6 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
@@ -36,7 +34,7 @@ public class RefundLockedCommandService {
   private final OrderRepository orderRepository;
   private final RefundRequestRepository refundRequestRepository;
   private final PaymentRepository paymentRepository;
-  private final ApplicationEventPublisher eventPublisher;
+  private final ProductChangeEventPublisher productChangeEventPublisher;
 
   @LockBoundedTransactional
   public CreateRefundRequestResponse createRefundRequest(
@@ -150,8 +148,7 @@ public class RefundLockedCommandService {
   }
 
   private void publishProductStatusChanged(Long productId, ProductStatus... affectedStatuses) {
-    eventPublisher.publishEvent(new ProductSearchIndexChangedEvent(productId, affectedStatuses));
-    eventPublisher.publishEvent(new ProductDisplayChangedEvent(productId));
+    productChangeEventPublisher.publishSearchIndexAndDisplayChanged(productId, affectedStatuses);
   }
 
   private boolean isDuplicateRefundRequestConstraint(Throwable throwable) {
