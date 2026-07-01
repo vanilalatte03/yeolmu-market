@@ -7,7 +7,7 @@ import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.order.entity.Order;
 import com.guingujig.yeolmumarket.domain.order.entity.OrderStatus;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
-import com.guingujig.yeolmumarket.domain.order.service.OrderService;
+import com.guingujig.yeolmumarket.domain.order.service.OrderFacade;
 import com.guingujig.yeolmumarket.domain.product.entity.Product;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
 import com.guingujig.yeolmumarket.domain.user.entity.User;
@@ -43,7 +43,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 class DistributedLockRedisIntegrationTest {
 
   private final RedissonClient redissonClient;
-  private final OrderService orderService;
+  private final OrderFacade orderFacade;
   private final OrderRepository orderRepository;
   private final ProductRepository productRepository;
   private final CategoryRepository categoryRepository;
@@ -54,7 +54,7 @@ class DistributedLockRedisIntegrationTest {
   @Autowired
   DistributedLockRedisIntegrationTest(
       RedissonClient redissonClient,
-      OrderService orderService,
+      OrderFacade orderFacade,
       OrderRepository orderRepository,
       ProductRepository productRepository,
       CategoryRepository categoryRepository,
@@ -62,7 +62,7 @@ class DistributedLockRedisIntegrationTest {
       PasswordEncoder passwordEncoder,
       TestDataCleaner testDataCleaner) {
     this.redissonClient = redissonClient;
-    this.orderService = orderService;
+    this.orderFacade = orderFacade;
     this.orderRepository = orderRepository;
     this.productRepository = productRepository;
     this.categoryRepository = categoryRepository;
@@ -114,7 +114,7 @@ class DistributedLockRedisIntegrationTest {
 
     try {
       assertThat(acquired.await(5, TimeUnit.SECONDS)).isTrue();
-      assertThatThrownBy(() -> orderService.cancelOrder(buyer.getId(), order.getId()))
+      assertThatThrownBy(() -> orderFacade.cancelOrder(buyer.getId(), order.getId()))
           .isInstanceOfSatisfying(
               BusinessException.class,
               exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.CONFLICT));
@@ -134,9 +134,9 @@ class DistributedLockRedisIntegrationTest {
     Product product =
         ProductTestFactory.saveProduct(
             productRepository, categoryRepository, seller, "갤럭시 버즈", "미개봉입니다.", 90000);
-    Long orderId = orderService.createOrder(buyer.getId(), product.getId()).orderId();
+    Long orderId = orderFacade.createOrder(buyer.getId(), product.getId()).orderId();
 
-    orderService.cancelOrder(buyer.getId(), orderId);
+    orderFacade.cancelOrder(buyer.getId(), orderId);
 
     Order canceledOrder = orderRepository.findById(orderId).orElseThrow();
     assertThat(canceledOrder.getOrderStatus()).isEqualTo(OrderStatus.CANCELED);

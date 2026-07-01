@@ -6,7 +6,7 @@ import com.guingujig.yeolmumarket.domain.order.dto.CreateOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.GetOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.dto.RegisterOrderShippingRequest;
 import com.guingujig.yeolmumarket.domain.order.dto.RegisterOrderShippingResponse;
-import com.guingujig.yeolmumarket.domain.order.service.OrderService;
+import com.guingujig.yeolmumarket.domain.order.service.OrderFacade;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import com.guingujig.yeolmumarket.global.security.AuthenticatedUser;
 import jakarta.validation.Valid;
@@ -25,19 +25,19 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class OrderController {
 
-  private final OrderService orderService;
+  private final OrderFacade orderFacade;
 
   @PostMapping("/api/products/{productId}/orders")
   public ResponseEntity<ApiResponse<CreateOrderResponse>> createOrder(
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long productId) {
-    CreateOrderResponse response = orderService.createOrder(authenticatedUser.userId(), productId);
+    CreateOrderResponse response = orderFacade.createOrder(authenticatedUser.userId(), productId);
     return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
   }
 
   @PostMapping("/api/orders/{orderId}/cancel")
   public ResponseEntity<ApiResponse<CancelOrderResponse>> cancelOrder(
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long orderId) {
-    CancelOrderResponse response = orderService.cancelOrder(authenticatedUser.userId(), orderId);
+    CancelOrderResponse response = orderFacade.cancelOrder(authenticatedUser.userId(), orderId);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
@@ -47,22 +47,21 @@ public class OrderController {
       @PathVariable Long orderId,
       @Valid @RequestBody RegisterOrderShippingRequest request) {
     RegisterOrderShippingResponse response =
-        orderService.registerShipping(
-            authenticatedUser.userId(), orderId, request.trackingNumber());
+        orderFacade.registerShipping(authenticatedUser.userId(), orderId, request.trackingNumber());
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
   @PostMapping("/api/orders/{orderId}/confirm")
   public ResponseEntity<ApiResponse<ConfirmOrderResponse>> confirmOrder(
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long orderId) {
-    ConfirmOrderResponse response = orderService.confirmOrder(authenticatedUser.userId(), orderId);
+    ConfirmOrderResponse response = orderFacade.confirmOrder(authenticatedUser.userId(), orderId);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
   @GetMapping("/api/orders/{orderId}")
   public ResponseEntity<ApiResponse<GetOrderResponse>> getOrder(
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long orderId) {
-    GetOrderResponse response = orderService.getOrder(authenticatedUser.userId(), orderId);
+    GetOrderResponse response = orderFacade.getOrder(authenticatedUser.userId(), orderId);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 }

@@ -11,7 +11,7 @@ import com.guingujig.yeolmumarket.domain.category.entity.Category;
 import com.guingujig.yeolmumarket.domain.category.repository.CategoryRepository;
 import com.guingujig.yeolmumarket.domain.order.dto.CreateOrderResponse;
 import com.guingujig.yeolmumarket.domain.order.repository.OrderRepository;
-import com.guingujig.yeolmumarket.domain.order.service.OrderService;
+import com.guingujig.yeolmumarket.domain.order.service.OrderFacade;
 import com.guingujig.yeolmumarket.domain.product.dto.CreateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductHiddenStatusRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductRequest;
@@ -71,7 +71,7 @@ class SearchServiceTest {
 
   private final SearchService searchService;
   private final ProductFacade productFacade;
-  private final OrderService orderService;
+  private final OrderFacade orderFacade;
   private final ProductRepository productRepository;
   private final CategoryRepository categoryRepository;
   private final OrderRepository orderRepository;
@@ -86,7 +86,7 @@ class SearchServiceTest {
   SearchServiceTest(
       SearchService searchService,
       ProductFacade productFacade,
-      OrderService orderService,
+      OrderFacade orderFacade,
       ProductRepository productRepository,
       CategoryRepository categoryRepository,
       OrderRepository orderRepository,
@@ -98,7 +98,7 @@ class SearchServiceTest {
       SearchCacheProperties searchCacheProperties) {
     this.searchService = searchService;
     this.productFacade = productFacade;
-    this.orderService = orderService;
+    this.orderFacade = orderFacade;
     this.productRepository = productRepository;
     this.categoryRepository = categoryRepository;
     this.orderRepository = orderRepository;
@@ -674,7 +674,7 @@ class SearchServiceTest {
     SearchProductRequest onSaleRequest = request(null, null, null, ProductStatus.ON_SALE);
 
     searchService.searchProductsV2(onSaleRequest);
-    orderService.createOrder(buyer.getId(), product.getId());
+    orderFacade.createOrder(buyer.getId(), product.getId());
     PageResponse<SearchProductResponse> onSaleResponse =
         searchService.searchProductsV2(onSaleRequest);
     PageResponse<SearchProductResponse> reservedResponse =
@@ -691,11 +691,11 @@ class SearchServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     User buyer = saveUser("buyer@example.com", "열무구매자");
     Product product = saveProduct(seller, "예약 취소 상품", "설명", 10000);
-    CreateOrderResponse createdOrder = orderService.createOrder(buyer.getId(), product.getId());
+    CreateOrderResponse createdOrder = orderFacade.createOrder(buyer.getId(), product.getId());
     SearchProductRequest onSaleRequest = request(null, null, null, ProductStatus.ON_SALE);
 
     searchService.searchProductsV2(onSaleRequest);
-    orderService.cancelOrder(buyer.getId(), createdOrder.orderId());
+    orderFacade.cancelOrder(buyer.getId(), createdOrder.orderId());
     PageResponse<SearchProductResponse> response = searchService.searchProductsV2(onSaleRequest);
 
     assertThat(response.content())
