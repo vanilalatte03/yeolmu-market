@@ -8,7 +8,7 @@ import com.guingujig.yeolmumarket.domain.review.dto.UpdateReviewResponse;
 import com.guingujig.yeolmumarket.domain.review.dto.WrittenReviewListItemResponse;
 import com.guingujig.yeolmumarket.domain.review.entity.Review;
 import com.guingujig.yeolmumarket.domain.review.repository.ReviewRepository;
-import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.domain.user.service.UserService;
 import com.guingujig.yeolmumarket.global.config.YeolmuProperties;
 import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
@@ -27,7 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReviewService {
 
   private final ReviewRepository reviewRepository;
-  private final UserRepository userRepository;
+  private final UserService userService;
   private final DistributedLockExecutor distributedLockExecutor;
   private final ReviewLockedCommandService reviewLockedCommandService;
   private final YeolmuProperties yeolmuProperties;
@@ -88,7 +88,7 @@ public class ReviewService {
   public PageResponse<PublicReceivedReviewListItemResponse> getReceivedReviews(
       Long userId, int page, int size) {
     validatePagination(page, size);
-    validateUserExists(userId);
+    userService.validateUserExists(userId);
 
     return PageResponse.from(
         reviewRepository
@@ -179,17 +179,9 @@ public class ReviewService {
     }
   }
 
-  private void validateUserExists(Long userId) {
-    if (!userRepository.existsById(userId)) {
-      throw new BusinessException(ErrorCode.USER_NOT_FOUND);
-    }
-  }
-
   private Sort reviewSort() {
     return Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
   }
-
-  private record ReviewUpdateValues(Integer score, String content) {}
 
   private enum ReviewListStatus {
     WRITTEN,
