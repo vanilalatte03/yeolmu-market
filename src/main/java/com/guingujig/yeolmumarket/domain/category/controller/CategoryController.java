@@ -2,6 +2,7 @@ package com.guingujig.yeolmumarket.domain.category.controller;
 
 import com.guingujig.yeolmumarket.domain.category.dto.CategoryProductListItemResponse;
 import com.guingujig.yeolmumarket.domain.category.dto.GetCategoriesResponse;
+import com.guingujig.yeolmumarket.domain.category.service.CategoryFacade;
 import com.guingujig.yeolmumarket.domain.category.service.CategoryService;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class CategoryController {
 
   private final CategoryService categoryService;
+  private final CategoryFacade categoryFacade;
 
   @GetMapping
   public ResponseEntity<ApiResponse<GetCategoriesResponse>> getCategories() {
@@ -34,7 +36,7 @@ public class CategoryController {
           @RequestParam(defaultValue = "10") int size,
           @RequestParam(defaultValue = "latest") String sort) {
     PageResponse<CategoryProductListItemResponse> response =
-        categoryService.getCategoryProducts(categoryId, page, size, sort);
+        categoryFacade.getCategoryProducts(categoryId, page, size, sort);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 }
