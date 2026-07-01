@@ -23,11 +23,14 @@
 SPRING_DATASOURCE_URL=jdbc:mysql://localhost:3306/yeolmu_market
 SPRING_DATASOURCE_USERNAME=yeolmu
 SPRING_DATASOURCE_PASSWORD=local-password
+SPRING_FLYWAY_ENABLED=true
 SPRING_DATA_REDIS_HOST=localhost
 SPRING_DATA_REDIS_PORT=6379
 ```
 
 `MYSQL_PORT`를 `3307`처럼 바꾸면 `SPRING_DATASOURCE_URL`의 포트도 같은 값으로 맞춘다. Redis 포트는 현재 `docker-compose.yml`에서 `6379:6379`로 고정되어 있으므로 포트 충돌이 나면 로컬 Redis를 중지하거나 compose 포트와 `.env` 값을 함께 바꾼다.
+Flyway는 기본 활성화되어 있으며, 빈 MySQL 데이터베이스는 애플리케이션 시작 시 `V1__init_schema.sql`부터 최신 migration까지 순서대로 적용된다.
+이미 수동으로 만든 스키마나 Flyway 이력이 없는 기존 DB에 연결해야 한다면 먼저 별도 baseline/repair 전략을 정한 뒤 실행한다.
 
 ## 초기 셋업
 
