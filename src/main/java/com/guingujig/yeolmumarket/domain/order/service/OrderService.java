@@ -175,14 +175,18 @@ public class OrderService {
    */
   @Transactional(readOnly = true)
   public GetOrderResponse getOrder(Long requesterId, Long orderId) {
-    Order order =
-        orderRepository
-            .findWithDetailsById(orderId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+    Order order = getExistingOrderWithDetails(orderId);
 
     order.validateParticipant(requesterId);
 
     return GetOrderResponse.from(order);
+  }
+
+  @Transactional(readOnly = true)
+  public Order getExistingOrderWithDetails(Long orderId) {
+    return orderRepository
+        .findWithDetailsById(orderId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
   }
 
   private void validatePagination(int page, int size) {

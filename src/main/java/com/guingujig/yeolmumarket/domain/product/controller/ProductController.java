@@ -10,8 +10,9 @@ import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductRequest;
 import com.guingujig.yeolmumarket.domain.product.dto.UpdateProductResponse;
 import com.guingujig.yeolmumarket.domain.product.dto.UploadProductImagesResponse;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
+import com.guingujig.yeolmumarket.domain.product.service.ProductFacade;
 import com.guingujig.yeolmumarket.domain.product.service.ProductImageService;
-import com.guingujig.yeolmumarket.domain.product.service.ProductService;
+import com.guingujig.yeolmumarket.domain.product.service.ProductListQuery;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
 import com.guingujig.yeolmumarket.global.security.AuthenticatedUser;
@@ -39,7 +40,7 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/api/products")
 public class ProductController {
 
-  private final ProductService productService;
+  private final ProductFacade productFacade;
   private final ProductImageService productImageService;
 
   @GetMapping
@@ -50,7 +51,8 @@ public class ProductController {
       @RequestParam(defaultValue = "ON_SALE") ProductStatus status,
       @RequestParam(defaultValue = "latest") String sort) {
     PageResponse<ProductListItemResponse> response =
-        productService.getProducts(page, size, status, sort, resolveUserId(authenticatedUser));
+        productFacade.getProducts(
+            new ProductListQuery(page, size, status, sort), resolveUserId(authenticatedUser));
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
@@ -58,7 +60,7 @@ public class ProductController {
   public ResponseEntity<ApiResponse<ProductDetailResponse>> getProduct(
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long productId) {
     ProductDetailResponse response =
-        productService.getProduct(productId, resolveUserId(authenticatedUser));
+        productFacade.getProduct(productId, resolveUserId(authenticatedUser));
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
@@ -67,7 +69,7 @@ public class ProductController {
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
       @Valid @RequestBody CreateProductRequest request) {
     CreateProductResponse response =
-        productService.createProduct(authenticatedUser.userId(), request);
+        productFacade.createProduct(authenticatedUser.userId(), request);
     return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
   }
 
@@ -87,7 +89,7 @@ public class ProductController {
       @PathVariable Long productId,
       @Valid @RequestBody UpdateProductRequest request) {
     UpdateProductResponse response =
-        productService.updateProduct(authenticatedUser.userId(), productId, request);
+        productFacade.updateProduct(authenticatedUser.userId(), productId, request);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
@@ -95,7 +97,7 @@ public class ProductController {
   public ResponseEntity<ApiResponse<DeleteProductResponse>> deleteProduct(
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long productId) {
     DeleteProductResponse response =
-        productService.deleteProduct(authenticatedUser.userId(), productId);
+        productFacade.deleteProduct(authenticatedUser.userId(), productId);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 

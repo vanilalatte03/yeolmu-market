@@ -2,7 +2,8 @@ package com.guingujig.yeolmumarket.domain.product.controller;
 
 import com.guingujig.yeolmumarket.domain.product.dto.UserProductListItemResponse;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
-import com.guingujig.yeolmumarket.domain.product.service.ProductService;
+import com.guingujig.yeolmumarket.domain.product.service.ProductFacade;
+import com.guingujig.yeolmumarket.domain.product.service.SellerProductsQuery;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import com.guingujig.yeolmumarket.global.response.PageResponse;
 import com.guingujig.yeolmumarket.global.security.AuthenticatedUser;
@@ -20,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/users")
 public class UserProductController {
 
-  private final ProductService productService;
+  private final ProductFacade productFacade;
 
   @GetMapping("/{userId}/products")
   public ResponseEntity<ApiResponse<PageResponse<UserProductListItemResponse>>> getUserProducts(
@@ -29,7 +30,7 @@ public class UserProductController {
       @RequestParam(defaultValue = "10") int size,
       @RequestParam(required = false) ProductStatus status) {
     PageResponse<UserProductListItemResponse> response =
-        productService.getPublicSellerProducts(userId, page, size, status);
+        productFacade.getPublicSellerProducts(new SellerProductsQuery(userId, page, size, status));
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
@@ -40,7 +41,8 @@ public class UserProductController {
       @RequestParam(defaultValue = "10") int size,
       @RequestParam(required = false) ProductStatus status) {
     PageResponse<UserProductListItemResponse> response =
-        productService.getMyProducts(authenticatedUser.userId(), page, size, status);
+        productFacade.getMyProducts(
+            new SellerProductsQuery(authenticatedUser.userId(), page, size, status));
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 }

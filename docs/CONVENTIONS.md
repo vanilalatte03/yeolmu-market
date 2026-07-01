@@ -55,7 +55,9 @@ public class OrderController {
 - 트랜잭션 경계는 Service 계층에 둔다. 조회 전용 `@Transactional(readOnly = true)`, 상태 변경 `@Transactional`.
 - 의존성 주입은 `@RequiredArgsConstructor` + `private final`. `@Autowired` 금지.
 - 외부 API 연동은 별도 Client 클래스로 분리한다.
-- 한 메서드가 여러 Repository를 호출하며 유스케이스 흐름이 길어지면 Facade로 흐름을 분리하고, 각 Service는 자기 도메인 책임에 집중한다.
+- 도메인 Service는 자기 도메인의 Repository만 참조한다. 타 도메인의 Repository 직접 참조 금지.
+- 도메인 횡단 흐름은 Facade로 분리하고, 각 Service는 자기 도메인 책임에 집중한다.
+- Facade는 `@Service`로 선언하더라도 Repository를 직접 주입하지 않는다. 필요한 데이터와 행위는 각 도메인 Service의 public 메서드를 호출해 조합한다.
 - 메서드 파라미터가 3개 이상이면 Request DTO로 묶는다.
 - Service 내부에 `record`/DTO를 선언하지 않고 별도 파일로 분리한다.
 

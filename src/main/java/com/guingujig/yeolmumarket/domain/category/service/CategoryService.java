@@ -133,6 +133,11 @@ public class CategoryService {
     return DeleteCategoryResponse.success();
   }
 
+  @Transactional(readOnly = true)
+  public Category getExistingCategory(Long categoryId) {
+    return getCategory(categoryId);
+  }
+
   private Category getCategory(Long categoryId) {
     return categoryRepository
         .findById(categoryId)

@@ -20,7 +20,7 @@ import com.guingujig.yeolmumarket.domain.product.entity.ProductImage;
 import com.guingujig.yeolmumarket.domain.product.entity.ProductStatus;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductImageRepository;
 import com.guingujig.yeolmumarket.domain.product.repository.ProductRepository;
-import com.guingujig.yeolmumarket.domain.product.service.ProductService;
+import com.guingujig.yeolmumarket.domain.product.service.ProductFacade;
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductRequest;
 import com.guingujig.yeolmumarket.domain.search.dto.SearchProductResponse;
 import com.guingujig.yeolmumarket.domain.search.repository.PopularKeywordRepository;
@@ -70,7 +70,7 @@ class SearchServiceTest {
   @MockitoBean private PopularKeywordRepository popularKeywordRepository;
 
   private final SearchService searchService;
-  private final ProductService productService;
+  private final ProductFacade productFacade;
   private final OrderService orderService;
   private final ProductRepository productRepository;
   private final CategoryRepository categoryRepository;
@@ -85,7 +85,7 @@ class SearchServiceTest {
   @Autowired
   SearchServiceTest(
       SearchService searchService,
-      ProductService productService,
+      ProductFacade productFacade,
       OrderService orderService,
       ProductRepository productRepository,
       CategoryRepository categoryRepository,
@@ -97,7 +97,7 @@ class SearchServiceTest {
       CacheManager cacheManager,
       SearchCacheProperties searchCacheProperties) {
     this.searchService = searchService;
-    this.productService = productService;
+    this.productFacade = productFacade;
     this.orderService = orderService;
     this.productRepository = productRepository;
     this.categoryRepository = categoryRepository;
@@ -540,7 +540,7 @@ class SearchServiceTest {
     searchService.searchProductsV2(request);
     Category category = saveCategory("디지털기기");
 
-    productService.createProduct(
+    productFacade.createProduct(
         seller.getId(), new CreateProductRequest("새 상품", "설명", 20000, category.getId()));
     PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
 
@@ -558,7 +558,7 @@ class SearchServiceTest {
     PageResponse<SearchProductResponse> firstResponse =
         searchService.searchProductsV2(reservedRequest);
     Category category = saveCategory("디지털기기");
-    productService.createProduct(
+    productFacade.createProduct(
         seller.getId(), new CreateProductRequest("판매중 상품", "설명", 20000, category.getId()));
     PageResponse<SearchProductResponse> secondResponse =
         searchService.searchProductsV2(reservedRequest);
@@ -573,7 +573,7 @@ class SearchServiceTest {
     SearchProductRequest request = request(null, null, null, ProductStatus.ON_SALE);
 
     searchService.searchProductsV2(request);
-    productService.updateProduct(
+    productFacade.updateProduct(
         seller.getId(), product.getId(), new UpdateProductRequest("변경 후 상품", "수정 설명", 20000, null));
     PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
 
@@ -592,7 +592,7 @@ class SearchServiceTest {
         new SearchProductRequest(null, null, null, ProductStatus.ON_SALE, 0, 10, "priceAsc");
 
     searchService.searchProductsV2(request);
-    productService.updateProduct(
+    productFacade.updateProduct(
         seller.getId(), expensiveProduct.getId(), new UpdateProductRequest(null, null, 5000, null));
     PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
 
@@ -608,7 +608,7 @@ class SearchServiceTest {
     SearchProductRequest request = request(null, null, null, ProductStatus.ON_SALE);
 
     searchService.searchProductsV2(request);
-    productService.deleteProduct(seller.getId(), product.getId());
+    productFacade.deleteProduct(seller.getId(), product.getId());
     PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
 
     assertThat(response.content()).isEmpty();
@@ -624,7 +624,7 @@ class SearchServiceTest {
         new SearchProductRequest(null, null, null, ProductStatus.ON_SALE, 0, 1, "latest");
 
     searchService.searchProductsV2(request);
-    productService.deleteProduct(seller.getId(), firstPageProduct.getId());
+    productFacade.deleteProduct(seller.getId(), firstPageProduct.getId());
     PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
 
     assertThat(response.content())
@@ -642,7 +642,7 @@ class SearchServiceTest {
         new SearchProductRequest(null, null, null, ProductStatus.ON_SALE, 0, 1, "latest");
 
     searchService.searchProductsV2(request);
-    productService.updateProductHiddenStatus(
+    productFacade.updateProductHiddenStatus(
         firstPageProduct.getId(), new UpdateProductHiddenStatusRequest(true));
     PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
 
@@ -659,7 +659,7 @@ class SearchServiceTest {
     SearchProductRequest request = request(null, null, null, ProductStatus.ON_SALE);
 
     searchService.searchProductsV2(request);
-    productService.updateProductHiddenStatus(
+    productFacade.updateProductHiddenStatus(
         product.getId(), new UpdateProductHiddenStatusRequest(true));
     PageResponse<SearchProductResponse> response = searchService.searchProductsV2(request);
 

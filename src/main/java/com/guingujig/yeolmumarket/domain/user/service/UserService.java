@@ -29,11 +29,22 @@ public class UserService {
    */
   @Transactional(readOnly = true)
   public GetUserResponse getUser(Long userId) {
-    User user =
-        userRepository
-            .findById(userId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    User user = getExistingUser(userId);
     return GetUserResponse.from(user, reviewRatingQueryService.getSummary(userId));
+  }
+
+  @Transactional(readOnly = true)
+  public User getExistingUser(Long userId) {
+    return userRepository
+        .findById(userId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+  }
+
+  @Transactional(readOnly = true)
+  public void validateUserExists(Long userId) {
+    if (!userRepository.existsById(userId)) {
+      throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+    }
   }
 
   /**
@@ -46,10 +57,7 @@ public class UserService {
   public UpdateUserResponse updateMe(Long userId, UpdateUserRequest request) {
     validateUpdateValue(request);
 
-    User user =
-        userRepository
-            .findById(userId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    User user = getExistingUser(userId);
 
     if (StringUtils.hasText(request.nickname())) {
       user.updateNickname(request.nickname());

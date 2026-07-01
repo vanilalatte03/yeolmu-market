@@ -43,9 +43,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @SpringBootTest
-class ProductServiceTest {
+class ProductFacadeTest {
 
-  private final ProductService productService;
+  private final ProductFacade productFacade;
   private final ProductRepository productRepository;
   private final ProductImageRepository productImageRepository;
   private final CategoryRepository categoryRepository;
@@ -58,8 +58,8 @@ class ProductServiceTest {
   private static final LocalDateTime DELETED_AT = LocalDateTime.of(2026, 6, 24, 10, 0);
 
   @Autowired
-  ProductServiceTest(
-      ProductService productService,
+  ProductFacadeTest(
+      ProductFacade productFacade,
       ProductRepository productRepository,
       ProductImageRepository productImageRepository,
       CategoryRepository categoryRepository,
@@ -68,7 +68,7 @@ class ProductServiceTest {
       ReviewRepository reviewRepository,
       OrderRepository orderRepository,
       PasswordEncoder passwordEncoder) {
-    this.productService = productService;
+    this.productFacade = productFacade;
     this.productRepository = productRepository;
     this.productImageRepository = productImageRepository;
     this.categoryRepository = categoryRepository;
@@ -86,7 +86,7 @@ class ProductServiceTest {
     saveProduct(seller, "공개 상품", 30000);
     saveDeletedHiddenProduct(seller, "삭제 숨김 상품", 40000);
 
-    PageResponse<AdminHiddenProductResponse> response = productService.getHiddenProducts(0, 10);
+    PageResponse<AdminHiddenProductResponse> response = productFacade.getHiddenProducts(0, 10);
 
     assertThat(response.content()).hasSize(1);
     AdminHiddenProductResponse item = response.content().getFirst();
@@ -102,7 +102,7 @@ class ProductServiceTest {
 
   @Test
   void 숨김_상품_목록의_페이지_조건이_잘못되면_실패한다() {
-    assertThatThrownBy(() -> productService.getHiddenProducts(0, 0))
+    assertThatThrownBy(() -> productFacade.getHiddenProducts(0, 0))
         .isInstanceOfSatisfying(
             BusinessException.class,
             exception ->
@@ -125,7 +125,8 @@ class ProductServiceTest {
     Product product = saveProduct(seller, "아이패드 미니 6", 450000);
 
     PageResponse<ProductListItemResponse> response =
-        productService.getProducts(0, 10, ProductStatus.ON_SALE, "latest", null);
+        productFacade.getProducts(
+            new ProductListQuery(0, 10, ProductStatus.ON_SALE, "latest"), null);
 
     assertThat(response.content()).hasSize(1);
     ProductListItemResponse item = response.content().getFirst();
@@ -142,7 +143,8 @@ class ProductServiceTest {
         product, "/uploads/products/%d/thumbnail.png".formatted(product.getId()), true);
 
     PageResponse<ProductListItemResponse> response =
-        productService.getProducts(0, 10, ProductStatus.ON_SALE, "latest", null);
+        productFacade.getProducts(
+            new ProductListQuery(0, 10, ProductStatus.ON_SALE, "latest"), null);
 
     assertThat(response.content()).hasSize(1);
     assertThat(response.content().getFirst().thumbnailUrl())
@@ -161,7 +163,8 @@ class ProductServiceTest {
     saveWish(other, firstProduct);
 
     PageResponse<ProductListItemResponse> response =
-        productService.getProducts(0, 10, ProductStatus.ON_SALE, "latest", viewer.getId());
+        productFacade.getProducts(
+            new ProductListQuery(0, 10, ProductStatus.ON_SALE, "latest"), viewer.getId());
 
     assertThat(response.content()).hasSize(2);
     ProductListItemResponse firstItem = response.content().getFirst();
@@ -179,7 +182,7 @@ class ProductServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     Product product = saveProduct(seller, "아이패드 미니 6", 450000);
 
-    ProductDetailResponse response = productService.getProduct(product.getId(), null);
+    ProductDetailResponse response = productFacade.getProduct(product.getId(), null);
 
     assertThat(response.productId()).isEqualTo(product.getId());
     assertThat(response.wishCount()).isZero();
@@ -201,7 +204,7 @@ class ProductServiceTest {
     saveReview(firstOrder, firstBuyer, seller, 5, "좋아요.");
     saveReview(secondOrder, secondBuyer, seller, 4, "괜찮아요.");
 
-    ProductDetailResponse response = productService.getProduct(product.getId(), null);
+    ProductDetailResponse response = productFacade.getProduct(product.getId(), null);
 
     assertThat(response.seller().userId()).isEqualTo(seller.getId());
     assertThat(response.seller().averageRating()).isEqualTo(4.5);
@@ -216,7 +219,7 @@ class ProductServiceTest {
     ProductImage secondImage =
         saveProductImage(product, "/uploads/products/%d/2.png".formatted(product.getId()), false);
 
-    ProductDetailResponse response = productService.getProduct(product.getId(), null);
+    ProductDetailResponse response = productFacade.getProduct(product.getId(), null);
 
     assertThat(response.images()).hasSize(2);
     assertThat(response.images().getFirst().imageId()).isEqualTo(firstImage.getId());
@@ -234,7 +237,7 @@ class ProductServiceTest {
     saveWish(viewer, product);
     saveWish(other, product);
 
-    ProductDetailResponse response = productService.getProduct(product.getId(), viewer.getId());
+    ProductDetailResponse response = productFacade.getProduct(product.getId(), viewer.getId());
 
     assertThat(response.productId()).isEqualTo(product.getId());
     assertThat(response.wishCount()).isEqualTo(2);
@@ -247,7 +250,7 @@ class ProductServiceTest {
     Category category = saveCategory("디지털기기");
 
     CreateProductResponse response =
-        productService.createProduct(
+        productFacade.createProduct(
             seller.getId(),
             new CreateProductRequest("아이패드 미니 6", "생활기스 조금 있습니다.", 450000, category.getId()));
 
@@ -262,7 +265,7 @@ class ProductServiceTest {
 
     assertThatThrownBy(
             () ->
-                productService.createProduct(
+                productFacade.createProduct(
                     seller.getId(),
                     new CreateProductRequest("아이패드 미니 6", "생활기스 조금 있습니다.", 450000, Long.MAX_VALUE)))
         .isInstanceOfSatisfying(
@@ -286,7 +289,7 @@ class ProductServiceTest {
     Product product = saveProduct(seller, "아이패드 미니 6", 450000);
 
     UpdateProductResponse response =
-        productService.updateProduct(
+        productFacade.updateProduct(
             seller.getId(),
             product.getId(),
             new UpdateProductRequest("아이패드 미니 6세대", null, 430000, null));
@@ -310,7 +313,7 @@ class ProductServiceTest {
     Product product = saveProduct(seller, "아이패드 미니 6", 450000);
 
     UpdateProductResponse response =
-        productService.updateProduct(
+        productFacade.updateProduct(
             seller.getId(),
             product.getId(),
             new UpdateProductRequest(null, null, null, newCategory.getId()));
@@ -329,7 +332,7 @@ class ProductServiceTest {
 
     assertThatThrownBy(
             () ->
-                productService.updateProduct(
+                productFacade.updateProduct(
                     seller.getId(),
                     product.getId(),
                     new UpdateProductRequest(null, null, null, Long.MAX_VALUE)))
@@ -340,6 +343,40 @@ class ProductServiceTest {
   }
 
   @Test
+  void 판매자가_아닌_사용자가_존재하지_않는_카테고리로_상품을_수정하면_권한_오류가_우선한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+    User other = saveUser("other@example.com", "다른사용자");
+    Product product = saveProduct(seller, "아이패드 미니 6", 450000);
+
+    assertThatThrownBy(
+            () ->
+                productFacade.updateProduct(
+                    other.getId(),
+                    product.getId(),
+                    new UpdateProductRequest(null, null, null, Long.MAX_VALUE)))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_ACCESS_DENIED));
+  }
+
+  @Test
+  void 존재하지_않는_상품을_존재하지_않는_카테고리로_수정하면_상품_없음이_우선한다() {
+    User seller = saveUser("seller@example.com", "열무판매자");
+
+    assertThatThrownBy(
+            () ->
+                productFacade.updateProduct(
+                    seller.getId(),
+                    Long.MAX_VALUE,
+                    new UpdateProductRequest(null, null, null, Long.MAX_VALUE)))
+        .isInstanceOfSatisfying(
+            BusinessException.class,
+            exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_NOT_FOUND));
+  }
+
+  @Test
   void 판매자가_아닌_사용자가_상품을_수정하면_실패한다() {
     User seller = saveUser("seller@example.com", "열무판매자");
     User other = saveUser("other@example.com", "다른사용자");
@@ -347,7 +384,7 @@ class ProductServiceTest {
 
     assertThatThrownBy(
             () ->
-                productService.updateProduct(
+                productFacade.updateProduct(
                     other.getId(),
                     product.getId(),
                     new UpdateProductRequest("아이패드 미니 6세대", null, null, null)))
@@ -364,7 +401,7 @@ class ProductServiceTest {
 
     assertThatThrownBy(
             () ->
-                productService.updateProduct(
+                productFacade.updateProduct(
                     seller.getId(),
                     product.getId(),
                     new UpdateProductRequest(null, null, null, null)))
@@ -379,7 +416,7 @@ class ProductServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     Product product = saveProduct(seller, "아이패드 미니 6", 450000);
 
-    DeleteProductResponse response = productService.deleteProduct(seller.getId(), product.getId());
+    DeleteProductResponse response = productFacade.deleteProduct(seller.getId(), product.getId());
 
     assertThat(response.deleted()).isTrue();
     Product deletedProduct = productRepository.findById(product.getId()).orElseThrow();
@@ -392,7 +429,7 @@ class ProductServiceTest {
     User seller = saveUser("seller@example.com", "열무판매자");
     Product product = saveProductWithStatus(seller, "아이패드 미니 6", 450000, ProductStatus.RESERVED);
 
-    assertThatThrownBy(() -> productService.deleteProduct(seller.getId(), product.getId()))
+    assertThatThrownBy(() -> productFacade.deleteProduct(seller.getId(), product.getId()))
         .isInstanceOfSatisfying(
             BusinessException.class,
             exception ->
@@ -405,7 +442,7 @@ class ProductServiceTest {
     Product product = saveProductWithStatus(seller, "예약 상품", 20000, ProductStatus.RESERVED);
 
     UpdateProductHiddenStatusResponse response =
-        productService.updateProductHiddenStatus(
+        productFacade.updateProductHiddenStatus(
             product.getId(), new UpdateProductHiddenStatusRequest(true));
 
     assertThat(response.productId()).isEqualTo(product.getId());
@@ -425,7 +462,7 @@ class ProductServiceTest {
     productRepository.flush();
 
     UpdateProductHiddenStatusResponse response =
-        productService.updateProductHiddenStatus(
+        productFacade.updateProductHiddenStatus(
             product.getId(), new UpdateProductHiddenStatusRequest(false));
 
     assertThat(response.productId()).isEqualTo(product.getId());
@@ -440,7 +477,7 @@ class ProductServiceTest {
   void 존재하지_않는_상품_숨김_상태_변경은_실패한다() {
     assertThatThrownBy(
             () ->
-                productService.updateProductHiddenStatus(
+                productFacade.updateProductHiddenStatus(
                     Long.MAX_VALUE, new UpdateProductHiddenStatusRequest(true)))
         .isInstanceOfSatisfying(
             BusinessException.class,
@@ -455,7 +492,7 @@ class ProductServiceTest {
 
     assertThatThrownBy(
             () ->
-                productService.updateProductHiddenStatus(
+                productFacade.updateProductHiddenStatus(
                     product.getId(), new UpdateProductHiddenStatusRequest(true)))
         .isInstanceOfSatisfying(
             BusinessException.class,
