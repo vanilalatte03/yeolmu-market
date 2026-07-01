@@ -7,7 +7,7 @@ import com.guingujig.yeolmumarket.domain.refund.dto.RejectRefundRequest;
 import com.guingujig.yeolmumarket.domain.refund.dto.RejectRefundRequestResponse;
 import com.guingujig.yeolmumarket.domain.refund.dto.ResolveRefundRequest;
 import com.guingujig.yeolmumarket.domain.refund.dto.ResolveRefundRequestResponse;
-import com.guingujig.yeolmumarket.domain.refund.service.RefundService;
+import com.guingujig.yeolmumarket.domain.refund.service.RefundFacade;
 import com.guingujig.yeolmumarket.global.response.ApiResponse;
 import com.guingujig.yeolmumarket.global.security.AuthenticatedUser;
 import jakarta.validation.Valid;
@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class RefundController {
 
-  private final RefundService refundService;
+  private final RefundFacade refundFacade;
 
   @PostMapping("/api/orders/{orderId}/refund")
   public ResponseEntity<ApiResponse<CreateRefundRequestResponse>> createRefundRequest(
@@ -32,7 +32,7 @@ public class RefundController {
       @PathVariable Long orderId,
       @Valid @RequestBody CreateRefundRequest request) {
     CreateRefundRequestResponse response =
-        refundService.createRefundRequest(authenticatedUser.userId(), orderId, request.reason());
+        refundFacade.createRefundRequest(authenticatedUser.userId(), orderId, request.reason());
     return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
   }
 
@@ -40,7 +40,7 @@ public class RefundController {
   public ResponseEntity<ApiResponse<ApproveRefundRequestResponse>> approveRefundRequest(
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser, @PathVariable Long refundId) {
     ApproveRefundRequestResponse response =
-        refundService.approveRefundRequest(authenticatedUser.userId(), refundId);
+        refundFacade.approveRefundRequest(authenticatedUser.userId(), refundId);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
@@ -51,7 +51,7 @@ public class RefundController {
       @RequestBody(required = false) RejectRefundRequest request) {
     String reason = resolveRejectReason(request);
     RejectRefundRequestResponse response =
-        refundService.rejectRefundRequest(authenticatedUser.userId(), refundId, reason);
+        refundFacade.rejectRefundRequest(authenticatedUser.userId(), refundId, reason);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
@@ -61,7 +61,7 @@ public class RefundController {
       @PathVariable Long refundId,
       @Valid @RequestBody ResolveRefundRequest request) {
     ResolveRefundRequestResponse response =
-        refundService.resolveRefundRequest(
+        refundFacade.resolveRefundRequest(
             authenticatedUser.userId(), refundId, request.resolution(), request.reason());
     return ResponseEntity.ok(ApiResponse.success(response));
   }
