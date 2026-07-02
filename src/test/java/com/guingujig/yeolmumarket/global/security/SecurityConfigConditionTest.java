@@ -11,7 +11,7 @@ class SecurityConfigConditionTest {
       new ApplicationContextRunner().withUserConfiguration(SecurityConfig.class);
 
   @Test
-  void non_web_context_does_not_load_security_config() {
+  void 웹_컨텍스트가_아니면_보안_설정을_로드하지_않는다() {
     contextRunner.run(
         context -> {
           assertThat(context).hasNotFailed();
