@@ -3,7 +3,8 @@ import { StompClient } from "./stomp-client.js";
 
 const app = document.querySelector("#app");
 const toastRoot = document.querySelector("#toast-root");
-const RADISH_ASSET = "/assets/radish.svg?v=20260630-layout-radish";
+const STATIC_ASSET_VERSION = "20260702-front-edit";
+const RADISH_ASSET = `/assets/radish.svg?v=${STATIC_ASSET_VERSION}`;
 
 const DEMO_CATEGORIES = [
   { categoryId: 1, name: "디지털기기" },
@@ -17,6 +18,9 @@ const MAX_PRODUCT_IMAGE_COUNT = 10;
 const MAX_PRODUCT_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_PRODUCT_IMAGE_REQUEST_BYTES = 25 * 1024 * 1024;
 const SUPPORTED_PRODUCT_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+const CHAT_SUBSCRIPTION_NOT_READY_MESSAGE = "채팅 구독 준비에 실패했어요. 잠시 후 다시 시도해 주세요.";
+const ORDER_PAYMENT_IDS_KEY = "yeolmu.orderPaymentIds";
+const ORDER_REFUND_REQUEST_IDS_KEY = "yeolmu.orderRefundRequestIds";
 
 const DEMO_PRODUCTS = [
   {
@@ -120,10 +124,15 @@ const state = {
   search: { keyword: "", minPrice: "", maxPrice: "", status: "ON_SALE", sort: "latest", cached: true },
   myProducts: [],
   wishes: [],
+  myProfile: null,
   myOrders: [],
   mySales: [],
-  myReviewStatus: "written",
+  myPageTab: "sales",
+  profilePanel: null,
+  orderTab: "orders",
+  myReviewStatus: "received",
   myReviews: [],
+  writtenReviews: [],
   publicReviews: [],
   chatRooms: [],
   activeRoomId: null,
@@ -131,9 +140,15 @@ const state = {
   chatMessageCache: new Map(),
   stomp: null,
   stompConnected: false,
-  chatSubscriptions: { userErrors: null, roomId: null, messages: null, errors: null },
+  chatSubscriptions: emptyChatSubscriptions(),
+  chatReconnectTimer: null,
+  chatReconnectAttempts: 0,
   handledChatSaveFailures: new Set(),
   adminHiddenProducts: [],
+  orderPanel: null,
+  pendingPaymentKeys: {},
+  orderPaymentIds: loadStoredIds(ORDER_PAYMENT_IDS_KEY),
+  orderRefundRequestIds: loadStoredIds(ORDER_REFUND_REQUEST_IDS_KEY),
   selectedOrder: null,
   selectedPayment: null,
   ownerProductId: null,
@@ -142,6 +157,65 @@ const state = {
 };
 
 bootstrap();
+
+function emptyChatSubscriptions() {
+  return { userErrors: null, roomId: null, messages: null, errors: null, ready: null };
+}
+
+function loadStoredIds(key) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(([, value]) => value !== null && value !== undefined && value !== "")
+        .map(([orderId, value]) => [String(orderId), String(value)])
+    );
+  } catch {
+    return {};
+  }
+}
+
+function persistStoredIds(key, ids) {
+  try {
+    localStorage.setItem(key, JSON.stringify(ids));
+  } catch {
+    // 저장소 접근이 막힌 환경에서는 현재 화면 상태만 유지한다.
+  }
+}
+
+function rememberPaymentId(orderId, paymentId) {
+  if (!orderId || !paymentId) return;
+  state.orderPaymentIds[String(orderId)] = String(paymentId);
+  persistStoredIds(ORDER_PAYMENT_IDS_KEY, state.orderPaymentIds);
+}
+
+function forgetPaymentId(orderId) {
+  if (!orderId) return;
+  delete state.orderPaymentIds[String(orderId)];
+  persistStoredIds(ORDER_PAYMENT_IDS_KEY, state.orderPaymentIds);
+}
+
+function rememberRefundRequestId(orderId, refundRequestId) {
+  if (!orderId || !refundRequestId) return;
+  state.orderRefundRequestIds[String(orderId)] = String(refundRequestId);
+  persistStoredIds(ORDER_REFUND_REQUEST_IDS_KEY, state.orderRefundRequestIds);
+}
+
+function paymentIdForOrder(row) {
+  if (!row?.orderId) return null;
+  return row.paymentId || row.payment?.paymentId || state.orderPaymentIds[String(row.orderId)] || null;
+}
+
+function refundRequestIdForOrder(row) {
+  if (!row?.orderId) return null;
+  return row.refundRequestId || state.orderRefundRequestIds[String(row.orderId)] || null;
+}
+
+function refundRequestIdBadge(row) {
+  const refundId = refundRequestIdForOrder(row);
+  return refundId ? `<span class="badge refund-id-badge">환불 #${escapeHtml(String(refundId))}</span>` : "";
+}
 
 async function bootstrap() {
   window.addEventListener("hashchange", routeChanged);
@@ -153,6 +227,9 @@ async function bootstrap() {
 
 async function routeChanged() {
   state.route = parseRoute();
+  if (state.route.name !== "chat") {
+    clearChatReconnect();
+  }
   state.loading = true;
   render();
   try {
@@ -175,6 +252,7 @@ async function loadForRoute() {
   if (name === "chat") await loadChatRooms();
   if (name === "me") await loadMyPage();
   if (name === "orders") await loadOrders();
+  if (name === "refunds") await loadOrders();
   if (name === "reviews") await loadReviews();
   if (name === "admin") await loadAdmin();
 }
@@ -249,8 +327,7 @@ function topbar() {
                   <div class="menu-popover ${state.menuOpen ? "" : "hidden"}">
                     <button class="btn btn-ghost" data-action="nav" data-target="#/me">🧺 마이페이지</button>
                     <button class="btn btn-ghost" data-action="nav" data-target="#/orders">📦 거래내역</button>
-                    <button class="btn btn-ghost" data-action="nav" data-target="#/reviews">⭐ 리뷰</button>
-                    <button class="btn btn-ghost" data-action="nav" data-target="#/refunds">↩ 환불</button>
+                    <button class="btn btn-ghost" data-action="nav" data-target="#/reviews">⭐ 받은후기</button>
                     ${user.role === "ADMIN" ? `<button class="btn btn-ghost" data-action="nav" data-target="#/admin">🛠 관리자</button>` : ""}
                     <button class="btn btn-ghost btn-danger" data-action="logout">로그아웃</button>
                   </div>
@@ -355,9 +432,9 @@ function homeView() {
   return `
     <section class="hero">
       <div>
-        <span class="label-sticker">🥬 우리 동네 중고거래</span>
+        <span class="label-sticker">🥬 우리 안전 중고거래</span>
         <h1>필요한 건 가까이에,<br />안 쓰는 건 신선하게.</h1>
-        <p>실시간 채팅으로 믿고 거래하는 동네 마켓 🌱</p>
+        <p>실시간 채팅으로 믿고 거래하는 열무 마켓 🌱</p>
       </div>
       <img class="hero-radish" src="${RADISH_ASSET}" alt="" />
     </section>
@@ -883,180 +960,501 @@ function messageBubble(message) {
 }
 
 function meView() {
-  return `
-    <section class="me-page">
-      <div class="profile-hero">
-        <span class="avatar profile-avatar">${initial(session.user?.nickname || "열")}</span>
-        <div>
-          <h1>${escapeHtml(session.user?.nickname || "내 정보")}</h1>
-          <p class="muted">${escapeHtml(session.user?.email || "")} · ${escapeHtml(session.user?.role || "USER")} · ⭐ 4.9 · 매너온도 52.3°C 🔥</p>
-        </div>
-        <button class="btn btn-ghost" data-action="nav" data-target="#/me">프로필 수정</button>
-      </div>
-      <div class="tab-list page-tabs">
-        <button class="btn btn-dark" data-action="nav" data-target="#/me">판매내역</button>
-        <button class="btn btn-ghost" data-action="nav" data-target="#/orders">주문내역</button>
-        <button class="btn btn-ghost" data-action="nav" data-target="#/reviews">리뷰</button>
-        <button class="btn btn-ghost" data-action="nav" data-target="#/refunds">환불</button>
-      </div>
-      <section class="split">
-        <div class="panel">
-          <form class="form-grid" data-form="update-me">
-            <div class="field"><label>닉네임</label><input name="nickname" maxlength="30" placeholder="새 닉네임" /></div>
-            <div class="field"><label>비밀번호</label><input name="password" type="password" placeholder="새 비밀번호" /></div>
-            <button class="btn btn-primary field-full" type="submit">프로필 수정</button>
-          </form>
-        </div>
-        <div class="panel">
-          <h2>내 판매 상품</h2>
-          ${simpleProductRows(state.myProducts)}
-        </div>
-      </section>
-      <section class="split">
-        <div class="panel">
-          <h2>찜한 상품</h2>
-          ${simpleProductRows(state.wishes)}
-        </div>
-        <div class="panel">
-          <h2>바로가기</h2>
-          <div class="action-row">
-            <button class="btn btn-soft" data-action="nav" data-target="#/orders">거래내역</button>
-            <button class="btn btn-soft" data-action="nav" data-target="#/reviews">리뷰</button>
-            <button class="btn btn-soft" data-action="nav" data-target="#/refunds">환불</button>
-          </div>
-        </div>
-      </section>
-    </section>
-  `;
+  return myPageShell(state.myPageTab === "wishes" ? "wishes" : "sales");
 }
 
 function ordersView() {
-  return `
-    <section class="view-stack">
-      <div class="panel">
-        <h1>거래내역 📦</h1>
-        <div class="action-row">
-          <button class="btn ${state.orderTab !== "sales" ? "btn-soft" : "btn-ghost"}" data-action="order-tab" data-tab="orders">구매 주문</button>
-          <button class="btn ${state.orderTab === "sales" ? "btn-soft" : "btn-ghost"}" data-action="order-tab" data-tab="sales">판매 주문</button>
-        </div>
-      </div>
-      <section class="split">
-        <div class="panel">
-          <h2>${state.orderTab === "sales" ? "내 판매 주문" : "내 구매 주문"}</h2>
-          ${orderRows(state.orderTab === "sales" ? state.mySales : state.myOrders)}
-        </div>
-        <aside class="view-stack">
-          <div class="panel">
-            <h2>주문 만들기</h2>
-            <form class="form-grid single" data-form="create-order">
-              <div class="field"><label>상품 ID</label><input name="productId" inputmode="numeric" required /></div>
-              <button class="btn btn-primary" type="submit">주문하기</button>
-            </form>
-          </div>
-          <div class="panel">
-            <h2>주문 처리</h2>
-            <form class="form-grid single" data-form="order-action">
-              <div class="field"><label>주문 ID</label><input name="orderId" inputmode="numeric" required /></div>
-              <div class="field"><label>배송 운송장</label><input name="trackingNumber" placeholder="배송 처리 때 사용" /></div>
-              <div class="action-row">
-                <button class="btn btn-ghost" name="intent" value="detail" type="submit">상세</button>
-                <button class="btn btn-danger" name="intent" value="cancel" type="submit">취소</button>
-                <button class="btn btn-soft" name="intent" value="shipping" type="submit">배송등록</button>
-                <button class="btn btn-primary" name="intent" value="confirm" type="submit">구매확정</button>
-              </div>
-            </form>
-          </div>
-          <div class="panel">
-            <h2>결제</h2>
-            <form class="form-grid single" data-form="payment-create">
-              <div class="field"><label>주문 ID</label><input name="orderId" inputmode="numeric" required /></div>
-              <div class="field"><label>멱등성 키</label><input name="idempotencyKey" placeholder="payment-001" /></div>
-              <div class="field"><label>결제 결과</label><select name="result">${option("PAID", "성공")}${option("FAILED", "실패")}</select></div>
-              <button class="btn btn-primary" type="submit">결제 요청</button>
-            </form>
-            <hr />
-            <form class="form-grid single" data-form="payment-action">
-              <div class="field"><label>결제 ID</label><input name="paymentId" inputmode="numeric" required /></div>
-              <div class="field"><label>취소 사유</label><input name="reason" /></div>
-              <div class="action-row">
-                <button class="btn btn-ghost" name="intent" value="status" type="submit">상태조회</button>
-                <button class="btn btn-ghost" name="intent" value="detail" type="submit">상세조회</button>
-                <button class="btn btn-danger" name="intent" value="cancel" type="submit">결제취소</button>
-              </div>
-            </form>
-          </div>
-          ${resultPanel()}
-        </aside>
-      </section>
-    </section>
-  `;
-}
-
-function orderRows(rows) {
-  if (!rows.length) return `<div class="empty-state"><p>거래 내역이 아직 없어요.</p></div>`;
-  return `<div class="list">${rows.map((row) => `
-    <div class="list-row">
-      <span class="avatar">📦</span>
-      <div>
-        <strong>${escapeHtml(cleanDisplayText(row.productTitle || row.product?.title, "상품"))}</strong>
-        <div class="muted">주문 ${row.orderId} · ${price(row.price || row.product?.price)} · ${dateShort(row.createdAt)}</div>
-      </div>
-      ${statusBadge(row.status)}
-    </div>
-  `).join("")}</div>`;
+  return myPageShell("orders");
 }
 
 function reviewsView() {
+  return myPageShell("reviews");
+}
+
+function refundsView() {
+  return myPageShell("refunds");
+}
+
+function myPageShell(activeTab) {
   return `
-    <section class="split">
-      <div class="view-stack">
-        <div class="panel">
-          <h1>리뷰 ⭐</h1>
-          <div class="action-row">
-            <button class="btn ${state.myReviewStatus === "written" ? "btn-soft" : "btn-ghost"}" data-action="review-status" data-status="written">작성한 리뷰</button>
-            <button class="btn ${state.myReviewStatus === "received" ? "btn-soft" : "btn-ghost"}" data-action="review-status" data-status="received">받은 리뷰</button>
-          </div>
-          ${reviewList(state.myReviews, state.myReviewStatus)}
-        </div>
-        <div class="panel">
-          <h2>공개 리뷰 조회</h2>
-          <form class="form-grid" data-form="public-reviews">
-            <div class="field"><label>유저 ID</label><input name="userId" inputmode="numeric" required /></div>
-            <button class="btn btn-primary" type="submit">조회</button>
-          </form>
-          ${reviewList(state.publicReviews, "public")}
-        </div>
+    <section class="me-page mypage-shell">
+      ${profileHero()}
+      ${profileEditPanel()}
+      ${myPageTabs(activeTab)}
+      <div class="mypage-content">
+        ${myPageContent(activeTab)}
       </div>
-      <aside class="view-stack">
-        <div class="panel">
-          <h2>리뷰 작성</h2>
-          <form class="form-grid single" data-form="create-review">
-            <div class="field"><label>주문 ID</label><input name="orderId" inputmode="numeric" required /></div>
-            <div class="field"><label>점수</label><select name="score">${[5,4,3,2,1].map((n) => option(n, `${n}점`)).join("")}</select></div>
-            <div class="field"><label>내용</label><textarea name="content" maxlength="255" required></textarea></div>
-            <button class="btn btn-primary" type="submit">리뷰 등록</button>
-          </form>
-        </div>
-        <div class="panel">
-          <h2>리뷰 수정/삭제</h2>
-          <form class="form-grid single" data-form="update-review">
-            <div class="field"><label>주문 ID</label><input name="orderId" inputmode="numeric" required /></div>
-            <div class="field"><label>리뷰 ID</label><input name="reviewId" inputmode="numeric" required /></div>
-            <div class="field"><label>점수</label><select name="score"><option value="">유지</option>${[5,4,3,2,1].map((n) => option(n, `${n}점`)).join("")}</select></div>
-            <div class="field"><label>내용</label><textarea name="content" maxlength="255"></textarea></div>
-            <div class="action-row">
-              <button class="btn btn-primary" name="intent" value="update" type="submit">수정</button>
-              <button class="btn btn-danger" name="intent" value="delete" type="submit">삭제</button>
-            </div>
-          </form>
-        </div>
-      </aside>
     </section>
   `;
 }
 
+function profileHero() {
+  const profile = state.myProfile || session.user || {};
+  const ratingValue = Number(profile.averageRating ?? 0);
+  const rating = Number.isFinite(ratingValue) ? ratingValue.toFixed(1) : "0.0";
+  const reviewCount = Number(profile.reviewCount ?? 0);
+  return `
+    <div class="profile-hero mypage-hero">
+      <span class="avatar profile-avatar">${initial(profile.nickname || session.user?.nickname || "열")}</span>
+      <div>
+        <h1>${escapeHtml(profile.nickname || session.user?.nickname || "내 정보")}</h1>
+        <p class="muted">${escapeHtml(session.user?.email || "")} · ${escapeHtml(profile.role || session.user?.role || "USER")}</p>
+        <div class="profile-rating">
+          <span>⭐ ${rating}</span>
+          <span>받은후기 ${Number.isFinite(reviewCount) ? reviewCount : 0}개</span>
+        </div>
+      </div>
+      <div class="profile-hero-actions">
+        <button class="btn btn-primary" data-action="nav" data-target="#/sell">상품 등록</button>
+        <button class="btn ${state.profilePanel === "edit" ? "btn-soft" : "btn-ghost"}" data-action="toggle-profile-panel" data-panel="edit">정보 수정</button>
+      </div>
+    </div>
+  `;
+}
+
+function profileEditPanel() {
+  if (state.profilePanel !== "edit") return "";
+  return `
+    <section class="profile-edit-panel">
+      <div>
+        <h2>내정보 수정</h2>
+        <p class="muted">닉네임이나 비밀번호 중 필요한 항목만 바꿀 수 있어요.</p>
+      </div>
+      <form class="form-grid profile-edit-form" data-form="update-me">
+        <div class="field">
+          <label>닉네임</label>
+          <input name="nickname" maxlength="30" value="${escapeAttr(session.user?.nickname || "")}" />
+        </div>
+        <div class="field">
+          <label>새 비밀번호</label>
+          <input name="password" type="password" minlength="8" maxlength="100" autocomplete="new-password" placeholder="8자 이상" />
+        </div>
+        <div class="action-row field-full">
+          <button class="btn btn-primary" type="submit">저장</button>
+          <button class="btn btn-ghost" type="button" data-action="toggle-profile-panel" data-panel="edit">닫기</button>
+        </div>
+      </form>
+    </section>
+  `;
+}
+
+function myPageTabs(activeTab) {
+  const tabs = [
+    { tab: "sales", label: "판매내역", target: "#/me" },
+    { tab: "orders", label: "주문내역", target: "#/orders" },
+    { tab: "wishes", label: "찜한상품", target: "#/me" },
+    { tab: "reviews", label: "받은후기", target: "#/reviews" },
+    { tab: "refunds", label: "환불처리", target: "#/refunds" },
+  ];
+  return `
+    <div class="tab-list page-tabs mypage-tabs">
+      ${tabs.map((tab) => `
+        <button class="btn ${activeTab === tab.tab ? "btn-dark" : "btn-ghost"}" data-action="mypage-tab" data-tab="${tab.tab}" data-target="${tab.target}">
+          ${escapeHtml(tab.label)}
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function myPageContent(activeTab) {
+  if (activeTab === "orders") return ordersTabView();
+  if (activeTab === "wishes") return wishesTabView();
+  if (activeTab === "reviews") return reviewsTabView();
+  if (activeTab === "refunds") return refundsTabView();
+  return salesTabView();
+}
+
+function salesTabView() {
+  return `
+    <section class="view-stack">
+      <div class="section-head">
+        <h2>내가 올린 상품</h2>
+        <button class="btn btn-soft" data-action="nav" data-target="#/sell">새 상품 등록</button>
+      </div>
+      ${myProductGrid(state.myProducts)}
+    </section>
+  `;
+}
+
+function wishesTabView() {
+  return `
+    <section class="view-stack">
+      <div class="section-head">
+        <h2>찜한상품</h2>
+        <span class="muted">${state.wishes.length}개</span>
+      </div>
+      ${wishProductGrid(state.wishes)}
+    </section>
+  `;
+}
+
+function ordersTabView() {
+  const mode = state.orderTab === "sales" ? "sales" : "orders";
+  const rows = mode === "sales" ? state.mySales : state.myOrders;
+  return `
+    <section class="view-stack">
+      <div class="order-tab-head">
+        <div>
+          <h2>주문내역</h2>
+          <p class="muted">결제, 배송, 구매확정, 후기와 환불 요청은 각 주문 카드에서 처리해요.</p>
+        </div>
+        <div class="tab-list segment-tabs">
+          <button class="btn ${mode === "orders" ? "btn-soft" : "btn-ghost"}" data-action="order-tab" data-tab="orders">구매</button>
+          <button class="btn ${mode === "sales" ? "btn-soft" : "btn-ghost"}" data-action="order-tab" data-tab="sales">판매</button>
+        </div>
+      </div>
+      ${orderCards(rows, mode)}
+      ${resultPanel()}
+    </section>
+  `;
+}
+
+function reviewsTabView() {
+  return `
+    <section class="review-dashboard">
+      <div class="view-stack">
+        <div class="section-head">
+          <h2>받은후기</h2>
+          <span class="muted">${state.myReviews.length}개</span>
+        </div>
+        ${reviewCards(state.myReviews, "received")}
+      </div>
+      <div class="view-stack">
+        <div class="section-head">
+          <h2>내가 쓴 후기</h2>
+          <span class="muted">${state.writtenReviews.length}개</span>
+        </div>
+        ${reviewCards(state.writtenReviews, "written")}
+      </div>
+    </section>
+  `;
+}
+
+function refundsTabView() {
+  const pendingSales = state.mySales.filter((row) => ["REFUND_REQUESTED", "DISPUTED"].includes(row.status));
+  return `
+    <section class="refund-dashboard">
+      <div class="view-stack">
+        <div class="section-head">
+          <div>
+            <h2>판매 환불 처리</h2>
+            <p class="muted">환불 요청과 분쟁 주문은 판매 흐름과 분리해서 처리해요.</p>
+          </div>
+          <span class="muted">${pendingSales.length}건 대기</span>
+        </div>
+        ${refundWorkQueue(pendingSales)}
+        ${resultPanel()}
+      </div>
+    </section>
+  `;
+}
+
+function refundWorkQueue(rows) {
+  if (!rows.length) {
+    return `
+      <div class="empty-state panel">
+        <h3>처리할 환불 주문이 없어요</h3>
+        <p>판매 주문이 환불 요청 또는 분쟁 상태가 되면 이곳에 모아 보여요.</p>
+      </div>
+    `;
+  }
+  return `
+    <div class="refund-work-list">
+      ${rows.map((row) => `
+        <article class="refund-work-row" data-status="${escapeAttr(row.status || "")}">
+          <div>
+            ${statusBadge(row.status)}
+            ${refundRequestIdBadge(row)}
+            <h3>${escapeHtml(cleanDisplayText(row.productTitle, "상품"))}</h3>
+            <p class="muted">주문 ${escapeHtml(String(row.orderId))} · 구매자 ${escapeHtml(orderCounterpart(row, "sales"))}</p>
+          </div>
+          ${refundWorkActions(row)}
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function refundWorkActions(row) {
+  const refundId = refundRequestIdForOrder(row);
+  const orderIdInput = `<input type="hidden" name="orderId" value="${escapeAttr(String(row.orderId))}" />`;
+  const refundIdInput = refundId
+    ? `<input type="hidden" name="refundId" value="${escapeAttr(String(refundId))}" />`
+    : `<div class="field"><label>환불 요청 ID</label><input name="refundId" inputmode="numeric" required placeholder="예: 300" /></div>`;
+  if (row.status === "REFUND_REQUESTED") {
+    return `
+      <form class="refund-row-form" data-form="refund-row-decision" data-refund-id="${escapeAttr(String(refundId || ""))}">
+        ${orderIdInput}
+        ${refundIdInput}
+        <div class="field"><label>거절 사유</label><input name="reason" maxlength="255" placeholder="거절할 때 입력" /></div>
+        <div class="action-row">
+          <button class="btn btn-primary" name="intent" value="approve" type="submit">승인</button>
+          <button class="btn btn-danger" name="intent" value="reject" type="submit">거절</button>
+        </div>
+      </form>
+    `;
+  }
+  return `
+    <form class="refund-row-form" data-form="refund-row-resolve" data-refund-id="${escapeAttr(String(refundId || ""))}">
+      ${orderIdInput}
+      ${refundIdInput}
+      <div class="field"><label>종료 방향</label><select name="resolution" required>${option("REFUND", "구매자 환불")}${option("COMPLETE", "거래 완료")}</select></div>
+      <div class="field"><label>종료 사유</label><input name="reason" maxlength="255" /></div>
+      <button class="btn btn-primary" type="submit">분쟁 종료</button>
+    </form>
+  `;
+}
+
+function myProductGrid(rows) {
+  if (!rows.length) {
+    return `
+      <div class="empty-state panel">
+        <h3>판매 중인 상품이 없어요</h3>
+        <p>상품을 등록하면 판매내역에서 한눈에 관리할 수 있어요.</p>
+        <button class="btn btn-primary" data-action="nav" data-target="#/sell">상품 등록하기</button>
+      </div>
+    `;
+  }
+  return `<div class="product-grid mypage-product-grid">${rows.map(myProductCard).join("")}</div>`;
+}
+
+function myProductCard(product) {
+  const title = productTitle(product);
+  const image = productImageUrl(product);
+  return `
+    <article class="card product-card my-product-card">
+      <button class="image-frame" data-action="open-product" data-id="${product.productId}">
+        ${imageOrPlaceholder(image, title)}
+        ${statusBadge(product.status, "badge-float")}
+      </button>
+      <div class="card-body">
+        <button class="product-title btn-ghost" data-action="open-product" data-id="${product.productId}">${escapeHtml(title)}</button>
+        <p class="price">${price(product.price)}</p>
+        <p class="muted">${dateShort(product.createdAt || product.updatedAt)}</p>
+        <div class="card-actions">
+          <button class="btn btn-small btn-soft" data-action="edit-my-product" data-id="${product.productId}">수정</button>
+          <button class="btn btn-small btn-danger" data-action="delete-my-product" data-id="${product.productId}">삭제</button>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function wishProductGrid(rows) {
+  if (!rows.length) {
+    return `
+      <div class="empty-state panel">
+        <h3>찜한 상품이 없어요</h3>
+        <p>마음에 드는 상품의 하트를 눌러 모아 보세요.</p>
+        <button class="btn btn-primary" data-action="nav" data-target="#/home">상품 둘러보기</button>
+      </div>
+    `;
+  }
+  return `<div class="product-grid mypage-product-grid">${rows.map(wishProductCard).join("")}</div>`;
+}
+
+function wishProductCard(product) {
+  const title = productTitle(product);
+  const image = productImageUrl(product);
+  return `
+    <article class="card product-card wish-card">
+      <button class="image-frame" data-action="open-product" data-id="${product.productId}">
+        ${imageOrPlaceholder(image, title)}
+        ${statusBadge(product.status, "badge-float")}
+        <span class="wish-dot">♥</span>
+      </button>
+      <div class="card-body">
+        <button class="product-title btn-ghost" data-action="open-product" data-id="${product.productId}">${escapeHtml(title)}</button>
+        <p class="price">${price(product.price)}</p>
+        <p class="muted">${dateShort(product.wishedAt || product.createdAt || product.updatedAt)}</p>
+        <div class="card-actions">
+          <button class="btn btn-small btn-ghost" data-action="open-product" data-id="${product.productId}">상세보기</button>
+          <button class="btn btn-small btn-danger" data-action="remove-wish" data-id="${product.productId}">찜 취소</button>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function orderCards(rows, mode) {
+  if (!rows.length) {
+    return `
+      <div class="empty-state panel">
+        <h3>${mode === "sales" ? "판매 주문이 아직 없어요" : "구매 주문이 아직 없어요"}</h3>
+        <p>${mode === "sales" ? "상품이 주문되면 이곳에서 배송과 거래 상태를 관리할 수 있어요." : "상품 상세에서 주문하기를 누르면 거래가 시작돼요."}</p>
+      </div>
+    `;
+  }
+  return `<div class="order-card-list">${rows.map((row) => orderCard(row, mode)).join("")}</div>`;
+}
+
+function orderCard(row, mode) {
+  const product = row.product || {};
+  const title = cleanDisplayText(row.productTitle || product.title, "상품");
+  const productId = row.productId || product.productId;
+  const counterpart = orderCounterpart(row, mode);
+  return `
+    <article class="order-card" data-status="${escapeAttr(row.status || "")}">
+      <button class="order-thumb" ${productId ? `data-action="open-product" data-id="${productId}"` : "disabled"}>
+        ${imageOrPlaceholder(productImageUrl(row) || productImageUrl(product), title)}
+      </button>
+      <div class="order-card-main">
+        <div class="order-card-top">
+          <div>
+            ${statusBadge(row.status)}
+            <h3>${escapeHtml(title)}</h3>
+          </div>
+          <strong class="order-price">${price(row.price ?? row.amount ?? product.price)}</strong>
+        </div>
+        <div class="order-meta">
+          <span>주문일 ${dateShort(row.createdAt)}</span>
+          <span>${mode === "sales" ? "구매자" : "판매자"} ${escapeHtml(counterpart)}</span>
+        </div>
+        ${orderProgress(row.status)}
+        ${orderStatusMessage(row.status, mode)}
+        ${orderActionRow(row, mode)}
+        ${orderInlinePanel(row)}
+      </div>
+    </article>
+  `;
+}
+
+function orderActionRow(row, mode) {
+  const status = row.status;
+  const productId = row.productId || row.product?.productId;
+  const orderId = row.orderId;
+  const paymentId = paymentIdForOrder(row);
+  const buttons = [];
+
+  if (mode === "orders" && status === "CREATED") {
+    buttons.push(`<button class="btn btn-primary" data-action="pay-order" data-order-id="${orderId}">결제하기</button>`);
+    buttons.push(`<button class="btn btn-danger" data-action="cancel-order" data-order-id="${orderId}">주문취소</button>`);
+  }
+  if (status === "PAID") {
+    if (mode === "orders" && productId) {
+      buttons.push(`<button class="btn btn-soft" data-action="create-chat" data-id="${productId}">채팅하기</button>`);
+    }
+    if (mode === "orders") {
+      buttons.push(`<button class="btn btn-danger" data-action="order-panel" data-panel="payment-cancel" data-order-id="${escapeAttr(String(orderId))}" data-payment-id="${escapeAttr(String(paymentId || ""))}">결제취소</button>`);
+    }
+    if (mode === "sales") {
+      buttons.push(`<button class="btn btn-primary" data-action="order-panel" data-panel="shipping" data-order-id="${orderId}">배송등록</button>`);
+    }
+  }
+  if (status === "SHIPPING") {
+    buttons.push(`<button class="btn btn-ghost" data-action="order-detail" data-order-id="${orderId}">배송조회</button>`);
+    if (mode === "orders") {
+      buttons.push(`<button class="btn btn-primary" data-action="confirm-order" data-order-id="${orderId}">구매확정</button>`);
+      buttons.push(`<button class="btn btn-danger" data-action="order-panel" data-panel="refund" data-order-id="${orderId}">환불요청</button>`);
+    }
+  }
+  if (status === "COMPLETED") {
+    buttons.push(`<button class="btn btn-primary" data-action="order-panel" data-panel="review" data-order-id="${orderId}">후기쓰기</button>`);
+  }
+  if (["REFUND_REQUESTED", "DISPUTED"].includes(status) && mode === "sales") {
+    buttons.push(`<button class="btn btn-soft" data-action="nav" data-target="#/refunds">환불 처리</button>`);
+    buttons.push(refundRequestIdBadge(row));
+  }
+
+  return buttons.length ? `<div class="order-actions">${buttons.join("")}</div>` : "";
+}
+
+function orderInlinePanel(row) {
+  if (!state.orderPanel || String(state.orderPanel.orderId) !== String(row.orderId)) return "";
+  if (state.orderPanel.type === "shipping") {
+    return `
+      <form class="inline-panel form-grid single" data-form="shipping-order" data-order-id="${row.orderId}">
+        <div class="field"><label>배송 운송장</label><input name="trackingNumber" placeholder="운송장 번호" required /></div>
+        <div class="action-row">
+          <button class="btn btn-primary" type="submit">배송등록</button>
+          <button class="btn btn-ghost" type="button" data-action="close-order-panel">닫기</button>
+        </div>
+      </form>
+    `;
+  }
+  if (state.orderPanel.type === "refund") {
+    return `
+      <form class="inline-panel form-grid single" data-form="refund-create" data-order-id="${row.orderId}">
+        <div class="field"><label>환불 사유</label><textarea name="reason" maxlength="255" required></textarea></div>
+        <div class="action-row">
+          <button class="btn btn-primary" type="submit">환불 요청</button>
+          <button class="btn btn-ghost" type="button" data-action="close-order-panel">닫기</button>
+        </div>
+      </form>
+    `;
+  }
+  if (state.orderPanel.type === "payment-cancel") {
+    const paymentId = state.orderPanel.paymentId || paymentIdForOrder(row);
+    const paymentIdInput = paymentId
+      ? `<input type="hidden" name="paymentId" value="${escapeAttr(String(paymentId))}" />`
+      : `<div class="field"><label>결제 ID</label><input name="paymentId" inputmode="numeric" required placeholder="예: 200" /></div>`;
+    return `
+      <form class="inline-panel form-grid single" data-form="payment-cancel" data-order-id="${escapeAttr(String(row.orderId))}" data-payment-id="${escapeAttr(String(paymentId || ""))}">
+        ${paymentIdInput}
+        <div class="field"><label>취소 사유</label><textarea name="reason" maxlength="255" placeholder="선택 입력"></textarea></div>
+        <div class="action-row">
+          <button class="btn btn-danger" type="submit">결제취소</button>
+          <button class="btn btn-ghost" type="button" data-action="close-order-panel">닫기</button>
+        </div>
+      </form>
+    `;
+  }
+  if (state.orderPanel.type === "review") {
+    return `
+      <form class="inline-panel form-grid single" data-form="create-review" data-order-id="${row.orderId}">
+        <div class="field"><label>점수</label><select name="score">${[5, 4, 3, 2, 1].map((n) => option(n, `${n}점`)).join("")}</select></div>
+        <div class="field"><label>내용</label><textarea name="content" maxlength="255" required></textarea></div>
+        <div class="action-row">
+          <button class="btn btn-primary" type="submit">후기 등록</button>
+          <button class="btn btn-ghost" type="button" data-action="close-order-panel">닫기</button>
+        </div>
+      </form>
+    `;
+  }
+  return "";
+}
+
+function orderProgress(status) {
+  const steps = ["결제완료", "배송중", "거래완료", "후기"];
+  const indexByStatus = { PAID: 0, SHIPPING: 1, COMPLETED: 2 };
+  const currentIndex = indexByStatus[status] ?? -1;
+  return `
+    <ol class="order-progress" aria-label="거래 진행 단계">
+      ${steps.map((step, index) => `<li class="${index <= currentIndex ? "done" : ""}">${escapeHtml(step)}</li>`).join("")}
+    </ol>
+  `;
+}
+
+function orderStatusMessage(status, mode) {
+  const messages = {
+    CREATED: "결제 전 상태예요. 구매자는 결제를 진행하거나 주문을 취소할 수 있어요.",
+    PAID: mode === "sales" ? "결제가 완료됐어요. 배송 증빙을 등록해 주세요." : "결제가 완료됐어요. 배송 전에는 결제취소를 할 수 있어요.",
+    SHIPPING: mode === "orders" ? "배송 중이에요. 수령 후 구매확정하거나 문제가 있으면 환불을 요청할 수 있어요." : "배송 중이에요. 구매자의 구매확정을 기다리고 있어요.",
+    COMPLETED: "거래가 완료됐어요. 상대방에게 후기를 남길 수 있어요.",
+    CANCELED: "취소된 주문이에요.",
+    REFUNDED: "환불이 완료된 주문이에요.",
+    REFUND_REQUESTED: "환불 요청이 접수됐어요. 처리 결과를 기다려 주세요.",
+    DISPUTED: "분쟁 처리 중이에요. 운영 정책에 따라 종료됩니다.",
+  };
+  return `<p class="order-status-message">${escapeHtml(messages[status] || "주문 상태를 확인해 주세요.")}</p>`;
+}
+
+function orderCounterpart(row, mode) {
+  const user = mode === "sales" ? row.buyer : row.seller;
+  return displayNickname(
+    user?.nickname || (mode === "sales" ? row.buyerNickname : row.sellerNickname),
+    mode === "sales" ? "구매자" : "판매자"
+  );
+}
+
+function reviewCards(rows, mode) {
+  if (!rows.length) return `<div class="empty-state panel"><p>보여줄 후기가 없어요.</p></div>`;
+  return `<div class="review-card-list">${rows.map((row) => reviewCard(row, mode)).join("")}</div>`;
+}
+
 function reviewList(rows, mode) {
-  if (!rows.length) return `<div class="empty-state"><p>보여줄 리뷰가 없어요.</p></div>`;
+  if (!rows.length) return `<div class="empty-state"><p>보여줄 후기가 없어요.</p></div>`;
   return `<div class="list">${rows.map((row) => `
     <div class="list-row">
       <span class="avatar">${initial(row.reviewerNickname || row.revieweeNickname || "리")}</span>
@@ -1064,52 +1462,58 @@ function reviewList(rows, mode) {
         <strong>${escapeHtml(row.reviewerNickname || row.revieweeNickname || (mode === "public" ? "이웃" : "거래상대"))}</strong>
         <div>${"★".repeat(row.score || 0)}${"☆".repeat(Math.max(0, 5 - (row.score || 0)))}</div>
         <p>${escapeHtml(row.content || "")}</p>
-        <small class="muted">리뷰 ${row.reviewId} ${row.orderId ? `· 주문 ${row.orderId}` : ""} · ${dateShort(row.createdAt)}</small>
+        <small class="muted">${dateShort(row.createdAt || row.updatedAt)}</small>
       </div>
       <span></span>
     </div>
   `).join("")}</div>`;
 }
 
-function refundsView() {
+function reviewCard(row, mode) {
+  const name = displayNickname(row.reviewerNickname || row.revieweeNickname, mode === "received" ? "작성자" : "거래상대");
   return `
-    <section class="split">
-      <div class="panel">
-        <h1>환불/분쟁 ↩</h1>
-        <p>배송 이후 문제가 생기면 환불 요청을 만들고, 판매자는 승인/거절할 수 있어요. 분쟁은 환불 또는 거래완료로 종료합니다.</p>
-        ${resultPanel()}
+    <article class="review-card">
+      <span class="avatar">${initial(name)}</span>
+      <div>
+        <div class="review-card-head">
+          <strong>${escapeHtml(name)}</strong>
+          <span class="review-stars">${"★".repeat(row.score || 0)}${"☆".repeat(Math.max(0, 5 - (row.score || 0)))}</span>
+        </div>
+        <p>${escapeHtml(row.content || "")}</p>
+        <small class="muted">${dateShort(row.createdAt || row.updatedAt)}</small>
+        ${mode === "written" ? writtenReviewActions(row) : ""}
       </div>
-      <aside class="view-stack">
-        <div class="panel">
-          <h2>환불 요청</h2>
-          <form class="form-grid single" data-form="refund-create">
-            <div class="field"><label>주문 ID</label><input name="orderId" inputmode="numeric" required /></div>
-            <div class="field"><label>사유</label><textarea name="reason" required></textarea></div>
-            <button class="btn btn-primary" type="submit">환불 요청</button>
-          </form>
-        </div>
-        <div class="panel">
-          <h2>판매자 처리</h2>
-          <form class="form-grid single" data-form="refund-decision">
-            <div class="field"><label>환불 요청 ID</label><input name="refundId" inputmode="numeric" required /></div>
-            <div class="field"><label>거절 사유</label><input name="reason" /></div>
-            <div class="action-row">
-              <button class="btn btn-primary" name="intent" value="approve" type="submit">승인</button>
-              <button class="btn btn-danger" name="intent" value="reject" type="submit">거절</button>
-            </div>
-          </form>
-        </div>
-        <div class="panel">
-          <h2>분쟁 종료</h2>
-          <form class="form-grid single" data-form="refund-resolve">
-            <div class="field"><label>환불 요청 ID</label><input name="refundId" inputmode="numeric" required /></div>
-            <div class="field"><label>결론</label><select name="resolution">${option("REFUND", "환불")}${option("COMPLETE", "거래완료")}</select></div>
-            <div class="field"><label>사유</label><input name="reason" /></div>
-            <button class="btn btn-primary" type="submit">분쟁 종료</button>
-          </form>
-        </div>
-      </aside>
-    </section>
+    </article>
+  `;
+}
+
+function writtenReviewActions(row) {
+  return `
+    <div class="card-actions review-actions">
+      <button class="btn btn-small btn-soft" data-action="order-panel" data-panel="edit-review" data-order-id="${row.orderId}" data-review-id="${row.reviewId}">수정</button>
+      <button class="btn btn-small btn-danger" data-action="delete-review" data-order-id="${row.orderId}" data-review-id="${row.reviewId}">삭제</button>
+    </div>
+    ${writtenReviewEditPanel(row)}
+  `;
+}
+
+function writtenReviewEditPanel(row) {
+  if (
+    !state.orderPanel ||
+    state.orderPanel.type !== "edit-review" ||
+    String(state.orderPanel.reviewId) !== String(row.reviewId)
+  ) {
+    return "";
+  }
+  return `
+    <form class="inline-panel form-grid single" data-form="update-review" data-order-id="${row.orderId}" data-review-id="${row.reviewId}">
+      <div class="field"><label>점수</label><select name="score"><option value="">유지</option>${[5, 4, 3, 2, 1].map((n) => option(n, `${n}점`)).join("")}</select></div>
+      <div class="field"><label>내용</label><textarea name="content" maxlength="255">${escapeHtml(row.content || "")}</textarea></div>
+      <div class="action-row">
+        <button class="btn btn-primary" type="submit">수정 완료</button>
+        <button class="btn btn-ghost" type="button" data-action="close-order-panel">닫기</button>
+      </div>
+    </form>
   `;
 }
 
@@ -1268,9 +1672,26 @@ async function loadMyProducts() {
   state.myProducts = response.content || [];
 }
 
+async function loadMyProfile() {
+  const userId = session.user?.userId;
+  if (!userId) return null;
+  const profile = await api.users.detail(userId).catch(() => null);
+  if (!profile) return null;
+  state.myProfile = profile;
+  session.user = {
+    ...session.user,
+    nickname: profile.nickname ?? session.user.nickname,
+    role: profile.role ?? session.user.role,
+    averageRating: profile.averageRating,
+    reviewCount: profile.reviewCount,
+  };
+  return profile;
+}
+
 async function loadMyPage() {
   if (!session.user) return;
-  const [products, wishes] = await Promise.all([
+  const [, products, wishes] = await Promise.all([
+    loadMyProfile(),
     api.users.myProducts({ page: 0, size: 12 }).catch(() => ({ content: [] })),
     api.users.wishes({ page: 0, size: 12 }).catch(() => ({ content: [] })),
   ]);
@@ -1281,18 +1702,26 @@ async function loadMyPage() {
 async function loadOrders() {
   if (!session.user) return;
   state.orderTab = state.orderTab || "orders";
-  const [orders, sales] = await Promise.all([
+  const [, orders, sales] = await Promise.all([
+    loadMyProfile(),
     api.users.myOrders({ page: 0, size: 20 }).catch(() => ({ content: [] })),
     api.users.mySales({ page: 0, size: 20 }).catch(() => ({ content: [] })),
   ]);
   state.myOrders = orders.content || [];
   state.mySales = sales.content || [];
+  state.myOrders.forEach((row) => rememberPaymentId(row.orderId, row.paymentId || row.payment?.paymentId));
+  state.mySales.forEach((row) => rememberRefundRequestId(row.orderId, row.refundRequestId));
 }
 
 async function loadReviews() {
   if (!session.user) return;
-  const response = await api.users.myReviews(state.myReviewStatus, { page: 0, size: 20 }).catch(() => ({ content: [] }));
-  state.myReviews = response.content || [];
+  const [, received, written] = await Promise.all([
+    loadMyProfile(),
+    api.users.myReviews("received", { page: 0, size: 20 }).catch(() => ({ content: [] })),
+    api.users.myReviews("written", { page: 0, size: 20 }).catch(() => ({ content: [] })),
+  ]);
+  state.myReviews = received.content || [];
+  state.writtenReviews = written.content || [];
 }
 
 async function loadChatRooms() {
@@ -1302,7 +1731,7 @@ async function loadChatRooms() {
   if (!state.activeRoomId && state.chatRooms.length) {
     setActiveChatRoom(state.chatRooms[0].roomId);
   }
-  syncChatRoomSubscriptions();
+  await syncChatRoomSubscriptions();
   if (state.activeRoomId) {
     await loadMessages(undefined, state.activeRoomId);
   }
@@ -1334,6 +1763,16 @@ async function handleClick(event) {
     state.menuOpen = false;
     navigate(target.dataset.target);
   }
+  if (action === "mypage-tab") {
+    state.menuOpen = false;
+    state.myPageTab = target.dataset.tab || "sales";
+    const nextTarget = target.dataset.target || "#/me";
+    if (window.location.hash === nextTarget) {
+      await routeChanged();
+    } else {
+      navigate(nextTarget);
+    }
+  }
   if (action === "toggle-menu") {
     state.menuOpen = !state.menuOpen;
     render();
@@ -1344,6 +1783,10 @@ async function handleClick(event) {
   }
   if (action === "logout") await runAction("로그아웃했어요.", () => api.auth.logout(), () => navigate("#/home"));
   if (action === "open-product") navigate(`#/product/${target.dataset.id}`);
+  if (action === "toggle-profile-panel") {
+    state.profilePanel = state.profilePanel === target.dataset.panel ? null : target.dataset.panel;
+    render();
+  }
   if (action === "category") {
     state.selectedCategoryId = target.dataset.id || null;
     state.search.keyword = "";
@@ -1368,13 +1811,38 @@ async function handleClick(event) {
     await routeChanged();
   }
   if (action === "toggle-wish") await toggleWish(target.dataset.id);
+  if (action === "remove-wish") await removeWish(target.dataset.id);
   if (action === "create-chat") await createChat(target.dataset.id);
   if (action === "create-order") await createOrder(target.dataset.id);
+  if (action === "edit-my-product") {
+    state.ownerProductId = target.dataset.id;
+    state.ownerProductTool = "edit";
+    navigate(`#/product/${target.dataset.id}`);
+  }
+  if (action === "delete-my-product") await deleteMyProduct(target.dataset.id);
+  if (action === "pay-order") await payOrder(target.dataset.orderId);
+  if (action === "cancel-order") await cancelOrder(target.dataset.orderId);
+  if (action === "confirm-order") await confirmOrder(target.dataset.orderId);
+  if (action === "order-detail") await showOrderDetail(target.dataset.orderId);
+  if (action === "order-panel") {
+    state.orderPanel = {
+      type: target.dataset.panel,
+      orderId: target.dataset.orderId,
+      paymentId: target.dataset.paymentId || null,
+      reviewId: target.dataset.reviewId || null,
+    };
+    render();
+  }
+  if (action === "close-order-panel") {
+    state.orderPanel = null;
+    render();
+  }
+  if (action === "delete-review") await deleteReview(target.dataset.orderId, target.dataset.reviewId);
   if (action === "select-chat-room") {
     setActiveChatRoom(target.dataset.id);
     await routeChanged();
   }
-  if (action === "connect-chat") await connectChat();
+  if (action === "connect-chat") await connectChat().catch(handleError);
   if (action === "load-more-messages") await loadMoreMessages();
   if (action === "owner-product-tool") {
     state.ownerProductTool = target.dataset.tool;
@@ -1385,6 +1853,7 @@ async function handleClick(event) {
   }
   if (action === "order-tab") {
     state.orderTab = target.dataset.tab;
+    state.orderPanel = null;
     render();
   }
   if (action === "review-status") {
@@ -1434,14 +1903,18 @@ async function handleSubmit(event) {
   if (formName === "update-me") await submitUpdateMe(data);
   if (formName === "create-order") await createOrder(data.productId);
   if (formName === "order-action") await submitOrderAction(data, submitterValue(event));
+  if (formName === "shipping-order") await submitShippingOrder(form, data);
+  if (formName === "payment-cancel") await submitPaymentCancel(form, data);
   if (formName === "payment-create") await submitPaymentCreate(data);
   if (formName === "payment-action") await submitPaymentAction(data, submitterValue(event));
-  if (formName === "create-review") await submitCreateReview(data);
-  if (formName === "update-review") await submitUpdateReview(data, submitterValue(event));
+  if (formName === "create-review") await submitCreateReview(form, data);
+  if (formName === "update-review") await submitUpdateReview(form, data, submitterValue(event));
   if (formName === "public-reviews") await loadPublicReviews(data.userId);
-  if (formName === "refund-create") await submitRefundCreate(data);
+  if (formName === "refund-create") await submitRefundCreate(form, data);
   if (formName === "refund-decision") await submitRefundDecision(data, submitterValue(event));
   if (formName === "refund-resolve") await submitRefundResolve(data);
+  if (formName === "refund-row-decision") await submitRefundDecision(data, submitterValue(event));
+  if (formName === "refund-row-resolve") await submitRefundResolve(data);
   if (formName === "category-admin") await submitCategoryAdmin(data, submitterValue(event));
   if (formName === "hidden-admin") await submitHiddenAdmin(data);
 }
@@ -1554,29 +2027,107 @@ async function createOrder(productId) {
   });
 }
 
-async function connectChat() {
+async function connectChat({ renderAfter = true } = {}) {
+  clearChatReconnectTimer();
   if (!state.stomp?.isOpen()) {
-    state.chatSubscriptions = { userErrors: null, roomId: null, messages: null, errors: null };
+    state.chatSubscriptions = emptyChatSubscriptions();
     state.stomp = new StompClient({
       token: session.token,
       onStatus: toast,
-      onError: (error) => toast(error.message, "error"),
+      onError: (error) => {
+        if (state.stompConnected) toast(error.message, "error");
+      },
+      onClose: handleChatConnectionClosed,
       onMessage: handleChatFrame,
     });
     await state.stomp.connect();
     state.stompConnected = true;
   }
-  syncChatRoomSubscriptions();
+  const ready = await syncChatRoomSubscriptions();
+  if (state.activeRoomId && !ready) {
+    throw new Error(CHAT_SUBSCRIPTION_NOT_READY_MESSAGE);
+  }
+  if (!state.activeRoomId || ready) {
+    state.chatReconnectAttempts = 0;
+  }
+  if (renderAfter) render();
+  return ready;
+}
+
+function handleChatConnectionClosed(client) {
+  if (client && state.stomp && client !== state.stomp) return;
+  state.stompConnected = false;
+  state.chatSubscriptions = emptyChatSubscriptions();
+  if (state.route.name !== "chat") return;
+  render();
+  scheduleChatReconnect();
+}
+
+function scheduleChatReconnect() {
+  if (state.chatReconnectTimer || state.route.name !== "chat" || !session.token || !state.activeRoomId) return;
+  const delayMs = Math.min(1000 * 2 ** state.chatReconnectAttempts, 10000);
+  state.chatReconnectTimer = window.setTimeout(async () => {
+    state.chatReconnectTimer = null;
+    state.chatReconnectAttempts += 1;
+    try {
+      await refreshChatSessionForReconnect();
+      await connectChat();
+    } catch (error) {
+      if (!session.token) {
+        handleChatReconnectExpired(error);
+        return;
+      }
+      scheduleChatReconnect();
+    }
+  }, delayMs);
+}
+
+async function refreshChatSessionForReconnect() {
+  const refreshed = await api.auth.refresh();
+  if (!refreshed) {
+    throw new Error("로그인이 만료됐어요. 다시 로그인해 주세요.");
+  }
+}
+
+function handleChatReconnectExpired(error) {
+  clearChatReconnect();
+  state.stomp = null;
+  state.stompConnected = false;
+  state.chatSubscriptions = emptyChatSubscriptions();
+  if (state.route.name !== "chat") return;
+  toast(error?.message || "로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
   render();
 }
 
-async function sendChatMessage(content) {
-  await connectChat();
-  state.stomp.send(`/pub/chat-rooms/${state.activeRoomId}/message`, { content });
+function clearChatReconnect() {
+  clearChatReconnectTimer();
+  state.chatReconnectAttempts = 0;
 }
 
-function syncChatRoomSubscriptions() {
-  if (!state.stomp?.isOpen()) return;
+function clearChatReconnectTimer() {
+  if (!state.chatReconnectTimer) return;
+  window.clearTimeout(state.chatReconnectTimer);
+  state.chatReconnectTimer = null;
+}
+
+async function sendChatMessage(content) {
+  if (!state.activeRoomId) {
+    toast("채팅방을 선택해 주세요.", "error");
+    return;
+  }
+  try {
+    const ready = await connectChat({ renderAfter: false });
+    if (!ready) {
+      throw new Error(CHAT_SUBSCRIPTION_NOT_READY_MESSAGE);
+    }
+    state.stomp.send(`/pub/chat-rooms/${state.activeRoomId}/message`, { content });
+  } catch (error) {
+    handleError(error);
+  }
+}
+
+async function syncChatRoomSubscriptions() {
+  if (!state.stomp?.isOpen()) return false;
   if (!state.chatSubscriptions.userErrors) {
     state.chatSubscriptions.userErrors = state.stomp.subscribe("/user/queue/errors");
   }
@@ -1587,13 +2138,32 @@ function syncChatRoomSubscriptions() {
     unsubscribeChatRoom();
   }
   if (!roomId || (subscriptions.roomId === roomId && subscriptions.messages && subscriptions.errors)) {
-    return;
+    const ready = subscriptions.ready ? await subscriptions.ready : true;
+    if (!ready) {
+      unsubscribeChatRoom();
+      return false;
+    }
+    return Boolean(roomId);
   }
 
   unsubscribeChatRoom();
   state.chatSubscriptions.roomId = roomId;
-  state.chatSubscriptions.messages = state.stomp.subscribe(`/sub/chat-rooms/${roomId}`);
-  state.chatSubscriptions.errors = state.stomp.subscribe(`/sub/chat-rooms/${roomId}/errors`);
+  const messageSubscriptionId = state.stomp.subscribe(`/sub/chat-rooms/${roomId}`);
+  const errorSubscriptionId = state.stomp.subscribe(`/sub/chat-rooms/${roomId}/errors`);
+  if (!messageSubscriptionId || !errorSubscriptionId) {
+    unsubscribeChatRoom();
+    return false;
+  }
+  state.chatSubscriptions.messages = messageSubscriptionId;
+  state.chatSubscriptions.errors = errorSubscriptionId;
+  state.chatSubscriptions.ready = Promise.resolve(true);
+  const ready = await state.chatSubscriptions.ready;
+  if (state.chatSubscriptions.roomId !== roomId) return false;
+  if (!ready) {
+    unsubscribeChatRoom();
+    return false;
+  }
+  return true;
 }
 
 function setActiveChatRoom(roomId) {
@@ -1601,7 +2171,7 @@ function setActiveChatRoom(roomId) {
   cacheActiveChatMessages();
   state.activeRoomId = roomId;
   state.chatMessages = getCachedChatMessages(roomId);
-  syncChatRoomSubscriptions();
+  void syncChatRoomSubscriptions().catch(handleError);
 }
 
 function isActiveChatRoom(roomId) {
@@ -1615,6 +2185,7 @@ function unsubscribeChatRoom() {
   state.chatSubscriptions.roomId = null;
   state.chatSubscriptions.messages = null;
   state.chatSubscriptions.errors = null;
+  state.chatSubscriptions.ready = null;
 }
 
 function handleChatFrame(message, headers) {
@@ -1762,6 +2333,115 @@ async function loadMoreMessages() {
 async function submitUpdateMe(data) {
   await runAction("프로필을 수정했어요.", () => api.users.updateMe(compact(data)), (updated) => {
     session.user = { ...session.user, ...updated };
+    state.myProfile = {
+      ...(state.myProfile || {}),
+      userId: updated.userId ?? state.myProfile?.userId,
+      nickname: updated.nickname ?? state.myProfile?.nickname,
+      role: updated.role ?? state.myProfile?.role,
+    };
+    state.profilePanel = null;
+    routeChanged();
+  });
+}
+
+async function removeWish(productId) {
+  await runAction("찜을 취소했어요.", () => api.wishes.remove(productId), () => routeChanged());
+}
+
+async function deleteMyProduct(productId) {
+  if (!window.confirm("이 상품을 삭제할까요?")) return;
+  await runAction("상품을 삭제했어요.", () => api.products.remove(productId), () => routeChanged());
+}
+
+async function payOrder(orderId) {
+  const key = paymentKeyForOrder(orderId);
+  try {
+    const result = await api.payments.create(orderId, { method: "MOCK_CARD", result: "PAID" }, key);
+    rememberPaymentFromResult(orderId, result);
+    delete state.pendingPaymentKeys[String(orderId)];
+    toast("결제가 완료됐어요.", "success");
+    state.lastResult = resultFrom("결제 요청", result);
+    state.orderPanel = null;
+    await routeChanged();
+  } catch (error) {
+    if (!(error instanceof ApiError) && await recoverPaymentAfterCreateError(orderId, key)) {
+      toast("주문 상태를 다시 확인했어요.", "success");
+      return;
+    }
+    handleError(error);
+  }
+}
+
+async function recoverPaymentAfterCreateError(orderId, key) {
+  try {
+    const result = await api.payments.create(orderId, { method: "MOCK_CARD", result: "PAID" }, key);
+    rememberPaymentFromResult(orderId, result);
+    delete state.pendingPaymentKeys[String(orderId)];
+    state.lastResult = resultFrom("결제 요청", result);
+    state.orderPanel = null;
+    await routeChanged();
+    return true;
+  } catch {
+    return refreshOrderAfterPaymentError(orderId);
+  }
+}
+
+async function refreshOrderAfterPaymentError(orderId) {
+  try {
+    const order = await api.orders.detail(orderId);
+    if (!order?.status || order.status === "CREATED") return false;
+    delete state.pendingPaymentKeys[String(orderId)];
+    state.lastResult = resultFrom("주문 상태 확인", order);
+    await routeChanged();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function rememberPaymentFromResult(orderId, result) {
+  rememberPaymentId(result?.orderId || orderId, result?.paymentId);
+}
+
+function paymentKeyForOrder(orderId) {
+  const key = String(orderId);
+  if (!state.pendingPaymentKeys[key]) {
+    state.pendingPaymentKeys[key] = randomIdempotencyKey();
+  }
+  return state.pendingPaymentKeys[key];
+}
+
+function randomIdempotencyKey() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `payment-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+async function cancelOrder(orderId) {
+  await runAction("주문을 취소했어요.", () => api.orders.cancel(orderId), (result) => {
+    state.lastResult = resultFrom("주문 취소", result);
+    routeChanged();
+  });
+}
+
+async function confirmOrder(orderId) {
+  await runAction("구매확정을 완료했어요.", () => api.orders.confirm(orderId), (result) => {
+    state.lastResult = resultFrom("구매확정", result);
+    routeChanged();
+  });
+}
+
+async function showOrderDetail(orderId) {
+  await runAction("주문 상세를 불러왔어요.", () => api.orders.detail(orderId), (result) => {
+    state.lastResult = resultFrom("주문 상세", result);
+    render();
+  });
+}
+
+async function submitShippingOrder(form, data) {
+  const orderId = form.dataset.orderId;
+  await runAction("배송 정보를 등록했어요.", () => api.orders.shipping(orderId, data.trackingNumber), (result) => {
+    state.lastResult = resultFrom("배송 등록", result);
+    state.orderPanel = null;
     routeChanged();
   });
 }
@@ -1782,12 +2462,28 @@ async function submitOrderAction(data, intent) {
 async function submitPaymentCreate(data) {
   await runAction(
     "결제 요청이 처리됐어요.",
-    () => api.payments.create(data.orderId, { method: "MOCK_CARD", result: data.result || "PAID" }, data.idempotencyKey),
+    () => api.payments.create(data.orderId, { method: "MOCK_CARD", result: data.result || "PAID" }, paymentKeyForOrder(data.orderId)),
     (result) => {
+      rememberPaymentFromResult(data.orderId, result);
+      delete state.pendingPaymentKeys[String(data.orderId)];
       state.lastResult = resultFrom("결제 요청", result);
       routeChanged();
     }
   );
+}
+
+async function submitPaymentCancel(form, data) {
+  const paymentId = form.dataset.paymentId || data.paymentId;
+  const orderId = form.dataset.orderId || data.orderId;
+  await runAction("결제를 취소했어요.", () => api.payments.cancel(paymentId, data.reason), (result) => {
+    if (orderId) {
+      delete state.pendingPaymentKeys[String(orderId)];
+      forgetPaymentId(orderId);
+    }
+    state.lastResult = resultFrom("결제 취소", result);
+    state.orderPanel = null;
+    routeChanged();
+  });
 }
 
 async function submitPaymentAction(data, intent) {
@@ -1802,20 +2498,37 @@ async function submitPaymentAction(data, intent) {
   });
 }
 
-async function submitCreateReview(data) {
-  await runAction("리뷰를 등록했어요.", () => api.reviews.create(data.orderId, { score: numberOrNull(data.score), content: data.content }), () => routeChanged());
+async function submitCreateReview(form, data) {
+  const orderId = form.dataset.orderId || data.orderId;
+  await runAction("후기를 등록했어요.", () => api.reviews.create(orderId, { score: numberOrNull(data.score), content: data.content }), () => {
+    state.orderPanel = null;
+    routeChanged();
+  });
 }
 
-async function submitUpdateReview(data, intent) {
+async function submitUpdateReview(form, data, intent) {
+  const orderId = form.dataset.orderId || data.orderId;
+  const reviewId = form.dataset.reviewId || data.reviewId;
   if (intent === "delete") {
-    await runAction("리뷰를 삭제했어요.", () => api.reviews.remove(data.orderId, data.reviewId), () => routeChanged());
+    await deleteReview(orderId, reviewId);
     return;
   }
   await runAction(
-    "리뷰를 수정했어요.",
-    () => api.reviews.update(data.orderId, data.reviewId, compact({ score: numberOrNull(data.score), content: data.content })),
-    () => routeChanged()
+    "후기를 수정했어요.",
+    () => api.reviews.update(orderId, reviewId, compact({ score: numberOrNull(data.score), content: data.content })),
+    () => {
+      state.orderPanel = null;
+      routeChanged();
+    }
   );
+}
+
+async function deleteReview(orderId, reviewId) {
+  if (!window.confirm("이 후기를 삭제할까요?")) return;
+  await runAction("후기를 삭제했어요.", () => api.reviews.remove(orderId, reviewId), () => {
+    state.orderPanel = null;
+    routeChanged();
+  });
 }
 
 async function loadPublicReviews(userId) {
@@ -1825,26 +2538,35 @@ async function loadPublicReviews(userId) {
   });
 }
 
-async function submitRefundCreate(data) {
-  await runAction("환불 요청을 만들었어요.", () => api.refunds.create(data.orderId, data.reason), (result) => {
+async function submitRefundCreate(form, data) {
+  const orderId = form.dataset.orderId || data.orderId;
+  await runAction("환불 요청을 만들었어요.", () => api.refunds.create(orderId, data.reason), (result) => {
+    rememberRefundRequestFromResult(orderId, result);
     state.lastResult = resultFrom("환불 요청", result);
-    render();
+    state.orderPanel = null;
+    routeChanged();
   });
 }
 
 async function submitRefundDecision(data, intent) {
   const action = intent === "approve" ? () => api.refunds.approve(data.refundId) : () => api.refunds.reject(data.refundId, data.reason);
   await runAction("환불 요청을 처리했어요.", action, (result) => {
+    rememberRefundRequestFromResult(data.orderId, result);
     state.lastResult = resultFrom("환불 처리", result);
-    render();
+    routeChanged();
   });
 }
 
 async function submitRefundResolve(data) {
   await runAction("분쟁을 종료했어요.", () => api.refunds.resolve(data.refundId, { resolution: data.resolution, reason: data.reason }), (result) => {
+    rememberRefundRequestFromResult(data.orderId, result);
     state.lastResult = resultFrom("분쟁 종료", result);
-    render();
+    routeChanged();
   });
+}
+
+function rememberRefundRequestFromResult(orderId, result) {
+  rememberRefundRequestId(result?.orderId || orderId, result?.refundRequestId);
 }
 
 async function submitCategoryAdmin(data, intent) {
@@ -1969,14 +2691,31 @@ function resultFrom(title, result) {
     title,
     items: Object.fromEntries(
       Object.entries(result || {})
+        .filter(([key]) => !isInternalIdentifierKey(key))
         .filter(([, value]) => value === null || ["string", "number", "boolean"].includes(typeof value))
         .slice(0, 6)
     ),
   };
 }
 
+function isInternalIdentifierKey(key) {
+  return /^id$/i.test(key);
+}
+
 function productTitle(product) {
   return cleanDisplayText(product?.title, "상품");
+}
+
+function productImageUrl(product) {
+  if (!product) return null;
+  return (
+    product.thumbnailUrl ||
+    product.imageUrl ||
+    product.productThumbnailUrl ||
+    product.images?.find?.((item) => item.thumbnail)?.url ||
+    product.images?.[0]?.url ||
+    null
+  );
 }
 
 function productDescription(product) {
@@ -2049,7 +2788,7 @@ function simpleProductRows(rows) {
       <span class="avatar">${categoryIcon(cleanDisplayText(row.title, "상품"))}</span>
       <div>
         <strong>${escapeHtml(cleanDisplayText(row.title, "상품"))}</strong>
-        <div class="muted">ID ${row.productId} · ${price(row.price)} · ${dateShort(row.createdAt || row.wishedAt || row.updatedAt)}</div>
+        <div class="muted">${price(row.price)} · ${dateShort(row.createdAt || row.wishedAt || row.updatedAt)}</div>
       </div>
       <div class="simple-row-actions">
         ${row.status ? statusBadge(row.status) : ""}
@@ -2107,13 +2846,13 @@ function statusBadge(status, className = "") {
     RESERVED: "예약중",
     SOLD_OUT: "판매완료",
     DELETED: "삭제됨",
-    CREATED: "주문생성",
+    CREATED: "결제대기",
     PAID: "결제완료",
     SHIPPING: "배송중",
     COMPLETED: "거래완료",
     CANCELED: "취소됨",
     REFUND_REQUESTED: "환불요청",
-    REFUNDED: "환불됨",
+    REFUNDED: "환불완료",
     DISPUTED: "분쟁중",
     REQUESTED: "요청됨",
     APPROVED: "승인됨",

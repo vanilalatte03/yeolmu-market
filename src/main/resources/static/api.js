@@ -114,7 +114,7 @@ async function request(path, options = {}, retry = true) {
   const body = text ? JSON.parse(text) : null;
 
   if (response.status === 401 && retry && shouldAttemptRefresh(path)) {
-    const refreshed = await refresh().catch(() => false);
+    const refreshed = await refreshAccessToken().catch(() => false);
     if (refreshed) {
       return request(path, options, false);
     }
@@ -125,7 +125,7 @@ async function request(path, options = {}, retry = true) {
   return body?.data ?? null;
 }
 
-async function refresh() {
+async function refreshAccessToken() {
   const response = await fetch("/api/auth/refresh", {
     method: "POST",
     credentials: "include",
@@ -174,7 +174,10 @@ export const api = {
     },
     async restore() {
       if (session.token && session.user) return true;
-      return refresh();
+      return refreshAccessToken();
+    },
+    async refresh() {
+      return refreshAccessToken();
     },
     async logout() {
       try {

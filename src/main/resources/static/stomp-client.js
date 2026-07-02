@@ -1,11 +1,13 @@
 export class StompClient {
-  constructor({ token, onMessage, onError, onStatus }) {
+  constructor({ token, onMessage, onError, onStatus, onClose }) {
     this.token = token;
     this.onMessage = onMessage;
     this.onError = onError;
     this.onStatus = onStatus;
+    this.onClose = onClose;
     this.socket = null;
     this.subscriptionSeq = 0;
+    this.rejectConnect = null;
   }
 
   connect() {
@@ -14,6 +16,21 @@ export class StompClient {
         reject(new Error("로그인이 필요해요."));
         return;
       }
+      let connected = false;
+      let settled = false;
+      const rejectOnce = (error) => {
+        if (settled) return;
+        settled = true;
+        this.rejectConnect = null;
+        reject(error);
+      };
+      const resolveOnce = () => {
+        if (settled) return;
+        settled = true;
+        this.rejectConnect = null;
+        resolve();
+      };
+      this.rejectConnect = rejectOnce;
       this.socket = new WebSocket(resolveWsUrl());
       this.socket.addEventListener("open", () => {
         this.sendFrame("CONNECT", {
@@ -23,17 +40,25 @@ export class StompClient {
         });
       });
       this.socket.addEventListener("message", (event) => {
-        this.handleFrames(String(event.data));
-        if (String(event.data).startsWith("CONNECTED")) {
+        const data = String(event.data);
+        this.handleFrames(data);
+        if (data.startsWith("CONNECTED")) {
+          connected = true;
           this.onStatus?.("채팅 서버에 연결됐어요.");
-          resolve();
+          resolveOnce();
         }
       });
-      this.socket.addEventListener("close", () => this.onStatus?.("채팅 연결이 닫혔어요."));
+      this.socket.addEventListener("close", () => {
+        if (!connected) {
+          rejectOnce(new Error("채팅 연결에 실패했어요."));
+        }
+        this.onClose?.(this);
+        this.onStatus?.("채팅 연결이 닫혔어요.");
+      });
       this.socket.addEventListener("error", () => {
         const error = new Error("채팅 연결에 실패했어요.");
         this.onError?.(error);
-        reject(error);
+        rejectOnce(error);
       });
     });
   }
@@ -45,9 +70,12 @@ export class StompClient {
   }
 
   subscribe(destination) {
-    if (!this.isOpen()) return null;
+    if (!this.isOpen()) {
+      return null;
+    }
     const id = `sub-${++this.subscriptionSeq}`;
-    this.sendFrame("SUBSCRIBE", { id, destination });
+    const headers = { id, destination, ack: "auto" };
+    this.sendFrame("SUBSCRIBE", headers);
     return id;
   }
 
@@ -94,7 +122,12 @@ export class StompClient {
       return;
     }
     if (command === "ERROR") {
-      this.onError?.(new Error(safeJson(body)?.message || body || "채팅 오류가 발생했어요."));
+      const error = new Error(safeJson(body)?.message || body || "채팅 오류가 발생했어요.");
+      this.onError?.(error);
+      this.rejectConnect?.(error);
+      if (this.socket?.readyState === WebSocket.OPEN) {
+        this.socket.close();
+      }
     }
   }
 }
