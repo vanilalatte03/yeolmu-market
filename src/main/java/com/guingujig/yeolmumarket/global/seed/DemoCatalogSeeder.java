@@ -197,7 +197,7 @@ public class DemoCatalogSeeder implements ApplicationRunner {
     return jdbcTemplate.queryForList(
         "SELECT id FROM users WHERE email LIKE ? ESCAPE '!' ORDER BY id",
         Long.class,
-        escapeLikePattern(sellerEmailPrefix(runKey)) + "%");
+        sellerEmailLikePattern(runKey));
   }
 
   private void insertProducts(
@@ -258,7 +258,7 @@ public class DemoCatalogSeeder implements ApplicationRunner {
         jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM product WHERE title LIKE ? ESCAPE '!'",
             Long.class,
-            escapeLikePattern(productMarker) + "%");
+            productTitleLikePattern(productMarker));
     return count == null ? 0 : count;
   }
 
@@ -311,6 +311,10 @@ public class DemoCatalogSeeder implements ApplicationRunner {
     return DEMO_PRODUCT_TITLE_PREFIX + " " + runKey;
   }
 
+  private String productTitleLikePattern(String productMarker) {
+    return escapeLikePattern(productMarker + " ") + "%";
+  }
+
   private String productTitle(String productMarker, int sequence) {
     return "%s %05d %s".formatted(productMarker, sequence, productName(sequence));
   }
@@ -333,6 +337,12 @@ public class DemoCatalogSeeder implements ApplicationRunner {
 
   private String sellerEmail(String runKey, int sequence) {
     return sellerEmailPrefix(runKey) + "%04d".formatted(sequence) + DEMO_EMAIL_DOMAIN;
+  }
+
+  private String sellerEmailLikePattern(String runKey) {
+    return escapeLikePattern(sellerEmailPrefix(runKey))
+        + "____"
+        + escapeLikePattern(DEMO_EMAIL_DOMAIN);
   }
 
   private String sellerNickname(int sequence) {
