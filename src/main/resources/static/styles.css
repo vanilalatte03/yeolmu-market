@@ -1399,6 +1399,8 @@ hr {
 }
 
 .chat-list {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
 }
 
@@ -1421,8 +1423,10 @@ hr {
 
 .chat-room-panel {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .chat-room-head {
@@ -1458,8 +1462,9 @@ hr {
 
 .messages {
   flex: 1;
+  min-height: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: 10px;
   padding: 16px 18px;
   overflow: auto;
@@ -1585,13 +1590,26 @@ hr {
 
 .mypage-hero {
   margin-bottom: 0;
+  padding-block: 16px;
+}
+
+.profile-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.profile-meta {
+  margin: 0;
+  line-height: 1.2;
 }
 
 .profile-rating {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  margin-top: 8px;
+  margin-top: 6px;
   color: var(--accent-dark);
   font-weight: 700;
 }
@@ -2052,6 +2070,7 @@ hr {
   }
 
   .chat-room-panel {
+    height: min(640px, calc(100vh - 120px));
     min-height: 520px;
   }
 }
