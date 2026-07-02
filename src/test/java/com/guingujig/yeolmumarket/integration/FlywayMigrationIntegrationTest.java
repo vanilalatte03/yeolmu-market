@@ -41,11 +41,12 @@ class FlywayMigrationIntegrationTest {
     try (Connection connection =
         DriverManager.getConnection(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())) {
       assertThat(appliedVersions(connection))
-          .containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
+          .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
       assertThat(tableExists(connection, "users")).isTrue();
       assertThat(tableExists(connection, "product_image")).isTrue();
       assertThat(tableExists(connection, "review")).isTrue();
       assertThat(tableExists(connection, "refund_request")).isTrue();
+      assertThat(rowCount(connection, "category")).isEqualTo(10);
       assertThat(columnExists(connection, "wish", "created_at")).isTrue();
       assertThat(columnExists(connection, "orders", "tracking_number")).isTrue();
       assertThat(columnExists(connection, "chatmessage", "accepted_message_id")).isTrue();
@@ -85,6 +86,15 @@ class FlywayMigrationIntegrationTest {
         resultSet.next();
         return resultSet.getInt(1) == 1;
       }
+    }
+  }
+
+  private int rowCount(Connection connection, String tableName) throws SQLException {
+    String sql = "select count(*) from " + tableName;
+    try (var statement = connection.createStatement();
+        ResultSet resultSet = statement.executeQuery(sql)) {
+      resultSet.next();
+      return resultSet.getInt(1);
     }
   }
 

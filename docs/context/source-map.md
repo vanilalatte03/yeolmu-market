@@ -14,6 +14,8 @@
 | order/payment/refund/review | `domain/order`, `domain/payment`, `domain/refund`, `domain/review` | `docs/API.md`, `docs/ERD.md`, `docs/adr/001-concurrent-order-control.md`, `docs/adr/005-mock-safe-payment-transaction-policy.md`, `docs/adr/013-distributed-lock-key-and-lease.md` |
 | global | `global/exception`, `global/response`, `global/config`, `global/security`, `global/entity` | `docs/API.md`, `docs/CONVENTIONS.md` |
 | development/validation | `build.gradle`, `docker-compose.yml`, `.githooks`, `gradlew.bat` | `docs/DEVELOPMENT.md` |
+| demo seed | `global/seed`, `src/main/resources/application-demo-seed.yml`, `src/main/resources/db/migration/V9__seed_default_categories.sql` | `docs/DEMO_SEED.md`, `.env.example` |
+| performance/k6 | `src/test/java/com/guingujig/yeolmumarket/support/PerfDummyDataSeedTest.java`, `k6` | `docs/PERFORMANCE_TESTING.md`, `docs/DEVELOPMENT.md` |
 | test | `src/test/java/com/guingujig/yeolmumarket` | `docs/CONVENTIONS.md`, `docs/DEVELOPMENT.md` |
 
 도메인 내부는 가능한 한 `controller / service / repository / dto / entity` 흐름을 따른다.
