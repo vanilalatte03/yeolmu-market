@@ -324,8 +324,9 @@ function consumeFlashToast() {
 function render() {
   const view = state.loading ? loadingView() : renderView();
   const chromeHidden = state.route.name === "auth";
+  const chatFocused = state.route.name === "chat" && !chromeHidden;
   app.innerHTML = `
-    <div class="app-shell ${chromeHidden ? "app-shell-plain" : ""}">
+    <div class="app-shell ${chromeHidden ? "app-shell-plain" : ""} ${chatFocused ? "app-shell-chat" : ""}">
       ${chromeHidden ? "" : topbar()}
       <main class="page">${view}</main>
       ${chromeHidden ? "" : bottomNav()}
