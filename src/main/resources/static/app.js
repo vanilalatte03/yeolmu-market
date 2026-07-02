@@ -13,6 +13,11 @@ const DEMO_CATEGORIES = [
   { categoryId: 5, name: "스포츠/레저" },
 ];
 
+const MAX_PRODUCT_IMAGE_COUNT = 10;
+const MAX_PRODUCT_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_PRODUCT_IMAGE_REQUEST_BYTES = 25 * 1024 * 1024;
+const SUPPORTED_PRODUCT_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
 const DEMO_PRODUCTS = [
   {
     productId: 1,
@@ -131,6 +136,8 @@ const state = {
   adminHiddenProducts: [],
   selectedOrder: null,
   selectedPayment: null,
+  ownerProductId: null,
+  ownerProductTool: null,
   lastResult: null,
 };
 
@@ -583,6 +590,7 @@ function productDetailView() {
             <span>👁 조회 ${product.viewCount ?? 0}</span>
           </div>
           ${productDetailActions(product)}
+          ${ownerProductPanel(product)}
         </div>
       </div>
       <section class="review-section">
@@ -699,9 +707,11 @@ function productDetailActions(product) {
   if (isCurrentUserSeller(product)) {
     return `
       <div class="detail-actions owner-actions">
-        <button class="btn btn-ghost" type="button" disabled>내가 등록한 상품입니다</button>
+        <button class="btn ${state.ownerProductTool === "edit" ? "btn-soft" : "btn-ghost"}" data-action="owner-product-tool" data-tool="edit">수정</button>
+        <button class="btn ${state.ownerProductTool === "images" ? "btn-soft" : "btn-ghost"}" data-action="owner-product-tool" data-tool="images">이미지 관리</button>
+        <button class="btn ${state.ownerProductTool === "delete" ? "btn-soft" : "btn-ghost"}" data-action="owner-product-tool" data-tool="delete">삭제</button>
       </div>
-      <p class="hand-note left">✏️ 내 상품은 채팅이나 주문을 시작할 수 없어요</p>
+      <p class="hand-note left">✏️ 내 상품은 이곳에서 수정·이미지 관리·삭제할 수 있어요</p>
     `;
   }
   const canOrder = product.status === "ON_SALE";
@@ -714,6 +724,110 @@ function productDetailActions(product) {
       <button class="btn btn-primary" ${canOrder ? `data-action="create-order" data-id="${product.productId}"` : "disabled"}>${canOrder ? "주문하기" : "주문 불가"}</button>
     </div>
     <p class="hand-note left">✏️ 채팅하기는 판매자와 대화 시작 · 주문하기는 거래 의사 확정</p>
+  `;
+}
+
+function ownerProductPanel(product) {
+  if (!isCurrentUserSeller(product) || !state.ownerProductTool) return "";
+  const panels = {
+    edit: ownerProductEditPanel,
+    images: ownerProductImagePanel,
+    delete: ownerProductDeletePanel,
+  };
+  return panels[state.ownerProductTool]?.(product) || "";
+}
+
+function ownerProductEditPanel(product) {
+  const selectedCategoryId = product.categoryId || product.category?.categoryId;
+  return `
+    <section class="owner-product-panel">
+      <h2>상품 수정</h2>
+      <form class="form-grid" data-form="update-product">
+        <input type="hidden" name="productId" value="${escapeAttr(product.productId)}" />
+        <div class="field field-full">
+          <label>상품명</label>
+          <input name="title" maxlength="100" value="${escapeAttr(productTitle(product))}" />
+        </div>
+        <div class="field">
+          <label>가격</label>
+          <div class="input-suffix">
+            <input name="price" inputmode="numeric" value="${escapeAttr(product.price ?? "")}" />
+            <span>원</span>
+          </div>
+        </div>
+        <div class="field">
+          <label>카테고리</label>
+          <select name="categoryId">
+            <option value="">카테고리 유지</option>
+            ${state.categories.map((category) => option(category.categoryId, category.name, selectedCategoryId)).join("")}
+          </select>
+        </div>
+        <div class="field field-full">
+          <label>상품 설명</label>
+          <textarea name="description">${escapeHtml(productDescription(product))}</textarea>
+        </div>
+        <button class="btn btn-primary field-full" type="submit">수정 완료</button>
+      </form>
+    </section>
+  `;
+}
+
+function ownerProductImagePanel(product) {
+  const images = product.images || [];
+  return `
+    <section class="owner-product-panel">
+      <h2>이미지 관리</h2>
+      <form class="form-grid single" data-form="upload-images">
+        <input type="hidden" name="productId" value="${escapeAttr(product.productId)}" />
+        <div class="field">
+          <label>상품 이미지 <span class="muted">(최대 10장, 파일당 5MB)</span></label>
+          <div class="upload-doodle compact">
+            <label class="upload-add" title="상품 이미지 선택">
+              <input class="visually-hidden" name="images" type="file" accept="image/*" multiple required data-image-upload />
+              <span>＋</span>
+              <small data-upload-count>0/10</small>
+            </label>
+            <span class="upload-slot" data-upload-slot>${imageOrPlaceholder(null, "상품 이미지")}</span>
+            <span class="upload-slot" data-upload-slot>${imageOrPlaceholder(null, "상품 이미지")}</span>
+            <span class="upload-slot" data-upload-slot>${imageOrPlaceholder(null, "상품 이미지")}</span>
+          </div>
+        </div>
+        <button class="btn btn-primary" type="submit">이미지 올리기</button>
+      </form>
+      <div class="owner-image-list">
+        ${images.length ? images.map((image) => ownerProductImageRow(product, image)).join("") : `<div class="empty-state compact-empty"><p>등록된 이미지가 없어요.</p></div>`}
+      </div>
+    </section>
+  `;
+}
+
+function ownerProductImageRow(product, image) {
+  return `
+    <div class="owner-image-row">
+      <div class="thumb">${imageOrPlaceholder(image.url, productTitle(product))}</div>
+      <div>
+        <strong>${image.thumbnail ? "대표 이미지" : "상품 이미지"}</strong>
+        <div class="muted">이미지 ${image.imageId}</div>
+      </div>
+      ${
+        image.imageId
+          ? `<button class="btn btn-danger btn-small" data-action="delete-product-image" data-product-id="${product.productId}" data-image-id="${image.imageId}">삭제</button>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function ownerProductDeletePanel(product) {
+  return `
+    <section class="owner-product-panel">
+      <h2>상품 삭제</h2>
+      <form class="form-grid single" data-form="delete-product">
+        <input type="hidden" name="productId" value="${escapeAttr(product.productId)}" />
+        <p class="form-note">✏️ 삭제한 상품은 일반 목록과 검색 결과에 노출되지 않아요. 진행 중인 거래가 있으면 서버에서 거부됩니다.</p>
+        <button class="btn btn-danger" type="submit">상품 삭제</button>
+      </form>
+    </section>
   `;
 }
 
@@ -1096,6 +1210,10 @@ async function ensureCategories() {
 
 async function loadProductDetail(id) {
   if (!id) return;
+  if (String(state.ownerProductId || "") !== String(id)) {
+    state.ownerProductId = id;
+    state.ownerProductTool = null;
+  }
   const product = await api.products.detail(id).catch(() => demoProductDetail(id));
   state.productDetail = product;
   const sellerId = product.seller?.userId;
@@ -1258,6 +1376,13 @@ async function handleClick(event) {
   }
   if (action === "connect-chat") await connectChat();
   if (action === "load-more-messages") await loadMoreMessages();
+  if (action === "owner-product-tool") {
+    state.ownerProductTool = target.dataset.tool;
+    render();
+  }
+  if (action === "delete-product-image") {
+    await submitDeleteImage({ productId: target.dataset.productId, imageId: target.dataset.imageId });
+  }
   if (action === "order-tab") {
     state.orderTab = target.dataset.tab;
     render();
@@ -1273,10 +1398,13 @@ function handleChange(event) {
   const input = event.target.closest("[data-image-upload]");
   if (!input) return;
   const form = input.closest("form");
-  const files = selectedImageFiles(form);
-  form.querySelector("[data-upload-count]").textContent = `${files.length}/10`;
+  const files = rawSelectedImageFiles(form);
+  const errors = validateProductImageFiles(files);
+  if (errors.length) toast(errors[0], "error");
+  const previewFiles = selectedImageFiles(form);
+  form.querySelector("[data-upload-count]").textContent = `${Math.min(files.length, MAX_PRODUCT_IMAGE_COUNT)}/${MAX_PRODUCT_IMAGE_COUNT}`;
   form.querySelectorAll("[data-upload-slot]").forEach((slot, index) => {
-    const file = files[index];
+    const file = previewFiles[index];
     slot.classList.toggle("filled", Boolean(file));
     slot.title = file?.name || "상품 이미지";
   });
@@ -1343,18 +1471,31 @@ async function submitLogin(data) {
 
 async function submitCreateProduct(form) {
   const data = formValues(form);
-  const imageFiles = selectedImageFiles(form);
-  await runAction(
-    imageFiles.length ? "상품과 이미지를 등록했어요." : "상품을 등록했어요.",
-    async () => {
-      const product = await api.products.create(productPayload(data));
-      if (imageFiles.length) {
-        await api.products.uploadImages(product.productId, imageFiles);
-      }
-      return product;
-    },
-    (product) => navigate(`#/product/${product.productId}`)
-  );
+  const imageFiles = rawSelectedImageFiles(form);
+  const errors = validateProductImageFiles(imageFiles);
+  if (errors.length) {
+    toast(errors[0], "error");
+    return;
+  }
+
+  try {
+    const product = await api.products.create(productPayload(data));
+    if (!imageFiles.length) {
+      toast("상품을 등록했어요.", "success");
+      navigate(`#/product/${product.productId}`);
+      return;
+    }
+
+    try {
+      await api.products.uploadImages(product.productId, imageFiles);
+      toast("상품과 이미지를 등록했어요.", "success");
+    } catch (error) {
+      toast(productImageUploadFailureMessage(error), "error");
+    }
+    navigate(`#/product/${product.productId}`);
+  } catch (error) {
+    handleError(error);
+  }
 }
 
 async function submitUpdateProduct(data) {
@@ -1363,12 +1504,18 @@ async function submitUpdateProduct(data) {
 }
 
 async function submitDeleteProduct(data) {
-  await runAction("상품을 삭제했어요.", () => api.products.remove(data.productId), () => routeChanged());
+  await runAction("상품을 삭제했어요.", () => api.products.remove(data.productId), () => navigate("#/me"));
 }
 
 async function submitUploadImages(form) {
   const formData = new FormData(form);
-  await runAction("이미지를 올렸어요.", () => api.products.uploadImages(formData.get("productId"), formData.getAll("images")), () => routeChanged());
+  const imageFiles = rawSelectedImageFiles(form);
+  const errors = validateProductImageFiles(imageFiles, { requireFiles: true });
+  if (errors.length) {
+    toast(errors[0], "error");
+    return;
+  }
+  await runAction("이미지를 올렸어요.", () => api.products.uploadImages(formData.get("productId"), imageFiles), () => routeChanged());
 }
 
 async function submitDeleteImage(data) {
@@ -1762,12 +1909,48 @@ function productPayload(data, partial = false) {
   };
 }
 
-function selectedImageFiles(form) {
+function rawSelectedImageFiles(form) {
   const formData = new FormData(form);
   return formData
     .getAll("images")
-    .filter((file) => file && typeof file === "object" && "size" in file && file.size > 0)
-    .slice(0, 10);
+    .filter((file) => file && typeof file === "object" && "size" in file && file.size > 0);
+}
+
+function selectedImageFiles(form) {
+  return rawSelectedImageFiles(form).slice(0, MAX_PRODUCT_IMAGE_COUNT);
+}
+
+function validateProductImageFiles(files, options = {}) {
+  if (options.requireFiles && !files.length) {
+    return ["업로드할 이미지를 선택해 주세요."];
+  }
+  if (!files.length) return [];
+  if (files.length > MAX_PRODUCT_IMAGE_COUNT) {
+    return [`상품 이미지는 최대 ${MAX_PRODUCT_IMAGE_COUNT}장까지 올릴 수 있어요.`];
+  }
+  const unsupportedFile = files.find((file) => !SUPPORTED_PRODUCT_IMAGE_TYPES.has(String(file.type || "").toLowerCase()));
+  if (unsupportedFile) {
+    return [`${unsupportedFile.name || "선택한 파일"}은 지원하지 않는 이미지 형식이에요.`];
+  }
+  const oversizedFile = files.find((file) => file.size > MAX_PRODUCT_IMAGE_SIZE_BYTES);
+  if (oversizedFile) {
+    return [`${oversizedFile.name || "선택한 파일"}은 ${formatFileSize(MAX_PRODUCT_IMAGE_SIZE_BYTES)}를 넘을 수 없어요.`];
+  }
+  const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+  if (totalSize > MAX_PRODUCT_IMAGE_REQUEST_BYTES) {
+    return [`한 번에 올릴 이미지 용량은 총 ${formatFileSize(MAX_PRODUCT_IMAGE_REQUEST_BYTES)}를 넘을 수 없어요.`];
+  }
+  return [];
+}
+
+function formatFileSize(bytes) {
+  return `${Math.floor(bytes / 1024 / 1024)}MB`;
+}
+
+function productImageUploadFailureMessage(error) {
+  const reason = error instanceof ApiError ? error.message : error?.message;
+  const suffix = reason ? ` ${reason}` : "";
+  return `상품은 등록됐지만 이미지 업로드는 실패했어요.${suffix} 내 상품 상세에서 다시 올려주세요.`;
 }
 
 function isCurrentUserSeller(product) {
@@ -1868,7 +2051,10 @@ function simpleProductRows(rows) {
         <strong>${escapeHtml(cleanDisplayText(row.title, "상품"))}</strong>
         <div class="muted">ID ${row.productId} · ${price(row.price)} · ${dateShort(row.createdAt || row.wishedAt || row.updatedAt)}</div>
       </div>
-      ${row.status ? statusBadge(row.status) : ""}
+      <div class="simple-row-actions">
+        ${row.status ? statusBadge(row.status) : ""}
+        ${row.productId ? `<button class="btn btn-small btn-ghost" data-action="open-product" data-id="${row.productId}">보기</button>` : ""}
+      </div>
     </div>
   `).join("")}</div>`;
 }
