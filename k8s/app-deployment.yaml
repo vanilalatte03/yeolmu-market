@@ -15,6 +15,9 @@ spec:
       labels:
         app: yeolmu-market
     spec:
+      securityContext:
+        fsGroup: 2000
+        fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: app
           image: __IMAGE_URI__
