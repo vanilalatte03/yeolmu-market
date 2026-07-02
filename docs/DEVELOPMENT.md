@@ -149,7 +149,7 @@ k6 성능 테스트는 Gradle `test`에 포함하지 않는 수동 검증이다.
 
 자동 테스트는 `src/test/resources/application.yml`을 사용한다. 대부분의 테스트 DB는 H2 인메모리이고 Flyway는 비활성화되어 있다. 단, Flyway migration smoke test는 Testcontainers MySQL로 빈 DB에 `V1__init_schema.sql`부터 최신 migration까지 적용되는지 검증한다. Docker를 사용할 수 없는 환경에서는 해당 테스트가 자동으로 건너뛰어진다. 대부분의 Redis 연동 지점은 테스트에서 mock 또는 fallback 검증으로 다룬다.
 
-단, 분산 락(Redisson)의 운영 wiring(starter가 `spring.data.redis.*`로 빈 생성)과 실제 락 동작(획득 실패 `CONFLICT`, lease 경계)은 mock으로 대체할 수 없어 **실 Redis로 검증한다**(ADR-013). 이 테스트들은 `YEOLMU_REDIS_LOCK_TEST=true`와 도달 가능한 Redis를 전제로 하며, CI(`.github/workflows/ci.yml`)가 Redis service container와 환경변수를 제공한다. 로컬에서 실행하려면 `docker compose up -d redis`로 Redis를 띄운 뒤 `YEOLMU_REDIS_LOCK_TEST=true`를 설정한다. 환경변수가 없으면 해당 테스트는 자동으로 건너뛴다.
+단, 분산 락(Redisson)의 운영 wiring(starter가 `spring.data.redis.*`로 빈 생성)과 실제 락 동작(획득 실패 `CONFLICT`, lease 경계)은 mock으로 대체할 수 없어 **실 Redis로 검증한다**(ADR-013). 이 테스트들은 `YEOLMU_REDIS_LOCK_TEST=true`와 도달 가능한 Redis를 전제로 하며, CI(`.github/workflows/ci-cd.yml`)가 Redis service container와 환경변수를 제공한다. 로컬에서 실행하려면 `docker compose up -d redis`로 Redis를 띄운 뒤 `YEOLMU_REDIS_LOCK_TEST=true`를 설정한다. 환경변수가 없으면 해당 테스트는 자동으로 건너뛴다.
 
 | 작업 | macOS/Linux | Windows PowerShell |
 | --- | --- | --- |

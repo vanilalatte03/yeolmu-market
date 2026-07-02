@@ -156,6 +156,7 @@ jobs:
           kubectl apply -f rendered-k8s/storage-class.yaml
           kubectl apply -f rendered-k8s/uploads-pvc.yaml
           kubectl apply -f rendered-k8s/redis.yaml
+          kubectl rollout status deployment/redis -n "$K8S_NAMESPACE" --timeout=120s
           kubectl apply -f rendered-k8s/app-service.yaml
           kubectl apply -f rendered-k8s/app-deployment.yaml
           kubectl rollout status deployment/yeolmu-market -n "$K8S_NAMESPACE" --timeout=300s
