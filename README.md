@@ -14,6 +14,8 @@
 - [API](docs/API.md) — API 계약
 - [ERD](docs/ERD.md) — 데이터 모델
 - [DEVELOPMENT](docs/DEVELOPMENT.md) — 개발 환경과 실행·검증 명령
+- [DEMO_SEED](docs/DEMO_SEED.md) — 프론트 데모 카탈로그 데이터 적재
+- [PERFORMANCE_TESTING](docs/PERFORMANCE_TESTING.md) — 성능 테스트 데이터와 k6 수동 검증
 - [CONVENTIONS](docs/CONVENTIONS.md) — 코드 컨벤션
 - [ADR](docs/adr/README.md) — 기술 결정 기록
 
