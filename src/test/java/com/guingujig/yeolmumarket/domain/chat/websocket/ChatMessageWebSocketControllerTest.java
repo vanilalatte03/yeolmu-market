@@ -17,6 +17,7 @@ import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.security.AuthenticatedUser;
 import jakarta.validation.Validation;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,7 +26,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.messaging.Message;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import tools.jackson.databind.ObjectMapper;
 
@@ -65,7 +68,7 @@ class ChatMessageWebSocketControllerTest {
             OffsetDateTime.parse("2026-06-22T09:55:00Z"));
     when(chatRoomService.sendMessage(1L, 10L, "거래 가능할까요?")).thenReturn(response);
 
-    controller.sendMessage(10L, "{\"content\":\"거래 가능할까요?\"}", principal);
+    controller.sendMessage(10L, message("{\"content\":\"거래 가능할까요?\"}"), principal);
 
     ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
     InOrder inOrder = inOrder(messagingTemplate, chatRoomService);
@@ -91,7 +94,8 @@ class ChatMessageWebSocketControllerTest {
     when(chatRoomService.sendMessage(1L, 10L, "거래 가능할까요?"))
         .thenThrow(new IllegalStateException("전송 실패"));
 
-    assertThatThrownBy(() -> controller.sendMessage(10L, "{\"content\":\"거래 가능할까요?\"}", principal))
+    assertThatThrownBy(
+            () -> controller.sendMessage(10L, message("{\"content\":\"거래 가능할까요?\"}"), principal))
         .isInstanceOf(IllegalStateException.class);
 
     verify(messagingTemplate, never()).convertAndSend(eq("/sub/chat-rooms/10"), anyString());
@@ -116,7 +120,7 @@ class ChatMessageWebSocketControllerTest {
         new TestingAuthenticationToken(
             new AuthenticatedUser(1L, "buyer@example.com", UserRole.USER), null);
 
-    controller.sendMessage(10L, "null", principal);
+    controller.sendMessage(10L, message("null"), principal);
 
     verify(chatWebSocketErrorSender).sendToUser(principal, ErrorCode.VALIDATION_FAILED, 10L);
     verifyNoInteractions(chatRoomService);
@@ -129,7 +133,7 @@ class ChatMessageWebSocketControllerTest {
         new TestingAuthenticationToken(
             new AuthenticatedUser(1L, "buyer@example.com", UserRole.USER), null);
 
-    controller.sendMessage(10L, "   ", principal);
+    controller.sendMessage(10L, message("   "), principal);
 
     verify(chatWebSocketErrorSender).sendToUser(principal, ErrorCode.VALIDATION_FAILED, 10L);
     verifyNoInteractions(chatRoomService);
@@ -142,7 +146,7 @@ class ChatMessageWebSocketControllerTest {
         new TestingAuthenticationToken(
             new AuthenticatedUser(1L, "buyer@example.com", UserRole.USER), null);
 
-    controller.sendMessage(10L, "{\"content\":\"   \"}", principal);
+    controller.sendMessage(10L, message("{\"content\":\"   \"}"), principal);
 
     verify(chatWebSocketErrorSender).sendToUser(principal, ErrorCode.VALIDATION_FAILED, 10L);
     verifyNoInteractions(chatRoomService);
@@ -155,7 +159,7 @@ class ChatMessageWebSocketControllerTest {
         new TestingAuthenticationToken(
             new AuthenticatedUser(1L, "buyer@example.com", UserRole.USER), null);
 
-    controller.sendMessage(10L, "{", principal);
+    controller.sendMessage(10L, message("{"), principal);
 
     verify(chatWebSocketErrorSender).sendToUser(principal, ErrorCode.VALIDATION_FAILED, 10L);
     verifyNoInteractions(chatRoomService);
@@ -170,7 +174,7 @@ class ChatMessageWebSocketControllerTest {
     when(chatRoomService.sendMessage(1L, 10L, "거래 가능할까요?"))
         .thenThrow(new BusinessException(ErrorCode.CHAT_ROOM_ACCESS_DENIED));
 
-    controller.sendMessage(10L, "{\"content\":\"거래 가능할까요?\"}", principal);
+    controller.sendMessage(10L, message("{\"content\":\"거래 가능할까요?\"}"), principal);
 
     verify(chatWebSocketErrorSender).sendToUser(principal, ErrorCode.CHAT_ROOM_ACCESS_DENIED, 10L);
     verify(messagingTemplate, never()).convertAndSend(eq("/sub/chat-rooms/10"), anyString());
@@ -184,9 +188,13 @@ class ChatMessageWebSocketControllerTest {
     when(chatRoomService.sendMessage(1L, 10L, "거래 가능할까요?"))
         .thenThrow(new BusinessException(ErrorCode.VALIDATION_FAILED));
 
-    controller.sendMessage(10L, "{\"content\":\"거래 가능할까요?\"}", principal);
+    controller.sendMessage(10L, message("{\"content\":\"거래 가능할까요?\"}"), principal);
 
     verify(chatWebSocketErrorSender).sendToUser(principal, ErrorCode.VALIDATION_FAILED, 10L);
     verify(messagingTemplate, never()).convertAndSend(eq("/sub/chat-rooms/10"), anyString());
+  }
+
+  private Message<byte[]> message(String payload) {
+    return MessageBuilder.withPayload(payload.getBytes(StandardCharsets.UTF_8)).build();
   }
 }

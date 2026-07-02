@@ -7,11 +7,12 @@ import com.guingujig.yeolmumarket.global.exception.BusinessException;
 import com.guingujig.yeolmumarket.global.exception.ErrorCode;
 import com.guingujig.yeolmumarket.global.security.AuthenticatedUser;
 import jakarta.validation.Validator;
+import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.Message;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
-import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -32,11 +33,9 @@ public class ChatMessageWebSocketController {
 
   @MessageMapping("/chat-rooms/{roomId}/message")
   public void sendMessage(
-      @DestinationVariable Long roomId,
-      @Payload(required = false) String payload,
-      Principal principal) {
+      @DestinationVariable Long roomId, Message<byte[]> message, Principal principal) {
     AuthenticatedUser sender = authenticatedUser(principal);
-    SendChatMessageRequest request = parseRequest(payload, principal, roomId);
+    SendChatMessageRequest request = parseRequest(message, principal, roomId);
     if (request == null || hasValidationError(request, principal, roomId)) {
       return;
     }
@@ -55,8 +54,14 @@ public class ChatMessageWebSocketController {
     }
   }
 
-  private SendChatMessageRequest parseRequest(String payload, Principal principal, Long roomId) {
-    if (payload == null || payload.isBlank()) {
+  private SendChatMessageRequest parseRequest(
+      Message<byte[]> message, Principal principal, Long roomId) {
+    if (message == null || message.getPayload() == null || message.getPayload().length == 0) {
+      chatWebSocketErrorSender.sendToUser(principal, ErrorCode.VALIDATION_FAILED, roomId);
+      return null;
+    }
+    String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
+    if (payload.isBlank()) {
       chatWebSocketErrorSender.sendToUser(principal, ErrorCode.VALIDATION_FAILED, roomId);
       return null;
     }

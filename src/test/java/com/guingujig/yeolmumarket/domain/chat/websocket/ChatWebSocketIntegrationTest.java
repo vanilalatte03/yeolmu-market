@@ -25,6 +25,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -41,6 +42,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.messaging.converter.ByteArrayMessageConverter;
 import org.springframework.messaging.converter.CompositeMessageConverter;
+import org.springframework.messaging.converter.JacksonJsonMessageConverter;
 import org.springframework.messaging.converter.StringMessageConverter;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompCommand;
@@ -112,7 +114,10 @@ class ChatWebSocketIntegrationTest {
     stompClient = new WebSocketStompClient(new StandardWebSocketClient());
     stompClient.setMessageConverter(
         new CompositeMessageConverter(
-            List.of(new StringMessageConverter(), new ByteArrayMessageConverter())));
+            List.of(
+                new JacksonJsonMessageConverter(),
+                new StringMessageConverter(),
+                new ByteArrayMessageConverter())));
   }
 
   @AfterEach
@@ -269,7 +274,10 @@ class ChatWebSocketIntegrationTest {
     MessageFrameHandler messageHandler = new MessageFrameHandler();
     subscribeToChatRoom(session, chatRoom.getId(), messageHandler);
 
-    session.send("/pub/chat-rooms/" + chatRoom.getId() + "/message", "{\"content\":\"거래 가능할까요?\"}");
+    sendJson(
+        session,
+        "/pub/chat-rooms/" + chatRoom.getId() + "/message",
+        Map.of("content", "거래 가능할까요?"));
 
     String payload = messageHandler.pollPayload();
     assertThat(payload).contains("\"messageId\":null");
@@ -311,8 +319,10 @@ class ChatWebSocketIntegrationTest {
     sellerSession.subscribe(roomErrorDestination, roomErrorHandler);
     waitForChatRoomSubscriptionReady(roomErrorDestination, roomErrorHandler);
 
-    buyerSession.send(
-        "/pub/chat-rooms/" + chatRoom.getId() + "/message", "{\"content\":\"거래 가능할까요?\"}");
+    sendJson(
+        buyerSession,
+        "/pub/chat-rooms/" + chatRoom.getId() + "/message",
+        Map.of("content", "거래 가능할까요?"));
 
     String messagePayload = messageHandler.pollPayload();
     assertThat(messagePayload).contains("\"messageId\":null");
@@ -348,7 +358,7 @@ class ChatWebSocketIntegrationTest {
     subscribeToErrorQueue(session, buyer, errorHandler);
     subscribeToChatRoom(session, chatRoom.getId(), messageHandler);
 
-    session.send("/pub/chat-rooms/" + chatRoom.getId() + "/message", "{\"content\":\"   \"}");
+    sendJson(session, "/pub/chat-rooms/" + chatRoom.getId() + "/message", Map.of("content", "   "));
 
     String errorPayload = errorHandler.pollPayload();
     assertThat(errorPayload).contains("\"code\":\"VALIDATION_FAILED\"");
@@ -386,7 +396,7 @@ class ChatWebSocketIntegrationTest {
     ErrorQueueFrameHandler errorHandler = new ErrorQueueFrameHandler();
     subscribeToErrorQueue(session, buyer, errorHandler);
 
-    session.send("/pub/chat-rooms/999/message", "{\"content\":\"거래 가능할까요?\"}");
+    sendJson(session, "/pub/chat-rooms/999/message", Map.of("content", "거래 가능할까요?"));
 
     String errorPayload = errorHandler.pollPayload();
     assertThat(errorPayload).contains("\"code\":\"CHAT_ROOM_NOT_FOUND\"");
@@ -408,8 +418,10 @@ class ChatWebSocketIntegrationTest {
     subscribeToChatRoom(buyerSession, chatRoom.getId(), messageHandler);
     subscribeToErrorQueue(otherSession, otherUser, errorHandler);
 
-    otherSession.send(
-        "/pub/chat-rooms/" + chatRoom.getId() + "/message", "{\"content\":\"거래 가능할까요?\"}");
+    sendJson(
+        otherSession,
+        "/pub/chat-rooms/" + chatRoom.getId() + "/message",
+        Map.of("content", "거래 가능할까요?"));
 
     String errorPayload = errorHandler.pollPayload();
     assertThat(errorPayload).contains("\"code\":\"CHAT_ROOM_ACCESS_DENIED\"");
@@ -509,6 +521,13 @@ class ChatWebSocketIntegrationTest {
           .isNull();
     }
     assertThat(false).as("chat room subscription should receive probe").isTrue();
+  }
+
+  private void sendJson(StompSession session, String destination, Object payload) {
+    StompHeaders headers = new StompHeaders();
+    headers.setDestination(destination);
+    headers.add("content-type", "application/json");
+    session.send(headers, payload);
   }
 
   private List<ChatMessage> waitForSavedMessages(int expectedSize) throws InterruptedException {
