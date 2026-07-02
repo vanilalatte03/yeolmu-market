@@ -84,6 +84,14 @@ svg {
   min-height: 100vh;
 }
 
+.app-shell-chat {
+  height: 100vh;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .app-shell-plain {
   display: block;
 }
@@ -97,6 +105,19 @@ svg {
 .app-shell-plain .page {
   width: 100%;
   padding: 0;
+}
+
+.app-shell-chat .page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  padding: 16px 0;
+}
+
+.app-shell-chat .chat-shell {
+  flex: 1;
+  height: auto;
+  min-height: 0;
 }
 
 .topbar {
@@ -2064,6 +2085,21 @@ hr {
     height: auto;
   }
 
+  .app-shell-chat {
+    height: auto;
+    overflow: visible;
+  }
+
+  .app-shell-chat .page {
+    display: block;
+    min-height: 0;
+    padding: 16px 0 70px;
+  }
+
+  .app-shell-chat .chat-shell {
+    height: auto;
+  }
+
   .chat-sidebar {
     border-right: 0;
     border-bottom: var(--border);
@@ -2086,6 +2122,10 @@ hr {
   }
 
   .page {
+    padding-bottom: 88px;
+  }
+
+  .app-shell-chat .page {
     padding-bottom: 88px;
   }
 
