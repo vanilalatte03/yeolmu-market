@@ -19,6 +19,8 @@ const MAX_PRODUCT_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_PRODUCT_IMAGE_REQUEST_BYTES = 25 * 1024 * 1024;
 const SUPPORTED_PRODUCT_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 const CHAT_SUBSCRIPTION_NOT_READY_MESSAGE = "채팅 구독 준비에 실패했어요. 잠시 후 다시 시도해 주세요.";
+const ORDER_PAYMENT_IDS_KEY = "yeolmu.orderPaymentIds";
+const ORDER_REFUND_REQUEST_IDS_KEY = "yeolmu.orderRefundRequestIds";
 
 const DEMO_PRODUCTS = [
   {
@@ -145,6 +147,8 @@ const state = {
   adminHiddenProducts: [],
   orderPanel: null,
   pendingPaymentKeys: {},
+  orderPaymentIds: loadStoredIds(ORDER_PAYMENT_IDS_KEY),
+  orderRefundRequestIds: loadStoredIds(ORDER_REFUND_REQUEST_IDS_KEY),
   selectedOrder: null,
   selectedPayment: null,
   ownerProductId: null,
@@ -156,6 +160,61 @@ bootstrap();
 
 function emptyChatSubscriptions() {
   return { userErrors: null, roomId: null, messages: null, errors: null, ready: null };
+}
+
+function loadStoredIds(key) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(([, value]) => value !== null && value !== undefined && value !== "")
+        .map(([orderId, value]) => [String(orderId), String(value)])
+    );
+  } catch {
+    return {};
+  }
+}
+
+function persistStoredIds(key, ids) {
+  try {
+    localStorage.setItem(key, JSON.stringify(ids));
+  } catch {
+    // 저장소 접근이 막힌 환경에서는 현재 화면 상태만 유지한다.
+  }
+}
+
+function rememberPaymentId(orderId, paymentId) {
+  if (!orderId || !paymentId) return;
+  state.orderPaymentIds[String(orderId)] = String(paymentId);
+  persistStoredIds(ORDER_PAYMENT_IDS_KEY, state.orderPaymentIds);
+}
+
+function forgetPaymentId(orderId) {
+  if (!orderId) return;
+  delete state.orderPaymentIds[String(orderId)];
+  persistStoredIds(ORDER_PAYMENT_IDS_KEY, state.orderPaymentIds);
+}
+
+function rememberRefundRequestId(orderId, refundRequestId) {
+  if (!orderId || !refundRequestId) return;
+  state.orderRefundRequestIds[String(orderId)] = String(refundRequestId);
+  persistStoredIds(ORDER_REFUND_REQUEST_IDS_KEY, state.orderRefundRequestIds);
+}
+
+function paymentIdForOrder(row) {
+  if (!row?.orderId) return null;
+  return row.paymentId || row.payment?.paymentId || state.orderPaymentIds[String(row.orderId)] || null;
+}
+
+function refundRequestIdForOrder(row) {
+  if (!row?.orderId) return null;
+  return row.refundRequestId || state.orderRefundRequestIds[String(row.orderId)] || null;
+}
+
+function refundRequestIdBadge(row) {
+  const refundId = refundRequestIdForOrder(row);
+  return refundId ? `<span class="badge refund-id-badge">환불 #${escapeHtml(String(refundId))}</span>` : "";
 }
 
 async function bootstrap() {
@@ -1087,10 +1146,6 @@ function refundsTabView() {
         ${refundWorkQueue(pendingSales)}
         ${resultPanel()}
       </div>
-      <aside class="refund-action-stack">
-        ${refundDecisionPanel()}
-        ${refundResolvePanel()}
-      </aside>
     </section>
   `;
 }
@@ -1107,46 +1162,47 @@ function refundWorkQueue(rows) {
   return `
     <div class="refund-work-list">
       ${rows.map((row) => `
-        <article class="refund-work-row">
+        <article class="refund-work-row" data-status="${escapeAttr(row.status || "")}">
           <div>
             ${statusBadge(row.status)}
+            ${refundRequestIdBadge(row)}
             <h3>${escapeHtml(cleanDisplayText(row.productTitle, "상품"))}</h3>
             <p class="muted">주문 ${escapeHtml(String(row.orderId))} · 구매자 ${escapeHtml(orderCounterpart(row, "sales"))}</p>
           </div>
-          <p class="refund-work-note">환불 요청 ID를 확인한 뒤 오른쪽 처리 폼에 입력해 주세요.</p>
+          ${refundWorkActions(row)}
         </article>
       `).join("")}
     </div>
   `;
 }
 
-function refundDecisionPanel() {
-  return `
-    <section class="panel refund-panel">
-      <h2>요청 승인/거절</h2>
-      <form class="form-grid single" data-form="refund-decision">
-        <div class="field"><label>환불 요청 ID</label><input name="refundId" inputmode="numeric" required /></div>
-        <div class="field"><label>거절 사유</label><textarea name="reason" maxlength="255" placeholder="거절할 때만 입력"></textarea></div>
+function refundWorkActions(row) {
+  const refundId = refundRequestIdForOrder(row);
+  const orderIdInput = `<input type="hidden" name="orderId" value="${escapeAttr(String(row.orderId))}" />`;
+  const refundIdInput = refundId
+    ? `<input type="hidden" name="refundId" value="${escapeAttr(String(refundId))}" />`
+    : `<div class="field"><label>환불 요청 ID</label><input name="refundId" inputmode="numeric" required placeholder="예: 300" /></div>`;
+  if (row.status === "REFUND_REQUESTED") {
+    return `
+      <form class="refund-row-form" data-form="refund-row-decision" data-refund-id="${escapeAttr(String(refundId || ""))}">
+        ${orderIdInput}
+        ${refundIdInput}
+        <div class="field"><label>거절 사유</label><input name="reason" maxlength="255" placeholder="거절할 때 입력" /></div>
         <div class="action-row">
           <button class="btn btn-primary" name="intent" value="approve" type="submit">승인</button>
           <button class="btn btn-danger" name="intent" value="reject" type="submit">거절</button>
         </div>
       </form>
-    </section>
-  `;
-}
-
-function refundResolvePanel() {
+    `;
+  }
   return `
-    <section class="panel refund-panel">
-      <h2>분쟁 종료</h2>
-      <form class="form-grid single" data-form="refund-resolve">
-        <div class="field"><label>환불 요청 ID</label><input name="refundId" inputmode="numeric" required /></div>
-        <div class="field"><label>종료 방향</label><select name="resolution" required>${option("REFUND", "구매자 환불")}${option("COMPLETE", "거래 완료")}</select></div>
-        <div class="field"><label>종료 사유</label><textarea name="reason" maxlength="255"></textarea></div>
-        <button class="btn btn-primary" type="submit">분쟁 종료</button>
-      </form>
-    </section>
+    <form class="refund-row-form" data-form="refund-row-resolve" data-refund-id="${escapeAttr(String(refundId || ""))}">
+      ${orderIdInput}
+      ${refundIdInput}
+      <div class="field"><label>종료 방향</label><select name="resolution" required>${option("REFUND", "구매자 환불")}${option("COMPLETE", "거래 완료")}</select></div>
+      <div class="field"><label>종료 사유</label><input name="reason" maxlength="255" /></div>
+      <button class="btn btn-primary" type="submit">분쟁 종료</button>
+    </form>
   `;
 }
 
@@ -1268,6 +1324,7 @@ function orderActionRow(row, mode) {
   const status = row.status;
   const productId = row.productId || row.product?.productId;
   const orderId = row.orderId;
+  const paymentId = paymentIdForOrder(row);
   const buttons = [];
 
   if (mode === "orders" && status === "CREATED") {
@@ -1277,6 +1334,9 @@ function orderActionRow(row, mode) {
   if (status === "PAID") {
     if (mode === "orders" && productId) {
       buttons.push(`<button class="btn btn-soft" data-action="create-chat" data-id="${productId}">채팅하기</button>`);
+    }
+    if (mode === "orders") {
+      buttons.push(`<button class="btn btn-danger" data-action="order-panel" data-panel="payment-cancel" data-order-id="${escapeAttr(String(orderId))}" data-payment-id="${escapeAttr(String(paymentId || ""))}">결제취소</button>`);
     }
     if (mode === "sales") {
       buttons.push(`<button class="btn btn-primary" data-action="order-panel" data-panel="shipping" data-order-id="${orderId}">배송등록</button>`);
@@ -1294,7 +1354,7 @@ function orderActionRow(row, mode) {
   }
   if (["REFUND_REQUESTED", "DISPUTED"].includes(status) && mode === "sales") {
     buttons.push(`<button class="btn btn-soft" data-action="nav" data-target="#/refunds">환불 처리</button>`);
-    buttons.push(`<span class="form-note refund-note">처리에는 환불 요청 ID가 필요해요.</span>`);
+    buttons.push(refundRequestIdBadge(row));
   }
 
   return buttons.length ? `<div class="order-actions">${buttons.join("")}</div>` : "";
@@ -1319,6 +1379,22 @@ function orderInlinePanel(row) {
         <div class="field"><label>환불 사유</label><textarea name="reason" maxlength="255" required></textarea></div>
         <div class="action-row">
           <button class="btn btn-primary" type="submit">환불 요청</button>
+          <button class="btn btn-ghost" type="button" data-action="close-order-panel">닫기</button>
+        </div>
+      </form>
+    `;
+  }
+  if (state.orderPanel.type === "payment-cancel") {
+    const paymentId = state.orderPanel.paymentId || paymentIdForOrder(row);
+    const paymentIdInput = paymentId
+      ? `<input type="hidden" name="paymentId" value="${escapeAttr(String(paymentId))}" />`
+      : `<div class="field"><label>결제 ID</label><input name="paymentId" inputmode="numeric" required placeholder="예: 200" /></div>`;
+    return `
+      <form class="inline-panel form-grid single" data-form="payment-cancel" data-order-id="${escapeAttr(String(row.orderId))}" data-payment-id="${escapeAttr(String(paymentId || ""))}">
+        ${paymentIdInput}
+        <div class="field"><label>취소 사유</label><textarea name="reason" maxlength="255" placeholder="선택 입력"></textarea></div>
+        <div class="action-row">
+          <button class="btn btn-danger" type="submit">결제취소</button>
           <button class="btn btn-ghost" type="button" data-action="close-order-panel">닫기</button>
         </div>
       </form>
@@ -1353,7 +1429,7 @@ function orderProgress(status) {
 function orderStatusMessage(status, mode) {
   const messages = {
     CREATED: "결제 전 상태예요. 구매자는 결제를 진행하거나 주문을 취소할 수 있어요.",
-    PAID: mode === "sales" ? "결제가 완료됐어요. 배송 증빙을 등록해 주세요." : "결제가 완료됐어요. 판매자의 배송을 기다리는 중이에요.",
+    PAID: mode === "sales" ? "결제가 완료됐어요. 배송 증빙을 등록해 주세요." : "결제가 완료됐어요. 배송 전에는 결제취소를 할 수 있어요.",
     SHIPPING: mode === "orders" ? "배송 중이에요. 수령 후 구매확정하거나 문제가 있으면 환불을 요청할 수 있어요." : "배송 중이에요. 구매자의 구매확정을 기다리고 있어요.",
     COMPLETED: "거래가 완료됐어요. 상대방에게 후기를 남길 수 있어요.",
     CANCELED: "취소된 주문이에요.",
@@ -1633,6 +1709,8 @@ async function loadOrders() {
   ]);
   state.myOrders = orders.content || [];
   state.mySales = sales.content || [];
+  state.myOrders.forEach((row) => rememberPaymentId(row.orderId, row.paymentId || row.payment?.paymentId));
+  state.mySales.forEach((row) => rememberRefundRequestId(row.orderId, row.refundRequestId));
 }
 
 async function loadReviews() {
@@ -1750,6 +1828,7 @@ async function handleClick(event) {
     state.orderPanel = {
       type: target.dataset.panel,
       orderId: target.dataset.orderId,
+      paymentId: target.dataset.paymentId || null,
       reviewId: target.dataset.reviewId || null,
     };
     render();
@@ -1825,6 +1904,7 @@ async function handleSubmit(event) {
   if (formName === "create-order") await createOrder(data.productId);
   if (formName === "order-action") await submitOrderAction(data, submitterValue(event));
   if (formName === "shipping-order") await submitShippingOrder(form, data);
+  if (formName === "payment-cancel") await submitPaymentCancel(form, data);
   if (formName === "payment-create") await submitPaymentCreate(data);
   if (formName === "payment-action") await submitPaymentAction(data, submitterValue(event));
   if (formName === "create-review") await submitCreateReview(form, data);
@@ -1833,6 +1913,8 @@ async function handleSubmit(event) {
   if (formName === "refund-create") await submitRefundCreate(form, data);
   if (formName === "refund-decision") await submitRefundDecision(data, submitterValue(event));
   if (formName === "refund-resolve") await submitRefundResolve(data);
+  if (formName === "refund-row-decision") await submitRefundDecision(data, submitterValue(event));
+  if (formName === "refund-row-resolve") await submitRefundResolve(data);
   if (formName === "category-admin") await submitCategoryAdmin(data, submitterValue(event));
   if (formName === "hidden-admin") await submitHiddenAdmin(data);
 }
@@ -2275,15 +2357,50 @@ async function payOrder(orderId) {
   const key = paymentKeyForOrder(orderId);
   try {
     const result = await api.payments.create(orderId, { method: "MOCK_CARD", result: "PAID" }, key);
+    rememberPaymentFromResult(orderId, result);
+    delete state.pendingPaymentKeys[String(orderId)];
     toast("결제가 완료됐어요.", "success");
     state.lastResult = resultFrom("결제 요청", result);
     state.orderPanel = null;
     await routeChanged();
   } catch (error) {
+    if (!(error instanceof ApiError) && await recoverPaymentAfterCreateError(orderId, key)) {
+      toast("주문 상태를 다시 확인했어요.", "success");
+      return;
+    }
     handleError(error);
-  } finally {
-    delete state.pendingPaymentKeys[String(orderId)];
   }
+}
+
+async function recoverPaymentAfterCreateError(orderId, key) {
+  try {
+    const result = await api.payments.create(orderId, { method: "MOCK_CARD", result: "PAID" }, key);
+    rememberPaymentFromResult(orderId, result);
+    delete state.pendingPaymentKeys[String(orderId)];
+    state.lastResult = resultFrom("결제 요청", result);
+    state.orderPanel = null;
+    await routeChanged();
+    return true;
+  } catch {
+    return refreshOrderAfterPaymentError(orderId);
+  }
+}
+
+async function refreshOrderAfterPaymentError(orderId) {
+  try {
+    const order = await api.orders.detail(orderId);
+    if (!order?.status || order.status === "CREATED") return false;
+    delete state.pendingPaymentKeys[String(orderId)];
+    state.lastResult = resultFrom("주문 상태 확인", order);
+    await routeChanged();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function rememberPaymentFromResult(orderId, result) {
+  rememberPaymentId(result?.orderId || orderId, result?.paymentId);
 }
 
 function paymentKeyForOrder(orderId) {
@@ -2347,11 +2464,26 @@ async function submitPaymentCreate(data) {
     "결제 요청이 처리됐어요.",
     () => api.payments.create(data.orderId, { method: "MOCK_CARD", result: data.result || "PAID" }, paymentKeyForOrder(data.orderId)),
     (result) => {
+      rememberPaymentFromResult(data.orderId, result);
       delete state.pendingPaymentKeys[String(data.orderId)];
       state.lastResult = resultFrom("결제 요청", result);
       routeChanged();
     }
   );
+}
+
+async function submitPaymentCancel(form, data) {
+  const paymentId = form.dataset.paymentId || data.paymentId;
+  const orderId = form.dataset.orderId || data.orderId;
+  await runAction("결제를 취소했어요.", () => api.payments.cancel(paymentId, data.reason), (result) => {
+    if (orderId) {
+      delete state.pendingPaymentKeys[String(orderId)];
+      forgetPaymentId(orderId);
+    }
+    state.lastResult = resultFrom("결제 취소", result);
+    state.orderPanel = null;
+    routeChanged();
+  });
 }
 
 async function submitPaymentAction(data, intent) {
@@ -2409,6 +2541,7 @@ async function loadPublicReviews(userId) {
 async function submitRefundCreate(form, data) {
   const orderId = form.dataset.orderId || data.orderId;
   await runAction("환불 요청을 만들었어요.", () => api.refunds.create(orderId, data.reason), (result) => {
+    rememberRefundRequestFromResult(orderId, result);
     state.lastResult = resultFrom("환불 요청", result);
     state.orderPanel = null;
     routeChanged();
@@ -2418,6 +2551,7 @@ async function submitRefundCreate(form, data) {
 async function submitRefundDecision(data, intent) {
   const action = intent === "approve" ? () => api.refunds.approve(data.refundId) : () => api.refunds.reject(data.refundId, data.reason);
   await runAction("환불 요청을 처리했어요.", action, (result) => {
+    rememberRefundRequestFromResult(data.orderId, result);
     state.lastResult = resultFrom("환불 처리", result);
     routeChanged();
   });
@@ -2425,9 +2559,14 @@ async function submitRefundDecision(data, intent) {
 
 async function submitRefundResolve(data) {
   await runAction("분쟁을 종료했어요.", () => api.refunds.resolve(data.refundId, { resolution: data.resolution, reason: data.reason }), (result) => {
+    rememberRefundRequestFromResult(data.orderId, result);
     state.lastResult = resultFrom("분쟁 종료", result);
     routeChanged();
   });
+}
+
+function rememberRefundRequestFromResult(orderId, result) {
+  rememberRefundRequestId(result?.orderId || orderId, result?.refundRequestId);
 }
 
 async function submitCategoryAdmin(data, intent) {
@@ -2560,7 +2699,7 @@ function resultFrom(title, result) {
 }
 
 function isInternalIdentifierKey(key) {
-  return /^id$/i.test(key) || /id$/i.test(key);
+  return /^id$/i.test(key);
 }
 
 function productTitle(product) {
