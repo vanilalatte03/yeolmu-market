@@ -5,6 +5,8 @@
 
 ### 캐시 전략
 
+![](https://github.com/user-attachments/assets/6cb9baee-5d3b-4cbf-958e-3656b4fe536f)
+
 이 프로젝트는 Cache-aside, Lazy Loading 전략을 사용한다.
 
 검색 요청이 들어오면 먼저 Redis 캐시에서 `검색 조건 + 검색 인덱스 버전`에 해당하는 상품 ID 목록을 조회한다. 캐시 hit이면 DB 검색 쿼리를 생략하고, cache miss이면 MySQL에서 검색한 뒤 Redis에 저장한다.
