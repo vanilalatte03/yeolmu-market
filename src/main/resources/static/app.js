@@ -13,6 +13,11 @@ const DEMO_CATEGORIES = [
   { categoryId: 5, name: "스포츠/레저" },
 ];
 
+const MAX_PRODUCT_IMAGE_COUNT = 10;
+const MAX_PRODUCT_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_PRODUCT_IMAGE_REQUEST_BYTES = 25 * 1024 * 1024;
+const SUPPORTED_PRODUCT_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
 const DEMO_PRODUCTS = [
   {
     productId: 1,
@@ -131,6 +136,8 @@ const state = {
   adminHiddenProducts: [],
   selectedOrder: null,
   selectedPayment: null,
+  ownerProductId: null,
+  ownerProductTool: null,
   lastResult: null,
 };
 
@@ -139,6 +146,7 @@ bootstrap();
 async function bootstrap() {
   window.addEventListener("hashchange", routeChanged);
   document.addEventListener("click", handleClick);
+  document.addEventListener("change", handleChange);
   document.addEventListener("submit", handleSubmit);
   routeChanged();
 }
@@ -581,14 +589,8 @@ function productDetailView() {
             <span>💬 채팅 ${product.chatRoomCount ?? product.chatCount ?? 0}</span>
             <span>👁 조회 ${product.viewCount ?? 0}</span>
           </div>
-          <div class="detail-actions">
-            <button class="btn wish-action ${product.wished ? "btn-soft" : "btn-ghost"}" data-action="toggle-wish" data-id="${product.productId}">
-              ${product.wished ? "♥" : "♡"}
-            </button>
-            <button class="btn btn-soft" data-action="create-chat" data-id="${product.productId}">💬 채팅하기</button>
-            <button class="btn btn-primary" data-action="create-order" data-id="${product.productId}">주문하기</button>
-          </div>
-          <p class="hand-note left">✏️ 주문하기 = 거래 의사 확정 · 판매중인 상품만 가능</p>
+          ${productDetailActions(product)}
+          ${ownerProductPanel(product)}
         </div>
       </div>
       <section class="review-section">
@@ -616,37 +618,6 @@ function sellView() {
       <div class="panel sell-panel">
         ${state.categories.length ? productForm("create-product") : noCategoryNotice()}
       </div>
-      <div class="manage-grid">
-        <div class="panel">
-          <h2>내 판매 상품</h2>
-          ${simpleProductRows(state.myProducts)}
-        </div>
-        <div class="panel">
-          <h2>상품 수정</h2>
-          ${productForm("update-product", true)}
-        </div>
-        <div class="panel">
-          <h2>이미지 관리</h2>
-          <form class="form-grid single" data-form="upload-images">
-            <div class="field"><label>상품 ID</label><input name="productId" inputmode="numeric" required /></div>
-            <div class="field"><label>상품 이미지</label><input name="images" type="file" accept="image/*" multiple required /></div>
-            <button class="btn btn-primary" type="submit">이미지 올리기</button>
-          </form>
-          <hr />
-          <form class="form-grid single" data-form="delete-image">
-            <div class="field"><label>상품 ID</label><input name="productId" inputmode="numeric" required /></div>
-            <div class="field"><label>이미지 ID</label><input name="imageId" inputmode="numeric" required /></div>
-            <button class="btn btn-danger" type="submit">이미지 삭제</button>
-          </form>
-        </div>
-        <div class="panel">
-          <h2>상품 삭제</h2>
-          <form class="form-grid single" data-form="delete-product">
-            <div class="field"><label>상품 ID</label><input name="productId" inputmode="numeric" required /></div>
-            <button class="btn btn-danger" type="submit">삭제하기</button>
-          </form>
-        </div>
-      </div>
     </section>
   `;
 }
@@ -656,10 +627,16 @@ function productForm(formName, isUpdate = false) {
     <form class="form-grid" data-form="${formName}">
       ${!isUpdate ? `
         <div class="field field-full">
-          <label>상품 이미지 <span class="muted">(이미지 관리는 아래에서 업로드)</span></label>
+          <label>상품 이미지 <span class="muted">(최대 10장)</span></label>
           <div class="upload-doodle">
-            <span>＋<small>0/10</small></span>
-            <i></i><i></i><i></i>
+            <label class="upload-add" title="상품 이미지 선택">
+              <input class="visually-hidden" name="images" type="file" accept="image/*" multiple data-image-upload />
+              <span>＋</span>
+              <small data-upload-count>0/10</small>
+            </label>
+            <span class="upload-slot" data-upload-slot>${imageOrPlaceholder(null, "상품 이미지")}</span>
+            <span class="upload-slot" data-upload-slot>${imageOrPlaceholder(null, "상품 이미지")}</span>
+            <span class="upload-slot" data-upload-slot>${imageOrPlaceholder(null, "상품 이미지")}</span>
           </div>
         </div>
       ` : ""}
@@ -670,12 +647,15 @@ function productForm(formName, isUpdate = false) {
       </div>
       <div class="field">
         <label>가격${isUpdate ? "" : " *"}</label>
-        <input name="price" inputmode="numeric" placeholder="0" ${isUpdate ? "" : "required"} />
+        <div class="input-suffix">
+          <input name="price" inputmode="numeric" placeholder="0" ${isUpdate ? "" : "required"} />
+          <span>원</span>
+        </div>
       </div>
       <div class="field">
         <label>카테고리${isUpdate ? "" : " *"}</label>
         <select name="categoryId" ${isUpdate ? "" : "required"}>
-          <option value="">선택</option>
+          <option value="">카테고리</option>
           ${state.categories.map((category) => option(category.categoryId, category.name)).join("")}
         </select>
       </div>
@@ -683,8 +663,15 @@ function productForm(formName, isUpdate = false) {
         <label>상품 설명${isUpdate ? "" : " *"}</label>
         <textarea name="description" placeholder="상품 상태, 구매 시기, 거래 방법 등을 적어주세요" ${isUpdate ? "" : "required"}></textarea>
       </div>
-      ${!isUpdate ? `<p class="field-full form-note">✏️ 상품명·설명·가격은 필수 · 본인 상품만 수정/삭제할 수 있어요</p>` : ""}
-      <button class="btn btn-primary field-full" type="submit">${isUpdate ? "수정 완료" : "등록 완료"}</button>
+      ${!isUpdate ? `<p class="field-full form-note">✏️ 상품명·설명·가격·카테고리는 필수 · 이미지는 최대 10장까지 올릴 수 있어요</p>` : ""}
+      ${
+        isUpdate
+          ? `<button class="btn btn-primary field-full" type="submit">수정 완료</button>`
+          : `<div class="form-actions field-full">
+              <button class="btn btn-ghost" type="button" data-action="nav" data-target="#/home">취소</button>
+              <button class="btn btn-primary" type="submit">등록 완료</button>
+            </div>`
+      }
     </form>
   `;
 }
@@ -693,8 +680,8 @@ function noCategoryNotice() {
   return `
     <div class="empty-state">
       <h3>등록할 카테고리가 아직 없어요</h3>
-      <p>상품 등록에는 카테고리가 필요합니다. 관리자 계정이라면 카테고리를 먼저 만들어 주세요.</p>
-      <button class="btn btn-soft" data-action="nav" data-target="#/admin">관리자 화면으로</button>
+      <p>상품 등록에는 카테고리가 필요합니다. 관리자에게 카테고리 생성을 요청해 주세요.</p>
+      ${session.user?.role === "ADMIN" ? `<button class="btn btn-soft" data-action="nav" data-target="#/admin">관리자 화면으로</button>` : ""}
     </div>
   `;
 }
@@ -704,10 +691,7 @@ function chatView() {
     <section class="chat-shell">
       <aside class="chat-sidebar">
         <div class="chat-title">채팅 💬</div>
-        <form class="form-grid single" data-form="create-chat-room">
-          <div class="field"><label>상품 ID로 채팅 시작</label><input name="productId" inputmode="numeric" required /></div>
-          <button class="btn btn-primary" type="submit">채팅방 만들기</button>
-        </form>
+        <div class="chat-guide">상품 상세에서 <strong>채팅하기</strong>를 누르면 대화가 시작돼요.</div>
         <div class="chat-list">
           ${state.chatRooms.map(chatRoomButton).join("") || `<div class="empty-state"><p>아직 채팅방이 없어요.</p></div>`}
         </div>
@@ -715,6 +699,134 @@ function chatView() {
       <section class="chat-room-panel">
         ${activeChatPanel()}
       </section>
+    </section>
+  `;
+}
+
+function productDetailActions(product) {
+  if (isCurrentUserSeller(product)) {
+    return `
+      <div class="detail-actions owner-actions">
+        <button class="btn ${state.ownerProductTool === "edit" ? "btn-soft" : "btn-ghost"}" data-action="owner-product-tool" data-tool="edit">수정</button>
+        <button class="btn ${state.ownerProductTool === "images" ? "btn-soft" : "btn-ghost"}" data-action="owner-product-tool" data-tool="images">이미지 관리</button>
+        <button class="btn ${state.ownerProductTool === "delete" ? "btn-soft" : "btn-ghost"}" data-action="owner-product-tool" data-tool="delete">삭제</button>
+      </div>
+      <p class="hand-note left">✏️ 내 상품은 이곳에서 수정·이미지 관리·삭제할 수 있어요</p>
+    `;
+  }
+  const canOrder = product.status === "ON_SALE";
+  return `
+    <div class="detail-actions">
+      <button class="btn wish-action ${product.wished ? "btn-soft" : "btn-ghost"}" data-action="toggle-wish" data-id="${product.productId}">
+        ${product.wished ? "♥" : "♡"}
+      </button>
+      <button class="btn btn-soft" data-action="create-chat" data-id="${product.productId}">💬 채팅하기</button>
+      <button class="btn btn-primary" ${canOrder ? `data-action="create-order" data-id="${product.productId}"` : "disabled"}>${canOrder ? "주문하기" : "주문 불가"}</button>
+    </div>
+    <p class="hand-note left">✏️ 채팅하기는 판매자와 대화 시작 · 주문하기는 거래 의사 확정</p>
+  `;
+}
+
+function ownerProductPanel(product) {
+  if (!isCurrentUserSeller(product) || !state.ownerProductTool) return "";
+  const panels = {
+    edit: ownerProductEditPanel,
+    images: ownerProductImagePanel,
+    delete: ownerProductDeletePanel,
+  };
+  return panels[state.ownerProductTool]?.(product) || "";
+}
+
+function ownerProductEditPanel(product) {
+  const selectedCategoryId = product.categoryId || product.category?.categoryId;
+  return `
+    <section class="owner-product-panel">
+      <h2>상품 수정</h2>
+      <form class="form-grid" data-form="update-product">
+        <input type="hidden" name="productId" value="${escapeAttr(product.productId)}" />
+        <div class="field field-full">
+          <label>상품명</label>
+          <input name="title" maxlength="100" value="${escapeAttr(productTitle(product))}" />
+        </div>
+        <div class="field">
+          <label>가격</label>
+          <div class="input-suffix">
+            <input name="price" inputmode="numeric" value="${escapeAttr(product.price ?? "")}" />
+            <span>원</span>
+          </div>
+        </div>
+        <div class="field">
+          <label>카테고리</label>
+          <select name="categoryId">
+            <option value="">카테고리 유지</option>
+            ${state.categories.map((category) => option(category.categoryId, category.name, selectedCategoryId)).join("")}
+          </select>
+        </div>
+        <div class="field field-full">
+          <label>상품 설명</label>
+          <textarea name="description">${escapeHtml(productDescription(product))}</textarea>
+        </div>
+        <button class="btn btn-primary field-full" type="submit">수정 완료</button>
+      </form>
+    </section>
+  `;
+}
+
+function ownerProductImagePanel(product) {
+  const images = product.images || [];
+  return `
+    <section class="owner-product-panel">
+      <h2>이미지 관리</h2>
+      <form class="form-grid single" data-form="upload-images">
+        <input type="hidden" name="productId" value="${escapeAttr(product.productId)}" />
+        <div class="field">
+          <label>상품 이미지 <span class="muted">(최대 10장, 파일당 5MB)</span></label>
+          <div class="upload-doodle compact">
+            <label class="upload-add" title="상품 이미지 선택">
+              <input class="visually-hidden" name="images" type="file" accept="image/*" multiple required data-image-upload />
+              <span>＋</span>
+              <small data-upload-count>0/10</small>
+            </label>
+            <span class="upload-slot" data-upload-slot>${imageOrPlaceholder(null, "상품 이미지")}</span>
+            <span class="upload-slot" data-upload-slot>${imageOrPlaceholder(null, "상품 이미지")}</span>
+            <span class="upload-slot" data-upload-slot>${imageOrPlaceholder(null, "상품 이미지")}</span>
+          </div>
+        </div>
+        <button class="btn btn-primary" type="submit">이미지 올리기</button>
+      </form>
+      <div class="owner-image-list">
+        ${images.length ? images.map((image) => ownerProductImageRow(product, image)).join("") : `<div class="empty-state compact-empty"><p>등록된 이미지가 없어요.</p></div>`}
+      </div>
+    </section>
+  `;
+}
+
+function ownerProductImageRow(product, image) {
+  return `
+    <div class="owner-image-row">
+      <div class="thumb">${imageOrPlaceholder(image.url, productTitle(product))}</div>
+      <div>
+        <strong>${image.thumbnail ? "대표 이미지" : "상품 이미지"}</strong>
+        <div class="muted">이미지 ${image.imageId}</div>
+      </div>
+      ${
+        image.imageId
+          ? `<button class="btn btn-danger btn-small" data-action="delete-product-image" data-product-id="${product.productId}" data-image-id="${image.imageId}">삭제</button>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function ownerProductDeletePanel(product) {
+  return `
+    <section class="owner-product-panel">
+      <h2>상품 삭제</h2>
+      <form class="form-grid single" data-form="delete-product">
+        <input type="hidden" name="productId" value="${escapeAttr(product.productId)}" />
+        <p class="form-note">✏️ 삭제한 상품은 일반 목록과 검색 결과에 노출되지 않아요. 진행 중인 거래가 있으면 서버에서 거부됩니다.</p>
+        <button class="btn btn-danger" type="submit">상품 삭제</button>
+      </form>
     </section>
   `;
 }
@@ -1098,6 +1210,10 @@ async function ensureCategories() {
 
 async function loadProductDetail(id) {
   if (!id) return;
+  if (String(state.ownerProductId || "") !== String(id)) {
+    state.ownerProductId = id;
+    state.ownerProductTool = null;
+  }
   const product = await api.products.detail(id).catch(() => demoProductDetail(id));
   state.productDetail = product;
   const sellerId = product.seller?.userId;
@@ -1260,6 +1376,13 @@ async function handleClick(event) {
   }
   if (action === "connect-chat") await connectChat();
   if (action === "load-more-messages") await loadMoreMessages();
+  if (action === "owner-product-tool") {
+    state.ownerProductTool = target.dataset.tool;
+    render();
+  }
+  if (action === "delete-product-image") {
+    await submitDeleteImage({ productId: target.dataset.productId, imageId: target.dataset.imageId });
+  }
   if (action === "order-tab") {
     state.orderTab = target.dataset.tab;
     render();
@@ -1269,6 +1392,22 @@ async function handleClick(event) {
     await routeChanged();
   }
   if (action === "load-public-reviews") await loadPublicReviews(target.dataset.id);
+}
+
+function handleChange(event) {
+  const input = event.target.closest("[data-image-upload]");
+  if (!input) return;
+  const form = input.closest("form");
+  const files = rawSelectedImageFiles(form);
+  const errors = validateProductImageFiles(files);
+  if (errors.length) toast(errors[0], "error");
+  const previewFiles = selectedImageFiles(form);
+  form.querySelector("[data-upload-count]").textContent = `${Math.min(files.length, MAX_PRODUCT_IMAGE_COUNT)}/${MAX_PRODUCT_IMAGE_COUNT}`;
+  form.querySelectorAll("[data-upload-slot]").forEach((slot, index) => {
+    const file = previewFiles[index];
+    slot.classList.toggle("filled", Boolean(file));
+    slot.title = file?.name || "상품 이미지";
+  });
 }
 
 async function handleSubmit(event) {
@@ -1286,12 +1425,11 @@ async function handleSubmit(event) {
   if (formName === "filter-products") await filterProducts(data);
   if (formName === "signup") await submitSignup(data);
   if (formName === "login") await submitLogin(data);
-  if (formName === "create-product") await submitCreateProduct(data);
+  if (formName === "create-product") await submitCreateProduct(form);
   if (formName === "update-product") await submitUpdateProduct(data);
   if (formName === "delete-product") await submitDeleteProduct(data);
   if (formName === "upload-images") await submitUploadImages(form);
   if (formName === "delete-image") await submitDeleteImage(data);
-  if (formName === "create-chat-room") await createChat(data.productId);
   if (formName === "send-message") await sendChatMessage(data.content);
   if (formName === "update-me") await submitUpdateMe(data);
   if (formName === "create-order") await createOrder(data.productId);
@@ -1331,8 +1469,33 @@ async function submitLogin(data) {
   await runAction("로그인했어요.", () => api.auth.login(data), () => navigate("#/home"));
 }
 
-async function submitCreateProduct(data) {
-  await runAction("상품을 등록했어요.", () => api.products.create(productPayload(data)), () => routeChanged());
+async function submitCreateProduct(form) {
+  const data = formValues(form);
+  const imageFiles = rawSelectedImageFiles(form);
+  const errors = validateProductImageFiles(imageFiles);
+  if (errors.length) {
+    toast(errors[0], "error");
+    return;
+  }
+
+  try {
+    const product = await api.products.create(productPayload(data));
+    if (!imageFiles.length) {
+      toast("상품을 등록했어요.", "success");
+      navigate(`#/product/${product.productId}`);
+      return;
+    }
+
+    try {
+      await api.products.uploadImages(product.productId, imageFiles);
+      toast("상품과 이미지를 등록했어요.", "success");
+    } catch (error) {
+      toast(productImageUploadFailureMessage(error), "error");
+    }
+    navigate(`#/product/${product.productId}`);
+  } catch (error) {
+    handleError(error);
+  }
 }
 
 async function submitUpdateProduct(data) {
@@ -1341,12 +1504,18 @@ async function submitUpdateProduct(data) {
 }
 
 async function submitDeleteProduct(data) {
-  await runAction("상품을 삭제했어요.", () => api.products.remove(data.productId), () => routeChanged());
+  await runAction("상품을 삭제했어요.", () => api.products.remove(data.productId), () => navigate("#/me"));
 }
 
 async function submitUploadImages(form) {
   const formData = new FormData(form);
-  await runAction("이미지를 올렸어요.", () => api.products.uploadImages(formData.get("productId"), formData.getAll("images")), () => routeChanged());
+  const imageFiles = rawSelectedImageFiles(form);
+  const errors = validateProductImageFiles(imageFiles, { requireFiles: true });
+  if (errors.length) {
+    toast(errors[0], "error");
+    return;
+  }
+  await runAction("이미지를 올렸어요.", () => api.products.uploadImages(formData.get("productId"), imageFiles), () => routeChanged());
 }
 
 async function submitDeleteImage(data) {
@@ -1740,6 +1909,55 @@ function productPayload(data, partial = false) {
   };
 }
 
+function rawSelectedImageFiles(form) {
+  const formData = new FormData(form);
+  return formData
+    .getAll("images")
+    .filter((file) => file && typeof file === "object" && "size" in file && file.size > 0);
+}
+
+function selectedImageFiles(form) {
+  return rawSelectedImageFiles(form).slice(0, MAX_PRODUCT_IMAGE_COUNT);
+}
+
+function validateProductImageFiles(files, options = {}) {
+  if (options.requireFiles && !files.length) {
+    return ["업로드할 이미지를 선택해 주세요."];
+  }
+  if (!files.length) return [];
+  if (files.length > MAX_PRODUCT_IMAGE_COUNT) {
+    return [`상품 이미지는 최대 ${MAX_PRODUCT_IMAGE_COUNT}장까지 올릴 수 있어요.`];
+  }
+  const unsupportedFile = files.find((file) => !SUPPORTED_PRODUCT_IMAGE_TYPES.has(String(file.type || "").toLowerCase()));
+  if (unsupportedFile) {
+    return [`${unsupportedFile.name || "선택한 파일"}은 지원하지 않는 이미지 형식이에요.`];
+  }
+  const oversizedFile = files.find((file) => file.size > MAX_PRODUCT_IMAGE_SIZE_BYTES);
+  if (oversizedFile) {
+    return [`${oversizedFile.name || "선택한 파일"}은 ${formatFileSize(MAX_PRODUCT_IMAGE_SIZE_BYTES)}를 넘을 수 없어요.`];
+  }
+  const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+  if (totalSize > MAX_PRODUCT_IMAGE_REQUEST_BYTES) {
+    return [`한 번에 올릴 이미지 용량은 총 ${formatFileSize(MAX_PRODUCT_IMAGE_REQUEST_BYTES)}를 넘을 수 없어요.`];
+  }
+  return [];
+}
+
+function formatFileSize(bytes) {
+  return `${Math.floor(bytes / 1024 / 1024)}MB`;
+}
+
+function productImageUploadFailureMessage(error) {
+  const reason = error instanceof ApiError ? error.message : error?.message;
+  const suffix = reason ? ` ${reason}` : "";
+  return `상품은 등록됐지만 이미지 업로드는 실패했어요.${suffix} 내 상품 상세에서 다시 올려주세요.`;
+}
+
+function isCurrentUserSeller(product) {
+  const sellerId = product?.seller?.userId ?? product?.sellerId;
+  return Boolean(session.user?.userId && sellerId && String(session.user.userId) === String(sellerId));
+}
+
 function compact(value) {
   return Object.fromEntries(
     Object.entries(value).filter(([, item]) => item !== undefined && item !== null && item !== "")
@@ -1833,7 +2051,10 @@ function simpleProductRows(rows) {
         <strong>${escapeHtml(cleanDisplayText(row.title, "상품"))}</strong>
         <div class="muted">ID ${row.productId} · ${price(row.price)} · ${dateShort(row.createdAt || row.wishedAt || row.updatedAt)}</div>
       </div>
-      ${row.status ? statusBadge(row.status) : ""}
+      <div class="simple-row-actions">
+        ${row.status ? statusBadge(row.status) : ""}
+        ${row.productId ? `<button class="btn btn-small btn-ghost" data-action="open-product" data-id="${row.productId}">보기</button>` : ""}
+      </div>
     </div>
   `).join("")}</div>`;
 }
