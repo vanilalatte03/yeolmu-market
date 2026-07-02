@@ -4,7 +4,7 @@ import { StompClient } from "./stomp-client.js";
 const app = document.querySelector("#app");
 const toastRoot = document.querySelector("#toast-root");
 const STATIC_ASSET_VERSION = "20260702-front-edit";
-const RADISH_ASSET = `/assets/radish.svg?v=${STATIC_ASSET_VERSION}`;
+const RADISH_ASSET = `/assets/radish.png?v=${STATIC_ASSET_VERSION}`;
 
 const DEMO_CATEGORIES = [
   { categoryId: 1, name: "디지털기기" },
@@ -21,6 +21,9 @@ const SUPPORTED_PRODUCT_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image
 const CHAT_SUBSCRIPTION_NOT_READY_MESSAGE = "채팅 구독 준비에 실패했어요. 잠시 후 다시 시도해 주세요.";
 const ORDER_PAYMENT_IDS_KEY = "yeolmu.orderPaymentIds";
 const ORDER_REFUND_REQUEST_IDS_KEY = "yeolmu.orderRefundRequestIds";
+const FLASH_TOAST_KEY = "yeolmu.flashToast";
+const LOGOUT_SUCCESS_MESSAGE = "로그아웃했어요.";
+const DEFAULT_SEARCH_STATE = Object.freeze({ keyword: "", minPrice: "", maxPrice: "", status: "ON_SALE", sort: "latest", cached: true });
 
 const DEMO_PRODUCTS = [
   {
@@ -121,7 +124,7 @@ const state = {
   categories: [],
   keywords: [],
   selectedCategoryId: null,
-  search: { keyword: "", minPrice: "", maxPrice: "", status: "ON_SALE", sort: "latest", cached: true },
+  search: { ...DEFAULT_SEARCH_STATE },
   myProducts: [],
   wishes: [],
   myProfile: null,
@@ -222,7 +225,8 @@ async function bootstrap() {
   document.addEventListener("click", handleClick);
   document.addEventListener("change", handleChange);
   document.addEventListener("submit", handleSubmit);
-  routeChanged();
+  await routeChanged();
+  consumeFlashToast();
 }
 
 async function routeChanged() {
@@ -275,6 +279,46 @@ function requiresAuthRoute(name) {
 
 function navigate(hash) {
   window.location.hash = hash;
+}
+
+async function navigateHome() {
+  state.selectedCategoryId = null;
+  state.search = { ...DEFAULT_SEARCH_STATE };
+  if (window.location.hash === "#/home") {
+    await routeChanged();
+    return;
+  }
+  navigate("#/home");
+}
+
+async function logoutAndReload() {
+  try {
+    await api.auth.logout();
+    rememberFlashToast(LOGOUT_SUCCESS_MESSAGE);
+    window.location.hash = "#/home";
+    window.location.reload();
+  } catch (error) {
+    handleError(error);
+  }
+}
+
+function rememberFlashToast(message) {
+  try {
+    sessionStorage.setItem(FLASH_TOAST_KEY, message);
+  } catch {
+    // 저장소 접근이 막힌 환경에서는 새로고침만 수행한다.
+  }
+}
+
+function consumeFlashToast() {
+  try {
+    const message = sessionStorage.getItem(FLASH_TOAST_KEY);
+    if (!message) return;
+    sessionStorage.removeItem(FLASH_TOAST_KEY);
+    toast(message, "success");
+  } catch {
+    // 저장소 접근이 막힌 환경에서는 플래시 토스트를 생략한다.
+  }
 }
 
 function render() {
@@ -997,8 +1041,10 @@ function profileHero() {
     <div class="profile-hero mypage-hero">
       <span class="avatar profile-avatar">${initial(profile.nickname || session.user?.nickname || "열")}</span>
       <div>
-        <h1>${escapeHtml(profile.nickname || session.user?.nickname || "내 정보")}</h1>
-        <p class="muted">${escapeHtml(session.user?.email || "")} · ${escapeHtml(profile.role || session.user?.role || "USER")}</p>
+        <div class="profile-heading">
+          <h1>${escapeHtml(profile.nickname || session.user?.nickname || "내 정보")}</h1>
+          <p class="muted profile-meta">${escapeHtml(session.user?.email || "")} · ${escapeHtml(profile.role || session.user?.role || "USER")}</p>
+        </div>
         <div class="profile-rating">
           <span>⭐ ${rating}</span>
           <span>받은후기 ${Number.isFinite(reviewCount) ? reviewCount : 0}개</span>
@@ -1761,6 +1807,10 @@ async function handleClick(event) {
   const action = target.dataset.action;
   if (action === "nav") {
     state.menuOpen = false;
+    if (target.dataset.target === "#/home") {
+      await navigateHome();
+      return;
+    }
     navigate(target.dataset.target);
   }
   if (action === "mypage-tab") {
@@ -1781,7 +1831,7 @@ async function handleClick(event) {
     state.authMode = target.dataset.mode;
     render();
   }
-  if (action === "logout") await runAction("로그아웃했어요.", () => api.auth.logout(), () => navigate("#/home"));
+  if (action === "logout") await logoutAndReload();
   if (action === "open-product") navigate(`#/product/${target.dataset.id}`);
   if (action === "toggle-profile-panel") {
     state.profilePanel = state.profilePanel === target.dataset.panel ? null : target.dataset.panel;
@@ -1802,7 +1852,7 @@ async function handleClick(event) {
   }
   if (action === "reset-filter") {
     state.selectedCategoryId = null;
-    state.search = { ...state.search, minPrice: "", maxPrice: "", status: "ON_SALE", sort: "latest", cached: true };
+    state.search = { ...state.search, ...DEFAULT_SEARCH_STATE, keyword: state.search.keyword };
     await routeChanged();
   }
   if (action === "keyword") {
