@@ -1,0 +1,433 @@
+package com.guingujig.yeolmumarket.domain.auth.controller;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.matchesPattern;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.guingujig.yeolmumarket.domain.auth.repository.ActiveRefreshTokenRepository;
+import com.guingujig.yeolmumarket.domain.auth.repository.RevokedAccessTokenRepository;
+import com.guingujig.yeolmumarket.domain.user.entity.User;
+import com.guingujig.yeolmumarket.domain.user.entity.UserRole;
+import com.guingujig.yeolmumarket.domain.user.repository.UserRepository;
+import com.guingujig.yeolmumarket.global.security.JwtRefreshClaims;
+import com.guingujig.yeolmumarket.global.security.JwtTokenProvider;
+import jakarta.servlet.http.Cookie;
+import java.time.Duration;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.WebApplicationContext;
+
+@SpringBootTest
+@Transactional
+class AuthControllerTest {
+
+  private final WebApplicationContext context;
+  private final UserRepository userRepository;
+  private final PasswordEncoder passwordEncoder;
+  private final JwtTokenProvider jwtTokenProvider;
+  @MockitoBean private ActiveRefreshTokenRepository activeRefreshTokenRepository;
+  @MockitoBean private RevokedAccessTokenRepository revokedAccessTokenRepository;
+  private MockMvc mockMvc;
+
+  @Autowired
+  AuthControllerTest(
+      WebApplicationContext context,
+      UserRepository userRepository,
+      PasswordEncoder passwordEncoder,
+      JwtTokenProvider jwtTokenProvider) {
+    this.context = context;
+    this.userRepository = userRepository;
+    this.passwordEncoder = passwordEncoder;
+    this.jwtTokenProvider = jwtTokenProvider;
+  }
+
+  @BeforeEach
+  void setUp() {
+    mockMvc = MockMvcBuilders.webAppContextSetup(context).build();
+  }
+
+  @Test
+  void 회원가입에_성공하면_회원이_생성되고_201로_응답한다() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/signup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "email": "customer@example.com",
+                      "password": "Password123!",
+                      "nickname": "열무구매자"
+                    }
+                    """))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.code").value("SUCCESS"))
+        .andExpect(jsonPath("$.data.userId").isNumber())
+        .andExpect(jsonPath("$.data.email").value("customer@example.com"))
+        .andExpect(jsonPath("$.data.nickname").value("열무구매자"))
+        .andExpect(jsonPath("$.data.role").value("USER"))
+        .andExpect(jsonPath("$.data.createdAt", matchesPattern(".*(Z|\\+00:00)$")));
+
+    User user = userRepository.findByEmail("customer@example.com").orElseThrow();
+    assertThat(user.getRole()).isEqualTo(UserRole.USER);
+    assertThat(user.getPassword()).isNotEqualTo("Password123!");
+    assertThat(passwordEncoder.matches("Password123!", user.getPassword())).isTrue();
+  }
+
+  @Test
+  void 이미_가입된_이메일이면_409로_응답한다() throws Exception {
+    userRepository.save(
+        new User("customer@example.com", passwordEncoder.encode("Password123!"), "기존사용자"));
+
+    mockMvc
+        .perform(
+            post("/api/auth/signup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "email": "customer@example.com",
+                      "password": "Password123!",
+                      "nickname": "열무구매자"
+                    }
+                    """))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("EMAIL_ALREADY_EXISTS"))
+        .andExpect(jsonPath("$.message").value("이미 가입된 이메일입니다."))
+        .andExpect(jsonPath("$.data").doesNotExist());
+  }
+
+  @Test
+  void 회원가입_요청값_검증에_실패하면_400으로_응답한다() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/signup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "email": "not-email",
+                      "password": "short",
+                      "nickname": ""
+                    }
+                    """))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+        .andExpect(jsonPath("$.errors[0]", containsString(": ")));
+  }
+
+  @Test
+  void 로그인에_성공하면_access_token은_응답_body로_refresh_token은_쿠키로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+
+    MvcResult result =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                    {
+                      "email": "customer@example.com",
+                      "password": "Password123!"
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.code").value("SUCCESS"))
+            .andExpect(jsonPath("$.data.tokenType").value("Bearer"))
+            .andExpect(jsonPath("$.data.accessToken", matchesPattern("[^.]+\\.[^.]+\\.[^.]+")))
+            .andExpect(jsonPath("$.data.refreshToken").doesNotExist())
+            .andExpect(jsonPath("$.data.expiresIn").value(3600))
+            .andExpect(jsonPath("$.data.refreshExpiresIn").doesNotExist())
+            .andExpect(jsonPath("$.data.user.userId").value(user.getId()))
+            .andExpect(jsonPath("$.data.user.email").value("customer@example.com"))
+            .andExpect(jsonPath("$.data.user.nickname").value("열무구매자"))
+            .andExpect(jsonPath("$.data.user.role").value("USER"))
+            .andReturn();
+
+    String setCookie = result.getResponse().getHeader(HttpHeaders.SET_COOKIE);
+    assertRefreshTokenCookie(setCookie);
+    String refreshToken = extractRefreshTokenFromSetCookie(result);
+    JwtRefreshClaims refreshClaims = jwtTokenProvider.parseRefreshToken(refreshToken);
+    ArgumentCaptor<String> refreshJtiCaptor = ArgumentCaptor.forClass(String.class);
+    verify(activeRefreshTokenRepository)
+        .save(eq(user.getId()), refreshJtiCaptor.capture(), eq(Duration.ofSeconds(1209600)));
+    assertThat(refreshJtiCaptor.getValue()).isEqualTo(refreshClaims.jti());
+    assertThat(refreshJtiCaptor.getValue()).isNotEqualTo(refreshToken);
+  }
+
+  @Test
+  void 로그인_중_Redis_저장에_실패하면_503으로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    doThrow(new RedisConnectionFailureException("Redis unavailable"))
+        .when(activeRefreshTokenRepository)
+        .save(eq(user.getId()), anyString(), eq(Duration.ofSeconds(1209600)));
+
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "email": "customer@example.com",
+                      "password": "Password123!"
+                    }
+                    """))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REDIS_UNAVAILABLE"));
+  }
+
+  @Test
+  void refresh_token_재발급에_성공하면_토큰을_회전한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String oldRefreshToken = jwtTokenProvider.issueRefreshToken(user);
+    JwtRefreshClaims oldRefreshClaims = jwtTokenProvider.parseRefreshToken(oldRefreshToken);
+    when(activeRefreshTokenRepository.rotate(
+            eq(user.getId()),
+            eq(oldRefreshClaims.jti()),
+            org.mockito.ArgumentMatchers.anyString(),
+            eq(Duration.ofSeconds(1209600))))
+        .thenReturn(true);
+
+    MvcResult result =
+        mockMvc
+            .perform(post("/api/auth/refresh").cookie(new Cookie("refreshToken", oldRefreshToken)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.code").value("SUCCESS"))
+            .andExpect(jsonPath("$.data.tokenType").value("Bearer"))
+            .andExpect(jsonPath("$.data.accessToken", matchesPattern("[^.]+\\.[^.]+\\.[^.]+")))
+            .andExpect(jsonPath("$.data.refreshToken").doesNotExist())
+            .andExpect(jsonPath("$.data.expiresIn").value(3600))
+            .andExpect(jsonPath("$.data.refreshExpiresIn").doesNotExist())
+            .andReturn();
+
+    String setCookie = result.getResponse().getHeader(HttpHeaders.SET_COOKIE);
+    assertRefreshTokenCookie(setCookie);
+    String newRefreshToken = extractRefreshTokenFromSetCookie(result);
+    JwtRefreshClaims newRefreshClaims = jwtTokenProvider.parseRefreshToken(newRefreshToken);
+    ArgumentCaptor<String> refreshJtiCaptor = ArgumentCaptor.forClass(String.class);
+    verify(activeRefreshTokenRepository)
+        .rotate(
+            eq(user.getId()),
+            eq(oldRefreshClaims.jti()),
+            refreshJtiCaptor.capture(),
+            eq(Duration.ofSeconds(1209600)));
+    assertThat(newRefreshToken).isNotEqualTo(oldRefreshToken);
+    assertThat(refreshJtiCaptor.getValue()).isEqualTo(newRefreshClaims.jti());
+    assertThat(refreshJtiCaptor.getValue()).isNotEqualTo(oldRefreshClaims.jti());
+  }
+
+  @Test
+  void 이전_refresh_token을_재사용하면_401로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    String oldRefreshToken = jwtTokenProvider.issueRefreshToken(user);
+    JwtRefreshClaims oldRefreshClaims = jwtTokenProvider.parseRefreshToken(oldRefreshToken);
+    when(activeRefreshTokenRepository.rotate(
+            eq(user.getId()),
+            eq(oldRefreshClaims.jti()),
+            org.mockito.ArgumentMatchers.anyString(),
+            eq(Duration.ofSeconds(1209600))))
+        .thenReturn(false);
+
+    mockMvc
+        .perform(post("/api/auth/refresh").cookie(new Cookie("refreshToken", oldRefreshToken)))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REVOKED_TOKEN"));
+  }
+
+  @Test
+  void 새_로그인_후_기존_refresh_token으로_재발급하면_401로_응답한다() throws Exception {
+    User user =
+        userRepository.save(
+            new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+    MvcResult firstLoginResult =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                    {
+                      "email": "customer@example.com",
+                      "password": "Password123!"
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andReturn();
+    String firstLoginRefreshToken = extractRefreshTokenFromSetCookie(firstLoginResult);
+    reset(activeRefreshTokenRepository);
+    MvcResult secondLoginResult =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                    {
+                      "email": "customer@example.com",
+                      "password": "Password123!"
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andReturn();
+    String secondLoginRefreshToken = extractRefreshTokenFromSetCookie(secondLoginResult);
+    assertThat(secondLoginRefreshToken).isNotEqualTo(firstLoginRefreshToken);
+    JwtRefreshClaims firstLoginRefreshClaims =
+        jwtTokenProvider.parseRefreshToken(firstLoginRefreshToken);
+    when(activeRefreshTokenRepository.rotate(
+            eq(user.getId()),
+            eq(firstLoginRefreshClaims.jti()),
+            org.mockito.ArgumentMatchers.anyString(),
+            eq(Duration.ofSeconds(1209600))))
+        .thenReturn(false);
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh").cookie(new Cookie("refreshToken", firstLoginRefreshToken)))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("REVOKED_TOKEN"));
+  }
+
+  @Test
+  void refresh_token이_누락되면_400으로_응답한다() throws Exception {
+    mockMvc
+        .perform(post("/api/auth/refresh"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void refresh_token_쿠키가_비어있으면_400으로_응답한다() throws Exception {
+    mockMvc
+        .perform(post("/api/auth/refresh").cookie(new Cookie("refreshToken", "")))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void 잘못된_refresh_token이면_401로_응답한다() throws Exception {
+    mockMvc
+        .perform(post("/api/auth/refresh").cookie(new Cookie("refreshToken", "invalid.jwt")))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+  }
+
+  @Test
+  void 로그인_비밀번호가_틀리면_401로_응답한다() throws Exception {
+    userRepository.save(
+        new User("customer@example.com", passwordEncoder.encode("Password123!"), "열무구매자"));
+
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "email": "customer@example.com",
+                      "password": "WrongPassword123!"
+                    }
+                    """))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_LOGIN_CREDENTIALS"))
+        .andExpect(jsonPath("$.message").value("이메일 또는 비밀번호가 일치하지 않습니다."))
+        .andExpect(jsonPath("$.data").doesNotExist());
+  }
+
+  @Test
+  void 로그인_이메일이_존재하지_않으면_401로_응답한다() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "email": "unknown@example.com",
+                      "password": "Password123!"
+                    }
+                    """))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("INVALID_LOGIN_CREDENTIALS"))
+        .andExpect(jsonPath("$.message").value("이메일 또는 비밀번호가 일치하지 않습니다."))
+        .andExpect(jsonPath("$.data").doesNotExist());
+  }
+
+  @Test
+  void 로그인_요청값_검증에_실패하면_400으로_응답한다() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "email": "not-email",
+                      "password": ""
+                    }
+                    """))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+        .andExpect(jsonPath("$.errors[0]", containsString(": ")));
+  }
+
+  private String extractRefreshTokenFromSetCookie(MvcResult result) {
+    String setCookie = result.getResponse().getHeader(HttpHeaders.SET_COOKIE);
+    assertThat(setCookie).isNotBlank();
+    return setCookie.replaceAll("(?s).*refreshToken=([^;]+).*", "$1");
+  }
+
+  private void assertRefreshTokenCookie(String setCookie) {
+    assertThat(setCookie)
+        .contains("refreshToken=")
+        .contains("HttpOnly")
+        .contains("SameSite=Lax")
+        .contains("Path=/api/auth/refresh")
+        .contains("Max-Age=1209600")
+        .doesNotContain("Secure");
+  }
+}

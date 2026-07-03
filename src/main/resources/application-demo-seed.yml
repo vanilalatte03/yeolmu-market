@@ -1,0 +1,11 @@
+spring:
+  main:
+    web-application-type: none
+
+yeolmu:
+  demo-seed:
+    enabled: ${YEOLMU_DEMO_SEED:false}
+    product-count: ${YEOLMU_DEMO_PRODUCT_COUNT:5000}
+    seller-count: ${YEOLMU_DEMO_SELLER_COUNT:100}
+    batch-size: ${YEOLMU_DEMO_BATCH_SIZE:1000}
+    run-key: ${YEOLMU_DEMO_RUN_KEY:}

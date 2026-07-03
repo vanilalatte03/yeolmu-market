@@ -1,0 +1,43 @@
+apiVersion: eks.amazonaws.com/v1
+kind: IngressClassParams
+metadata:
+  name: alb
+spec:
+  scheme: internet-facing
+  subnets:
+    ids:
+      __ALB_SUBNET_IDS__
+  certificateARNs:
+    - __ACM_CERTIFICATE_ARN__
+---
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: alb
+spec:
+  controller: eks.amazonaws.com/alb
+  parameters:
+    apiGroup: eks.amazonaws.com
+    kind: IngressClassParams
+    name: alb
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: yeolmu-market
+  namespace: yeolmu
+  annotations:
+    alb.ingress.kubernetes.io/healthcheck-path: /api/categories
+    alb.ingress.kubernetes.io/success-codes: "200"
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: yeolmu-market
+                port:
+                  number: 80

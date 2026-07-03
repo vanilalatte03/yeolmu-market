@@ -1,4 +1,7 @@
 HELP.md
+.env
+.env.*
+!.env.example
 .gradle
 build/
 !gradle/wrapper/gradle-wrapper.jar
@@ -35,3 +38,7 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### k6 ###
+k6/results/*
+!k6/results/.gitkeep
