@@ -44,10 +44,11 @@ public class ChatMessagePersistenceService {
       chatRoomAuthorizationService.validateParticipant(chatRoom, senderId);
 
       User sender = chatRoom.getParticipant(senderId);
-      ChatMessage message =
-          chatMessageRepository.saveAndFlush(
-              ChatMessage.create(chatRoom, sender, content, acceptedAt, acceptedMessageId));
-      chatRoomRepository.updateLastMessageAtIfAfter(roomId, message.getCreatedAt());
+      // 메시지 INSERT는 FK 검사로 chatRoom 행에 공유 락을 잡는다. 이어서 채팅방 갱신이 배타 락을 요구하면
+      // 같은 채팅방 동시 저장에서 락 승격 데드락이 발생하므로, 채팅방 갱신을 먼저 실행해 배타 락을 선점한다.
+      chatRoomRepository.updateLastMessageAtIfAfter(roomId, acceptedAt);
+      chatMessageRepository.saveAndFlush(
+          ChatMessage.create(chatRoom, sender, content, acceptedAt, acceptedMessageId));
     } catch (RuntimeException exception) {
       rollbackCurrentTransaction();
       log.warn("비동기 채팅 메시지 저장에 실패했습니다. roomId={}, senderId={}", roomId, senderId, exception);
